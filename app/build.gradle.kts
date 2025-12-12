@@ -11,7 +11,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.to_docompose"
+        applicationId = "com.indiewalkabout.nowdothis"
         minSdk = 21
         targetSdk = 34
         versionCode = 1
@@ -46,7 +46,7 @@ android {
         }
     }
 
-    namespace = "com.example.to_docompose"
+    namespace = "com.indiewalkabout.nowdothis"
 }
 
 dependencies {

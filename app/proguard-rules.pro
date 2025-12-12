@@ -27,11 +27,11 @@
 
 # Keep Serializers
 
--keep,includedescriptorclasses class com.example.to_docompose.**$$serializer { *; }
--keepclassmembers class com.example.to_docompose.** {
+-keep,includedescriptorclasses class com.indiewalkabout.nowdothis.**$$serializer { *; }
+-keepclassmembers class com.indiewalkabout.nowdothis.** {
     *** Companion;
 }
--keepclasseswithmembers class com.example.to_docompose.** {
+-keepclasseswithmembers class com.indiewalkabout.nowdothis.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
 
