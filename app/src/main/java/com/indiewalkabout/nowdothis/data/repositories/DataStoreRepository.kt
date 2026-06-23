@@ -22,7 +22,7 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = PRE
 
 @ViewModelScoped
 class DataStoreRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
 
     private object PreferenceKeys {
@@ -51,7 +51,6 @@ class DataStoreRepository @Inject constructor(
         }
 
 }
-
 
 
 

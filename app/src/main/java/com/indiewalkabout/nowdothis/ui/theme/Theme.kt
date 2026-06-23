@@ -94,7 +94,9 @@ fun ToDoComposeTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
+            @Suppress("DEPRECATION")
             window.statusBarColor = colorPrimary.toArgb()
+            @Suppress("DEPRECATION")
             window.navigationBarColor = colorSurface.toArgb()
             val wic = WindowCompat.getInsetsController(window, view)
             wic.isAppearanceLightStatusBars = darkTheme
