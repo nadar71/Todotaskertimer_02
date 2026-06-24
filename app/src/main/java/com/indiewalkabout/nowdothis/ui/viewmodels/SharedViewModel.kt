@@ -138,6 +138,11 @@ class SharedViewModel @Inject constructor(
         }
     }
 
+    fun clearSelectedTask() {
+        _selectedTask.value = null
+        updateTaskFields(selectedTask = null)
+    }
+
     private fun addTask() {
         viewModelScope.launch(Dispatchers.IO) {
             val toDoTask = ToDoTask(

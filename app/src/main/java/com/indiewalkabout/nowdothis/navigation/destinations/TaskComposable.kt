@@ -19,18 +19,24 @@ fun taskComposable(
 ) {
     val taskId = screen.id
     LaunchedEffect(key1 = taskId) {
-        sharedViewModel.getSelectedTask(taskId = taskId)
+        if (taskId == -1) {
+            sharedViewModel.clearSelectedTask()
+        } else {
+            sharedViewModel.getSelectedTask(taskId = taskId)
+        }
     }
 
     val selectedTask by sharedViewModel.selectedTask.collectAsState()
+    val taskScreenSelectedTask = if (taskId == -1) null else selectedTask
+
     LaunchedEffect(key1 = selectedTask) {
-        if (selectedTask != null || taskId == -1) {
+        if (taskScreenSelectedTask != null) {
             sharedViewModel.updateTaskFields(selectedTask = selectedTask)
         }
     }
 
     TaskScreen(
-        selectedTask = selectedTask,
+        selectedTask = taskScreenSelectedTask,
         sharedViewModel = sharedViewModel,
         navigateToListScreen = navigateToListScreen
     )
