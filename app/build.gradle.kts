@@ -4,15 +4,15 @@ plugins {
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    kotlin("plugin.serialization") version "2.0.20"
+    kotlin("plugin.serialization")
 }
 
 android {
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.to_docompose"
-        minSdk = 21
+        applicationId = "com.indiewalkabout.nowdothis"
+        minSdk = 23
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -46,7 +46,11 @@ android {
         }
     }
 
-    namespace = "com.example.to_docompose"
+    namespace = "com.indiewalkabout.nowdothis"
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
@@ -63,24 +67,26 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.7.2")
     debugImplementation("androidx.compose.ui:ui-tooling:1.7.2")
 
-    // Compose Navigation
-    implementation("androidx.navigation:navigation-compose:2.8.1")
+    // Compose Navigation 3
+    implementation("androidx.navigation3:navigation3-runtime:1.1.3")
+    implementation("androidx.navigation3:navigation3-ui:1.1.3")
 
     // Room components
-    implementation("androidx.room:room-runtime:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
+    implementation("androidx.room:room-runtime:2.8.4")
+    ksp("androidx.room:room-compiler:2.8.4")
+    implementation("androidx.room:room-ktx:2.8.4")
 
     // DataStore Preferences
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Dagger - Hilt
-    implementation("com.google.dagger:hilt-android:2.51.1")
-    ksp("com.google.dagger:hilt-compiler:2.51.1")
+    implementation("com.google.dagger:hilt-android:2.57.1")
+    ksp("com.google.dagger:hilt-compiler:2.57.1")
 
     // Splash API
     implementation("androidx.core:core-splashscreen:1.0.1")
 
     // KotlinX Serialization
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.9.0")
 }
