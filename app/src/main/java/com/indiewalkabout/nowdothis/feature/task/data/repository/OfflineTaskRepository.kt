@@ -10,14 +10,12 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapsho
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
-import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
-import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSort
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.CompletionHistoryReader
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskScheduleReader
+import com.indiewalkabout.nowdothis.feature.task.domain.usecase.TaskSectionClassifier
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -32,31 +30,19 @@ class OfflineTaskRepository @Inject constructor(
         taskDao.observeTask(taskId).map { it?.let(TaskEntityMapper::toDomain) }
 
     override fun observeSections(filter: TaskFilter, bounds: DayBounds): Flow<TaskSections> =
-        combine(
-            taskDao.observeOverdue(bounds.startInclusive, filter.query, filter.categoryId),
-            taskDao.observeDueBetween(
-                bounds.startInclusive,
-                bounds.endExclusive,
-                filter.query,
-                filter.categoryId
-            ),
-            taskDao.observeUpcoming(bounds.endExclusive, filter.query, filter.categoryId),
-            taskDao.observeUnscheduled(filter.query, filter.categoryId),
-            taskDao.observeCompletedBetween(
-                bounds.startInclusive,
-                bounds.endExclusive,
-                filter.query,
-                filter.categoryId
-            )
-        ) { overdue, today, upcoming, unscheduled, completedToday ->
-            TaskSections(
-                overdue = overdue.toDomainTasks().sorted(filter.sort),
-                today = today.toDomainTasks().sorted(filter.sort),
-                upcoming = upcoming.toDomainTasks().sorted(filter.sort),
-                unscheduled = unscheduled.toDomainTasks().sorted(filter.sort),
-                completedToday = completedToday.toDomainTasks().sorted(filter.sort)
-            )
-        }
+        taskDao.observeSectionCandidates(
+            bounds.startInclusive,
+            bounds.endExclusive,
+            filter.query,
+            filter.categoryId
+        )
+            .map { relations ->
+                TaskSectionClassifier.classify(
+                    tasks = relations.toDomainTasks(),
+                    bounds = bounds,
+                    sort = filter.sort
+                )
+            }
 
     override suspend fun getTask(taskId: Int): Task? =
         taskDao.getTask(taskId)?.let(TaskEntityMapper::toDomain)
@@ -85,7 +71,14 @@ class OfflineTaskRepository @Inject constructor(
         }
         taskDao.updateTask(completedTask)
         taskDao.replaceSubtasks(taskId, completedSubtasks)
-        next?.let { upsertInTransaction(it) }
+        next?.let { nextOccurrence ->
+            upsertInTransaction(
+                nextOccurrence.copy(
+                    id = 0,
+                    subtasks = nextOccurrence.subtasks.map { it.copy(id = 0, taskId = 0) }
+                )
+            )
+        }
         TaskEntityMapper.toDomain(TaskWithSubtasks(completedTask, completedSubtasks))
     }
 
@@ -112,7 +105,19 @@ class OfflineTaskRepository @Inject constructor(
         val original = snapshot.task
         if (original.id != 0 && taskDao.getTask(original.id) == null) {
             val (task, subtasks) = TaskEntityMapper.toEntities(original)
-            taskDao.restoreTask(TaskWithSubtasks(task, subtasks))
+            val requestedSubtaskIds = subtasks.map { it.id }.filter { it != 0 }
+            val occupiedSubtaskIds = if (requestedSubtaskIds.isEmpty()) {
+                emptySet()
+            } else {
+                taskDao.existingSubtaskIds(requestedSubtaskIds).toSet()
+            }
+            val restorableSubtasks = subtasks.map { subtask ->
+                if (subtask.id in occupiedSubtaskIds) subtask.copy(id = 0) else subtask
+            }
+            taskDao.insertTask(task)
+            if (restorableSubtasks.isNotEmpty()) {
+                taskDao.insertRestoredSubtasks(restorableSubtasks)
+            }
             original.id
         } else {
             upsertInTransaction(
@@ -161,7 +166,7 @@ class OfflineTaskRepository @Inject constructor(
 
     override fun observeHistory(before: Long, filter: TaskFilter): Flow<List<Task>> =
         taskDao.observeHistory(before, filter.query, filter.categoryId)
-            .map { it.toDomainTasks().sorted(filter.sort) }
+            .map { it.toDomainTasks() }
 
     private suspend fun upsertInTransaction(task: Task): Int {
         val (entity, subtasks) = TaskEntityMapper.toEntities(task)
@@ -179,19 +184,6 @@ class OfflineTaskRepository @Inject constructor(
 
     private fun List<TaskWithSubtasks>.toDomainTasks(): List<Task> =
         map(TaskEntityMapper::toDomain)
-
-    private fun List<Task>.sorted(sort: TaskSort): List<Task> = when (sort) {
-        TaskSort.DEFAULT -> this
-        TaskSort.LOW_FIRST -> sortedByDescending { it.priority.sortOrder }
-        TaskSort.HIGH_FIRST -> sortedBy { it.priority.sortOrder }
-    }
-
-    private val TaskPriority.sortOrder: Int
-        get() = when (this) {
-            TaskPriority.HIGH -> 0
-            TaskPriority.MEDIUM -> 1
-            TaskPriority.LOW -> 2
-        }
 
     private companion object {
         val ACTIVE_REMINDER_STATUSES = setOf(

@@ -23,12 +23,17 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSort
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -91,6 +96,33 @@ class OfflineRepositoriesTest {
     }
 
     @Test
+    fun observeSections_movingTaskBetweenSectionsNeverEmitsMissingOrDuplicateTask() = runTest {
+        val original = task(id = 7, title = "Moving", dueAt = 150)
+        tasks.upsert(original)
+        val emissions = Channel<TaskSections>(capacity = Channel.UNLIMITED)
+        val collector = launch {
+            tasks.observeSections(TaskFilter(), DayBounds(100, 200)).collect(emissions::send)
+        }
+        assertEquals(listOf(7), emissions.receive().today.map(Task::id))
+
+        tasks.upsert(original.copy(dueAt = 250))
+
+        val movedEmissions = mutableListOf<TaskSections>()
+        withContext(Dispatchers.Default.limitedParallelism(1)) {
+            withTimeout(5_000) {
+                while (movedEmissions.lastOrNull()?.upcoming?.map(Task::id) != listOf(7)) {
+                    movedEmissions += emissions.receive()
+                }
+            }
+        }
+        collector.cancelAndJoin()
+        assertTrue(movedEmissions.isNotEmpty())
+        movedEmissions.forEach { sections ->
+            assertEquals(1, sections.taskOccurrences(7))
+        }
+    }
+
+    @Test
     fun observeTask_emitsAgainAfterTransactionalUpsert() = runTest {
         val emissions = Channel<Task?>(capacity = 2)
         val collector = launch {
@@ -133,6 +165,32 @@ class OfflineRepositoriesTest {
         assertEquals(700L, completed.subtasks.first().completedAt)
         assertEquals(1_500L, completed.subtasks.last().completedAt)
         assertEquals("Recurring", tasks.observeDay(2_000, 2_001).first().single().title)
+    }
+
+    @Test
+    fun completeAtomically_copiedCurrentGetsFreshNextTaskAndSubtaskIdentities() = runTest {
+        val current = task(
+            id = 12,
+            title = "Copied recurrence",
+            dueAt = 1_000,
+            subtasks = listOf(
+                Subtask(id = 30, taskId = 12, title = "First", position = 0),
+                Subtask(id = 31, taskId = 12, title = "Second", position = 1)
+            )
+        )
+        tasks.upsert(current)
+        val copiedNext = current.copy(dueAt = 2_000)
+
+        tasks.completeAtomically(12, completedAt = 1_500, next = copiedNext)
+
+        val completed = tasks.getTask(12)!!
+        val next = tasks.observeDay(2_000, 2_001).first().single()
+        assertTrue(completed.isCompleted)
+        assertEquals(listOf(30, 31), completed.subtasks.map(Subtask::id))
+        assertFalse(next.isCompleted)
+        assertTrue(next.id != completed.id)
+        assertTrue(next.subtasks.map(Subtask::id).toSet().intersect(setOf(30, 31)).isEmpty())
+        assertTrue(next.subtasks.all { it.taskId == next.id })
     }
 
     @Test
@@ -188,6 +246,41 @@ class OfflineRepositoriesTest {
     }
 
     @Test
+    fun restore_preservesFreeIdentitiesAndRegeneratesOnlyCollidingSubtaskIds() = runTest {
+        val original = task(
+            id = 43,
+            title = "Partially colliding restore",
+            subtasks = listOf(
+                Subtask(id = 92, taskId = 43, title = "Collision", position = 0),
+                Subtask(id = 93, taskId = 43, title = "Still available", position = 1)
+            )
+        )
+        tasks.upsert(original)
+        val snapshot = tasks.deleteWithSnapshot(43)
+        tasks.upsert(
+            task(
+                id = 100,
+                title = "Occupying task",
+                subtasks = listOf(
+                    Subtask(id = 92, taskId = 100, title = "Occupying child", position = 0)
+                )
+            )
+        )
+
+        val restoredId = tasks.restore(snapshot)
+
+        assertEquals(43, restoredId)
+        val restored = tasks.getTask(43)!!
+        val restoredIdsByTitle = restored.subtasks.associate { it.title to it.id }
+        assertTrue(restoredIdsByTitle.getValue("Collision") !in setOf(92, 93))
+        assertEquals(93, restoredIdsByTitle.getValue("Still available"))
+        assertTrue(restored.subtasks.all { it.taskId == 43 })
+        val occupyingChild = tasks.getTask(100)!!.subtasks.single()
+        assertEquals(92, occupyingChild.id)
+        assertEquals("Occupying child", occupyingChild.title)
+    }
+
+    @Test
     fun scheduleHistoryAndFutureReminderReads_useExactFieldsAndBounds() = runTest {
         tasks.upsert(task(id = 1, title = "Before", dueAt = 99))
         tasks.upsert(task(id = 2, title = "At start", dueAt = 100))
@@ -205,6 +298,27 @@ class OfflineRepositoriesTest {
         assertEquals(listOf(2), tasks.observeMonth(100, 200).first().map(Task::id))
         assertEquals(listOf(4), tasks.observeHistory(100, TaskFilter()).first().map(Task::id))
         assertEquals(listOf(5), tasks.futureReminders(after = 399).map(Task::id))
+    }
+
+    @Test
+    fun observeHistory_keepsCompletionChronologyForNonDefaultTaskSorts() = runTest {
+        tasks.upsert(
+            task(id = 50, title = "Newer high", priority = TaskPriority.HIGH)
+                .copy(isCompleted = true, completedAt = 300)
+        )
+        tasks.upsert(
+            task(id = 51, title = "Older low", priority = TaskPriority.LOW)
+                .copy(isCompleted = true, completedAt = 200)
+        )
+        tasks.upsert(
+            task(id = 52, title = "Newer low", priority = TaskPriority.LOW)
+                .copy(isCompleted = true, completedAt = 300)
+        )
+
+        listOf(TaskSort.LOW_FIRST, TaskSort.HIGH_FIRST).forEach { sort ->
+            val history = tasks.observeHistory(400, TaskFilter(sort = sort)).first()
+            assertEquals(listOf(52, 50, 51), history.map(Task::id))
+        }
     }
 
     @Test
@@ -267,4 +381,9 @@ class OfflineRepositoriesTest {
         updatedAt = id.toLong(),
         subtasks = subtasks
     )
+
+    private fun TaskSections.taskOccurrences(taskId: Int): Int =
+        listOf(overdue, today, upcoming, unscheduled, completedToday)
+            .flatten()
+            .count { it.id == taskId }
 }

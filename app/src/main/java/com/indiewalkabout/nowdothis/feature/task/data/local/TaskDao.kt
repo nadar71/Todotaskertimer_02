@@ -110,6 +110,31 @@ interface TaskDao {
     @Query(
         """
         SELECT * FROM tasks
+        WHERE (
+                is_completed = 0
+                OR (is_completed = 1 AND completed_at >= :start AND completed_at < :end)
+              )
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%')
+          AND (:categoryId IS NULL OR category_id = :categoryId)
+        ORDER BY
+            is_completed ASC,
+            CASE WHEN is_completed = 0 THEN due_at END ASC,
+            CASE WHEN is_completed = 1 THEN completed_at END DESC,
+            CASE WHEN is_completed = 1 THEN id END DESC,
+            id ASC
+        """
+    )
+    fun observeSectionCandidates(
+        start: Long,
+        end: Long,
+        query: String,
+        categoryId: Int?
+    ): Flow<List<TaskWithSubtasks>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
         WHERE due_at >= :start
           AND due_at < :end
         ORDER BY due_at ASC, id ASC
@@ -174,6 +199,9 @@ interface TaskDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertRestoredSubtasks(subtasks: List<SubtaskEntity>)
+
+    @Query("SELECT id FROM subtasks WHERE id IN (:subtaskIds)")
+    suspend fun existingSubtaskIds(subtaskIds: List<Int>): List<Int>
 
     @Query("SELECT * FROM tasks ORDER BY id ASC")
     fun observeLegacyTasks(): Flow<List<TaskEntity>>
