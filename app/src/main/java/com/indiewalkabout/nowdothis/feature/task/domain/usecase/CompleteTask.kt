@@ -1,0 +1,76 @@
+package com.indiewalkabout.nowdothis.feature.task.domain.usecase
+
+import com.indiewalkabout.nowdothis.core.time.AppClock
+import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
+import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
+import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
+import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
+
+sealed interface CompleteTaskResult {
+    data object NotFound : CompleteTaskResult
+    data object AlreadyCompleted : CompleteTaskResult
+
+    data class Completed(
+        val completed: Task,
+        val nextOccurrence: Task?
+    ) : CompleteTaskResult
+}
+
+class CompleteTask(
+    private val repository: TaskRepository,
+    private val scheduler: ReminderScheduler,
+    private val calculateNextOccurrence: CalculateNextOccurrence,
+    private val clock: AppClock
+) {
+    suspend operator fun invoke(taskId: Int): CompleteTaskResult {
+        val current = repository.getTask(taskId) ?: return CompleteTaskResult.NotFound
+        if (current.isCompleted) return CompleteTaskResult.AlreadyCompleted
+
+        val now = clock.nowMillis()
+        val next = calculateNextOccurrence(current)?.let { nextDueAt ->
+            current.toNextOccurrence(nextDueAt, now)
+        }
+        val result = repository.completeAtomically(taskId, now, next)
+            ?: return CompleteTaskResult.NotFound
+
+        scheduler.cancel(result.completed.id)
+        val persistedNext = result.nextOccurrence
+        val finalNext = if (persistedNext?.reminderAt?.let { it > now } == true) {
+            val status = scheduler.schedule(
+                persistedNext.id,
+                requireNotNull(persistedNext.reminderAt)
+            ).toReminderStatus()
+            repository.updateReminderStatus(persistedNext.id, status)
+            persistedNext.copy(reminderStatus = status)
+        } else {
+            persistedNext
+        }
+        return CompleteTaskResult.Completed(result.completed, finalNext)
+    }
+
+    private fun Task.toNextOccurrence(nextDueAt: Long, now: Long): Task {
+        val nextReminderAt = reminderAt?.plus(nextDueAt - requireNotNull(dueAt))
+        return copy(
+            id = 0,
+            isCompleted = false,
+            completedAt = null,
+            dueAt = nextDueAt,
+            reminderAt = nextReminderAt,
+            reminderStatus = if (nextReminderAt?.let { it > now } == true) {
+                ReminderStatus.REQUESTED
+            } else {
+                ReminderStatus.NONE
+            },
+            createdAt = now,
+            updatedAt = now,
+            subtasks = subtasks.sortedBy { it.position }.map { subtask ->
+                subtask.copy(
+                    id = 0,
+                    taskId = 0,
+                    isCompleted = false,
+                    completedAt = null
+                )
+            }
+        )
+    }
+}

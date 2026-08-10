@@ -6,6 +6,7 @@ import com.indiewalkabout.nowdothis.core.time.DayBounds
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskDao
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskWithSubtasks
 import com.indiewalkabout.nowdothis.feature.task.data.mapper.TaskEntityMapper
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -55,7 +56,7 @@ class OfflineTaskRepository @Inject constructor(
         taskId: Int,
         completedAt: Long,
         next: Task?
-    ): Task? = database.withTransaction {
+    ): AtomicCompletionResult? = database.withTransaction {
         val current = taskDao.getTask(taskId) ?: return@withTransaction null
         val completedTask = current.task.copy(
             isCompleted = true,
@@ -71,15 +72,21 @@ class OfflineTaskRepository @Inject constructor(
         }
         taskDao.updateTask(completedTask)
         taskDao.replaceSubtasks(taskId, completedSubtasks)
-        next?.let { nextOccurrence ->
-            upsertInTransaction(
+        val persistedNext = next?.let { nextOccurrence ->
+            val nextId = upsertInTransaction(
                 nextOccurrence.copy(
                     id = 0,
                     subtasks = nextOccurrence.subtasks.map { it.copy(id = 0, taskId = 0) }
                 )
             )
+            TaskEntityMapper.toDomain(requireNotNull(taskDao.getTask(nextId)))
         }
-        TaskEntityMapper.toDomain(TaskWithSubtasks(completedTask, completedSubtasks))
+        AtomicCompletionResult(
+            completed = TaskEntityMapper.toDomain(
+                TaskWithSubtasks(completedTask, completedSubtasks)
+            ),
+            nextOccurrence = persistedNext
+        )
     }
 
     override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot =

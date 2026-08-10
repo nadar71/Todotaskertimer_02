@@ -156,15 +156,27 @@ class OfflineRepositoriesTest {
                 )
             )
         )
-        val next = task(id = 0, title = "Recurring", dueAt = 2_000)
+        val next = task(id = 0, title = "Recurring", dueAt = 2_000).copy(
+            subtasks = listOf(
+                Subtask(title = "First copy", position = 0),
+                Subtask(title = "Second copy", position = 1)
+            )
+        )
 
-        val completed = tasks.completeAtomically(10, completedAt = 1_500, next = next)
+        val result = tasks.completeAtomically(10, completedAt = 1_500, next = next)!!
 
-        assertEquals(1_500L, completed?.completedAt)
-        assertTrue(completed!!.subtasks.all(Subtask::isCompleted))
-        assertEquals(700L, completed.subtasks.first().completedAt)
-        assertEquals(1_500L, completed.subtasks.last().completedAt)
-        assertEquals("Recurring", tasks.observeDay(2_000, 2_001).first().single().title)
+        assertEquals(1_500L, result.completed.completedAt)
+        assertTrue(result.completed.subtasks.all(Subtask::isCompleted))
+        assertEquals(700L, result.completed.subtasks.first().completedAt)
+        assertEquals(1_500L, result.completed.subtasks.last().completedAt)
+        val persistedNext = tasks.observeDay(2_000, 2_001).first().single()
+        assertEquals(persistedNext, result.nextOccurrence)
+        assertTrue(result.nextOccurrence!!.id > 0)
+        assertTrue(
+            result.nextOccurrence.subtasks.all { subtask ->
+                subtask.id > 0 && subtask.taskId == result.nextOccurrence.id
+            }
+        )
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.indiewalkabout.nowdothis.feature.task.domain.repository
 
 import com.indiewalkabout.nowdothis.core.time.DayBounds
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -13,7 +14,11 @@ interface TaskRepository {
     fun observeSections(filter: TaskFilter, bounds: DayBounds): Flow<TaskSections>
     suspend fun getTask(taskId: Int): Task?
     suspend fun upsert(task: Task): Int
-    suspend fun completeAtomically(taskId: Int, completedAt: Long, next: Task?): Task?
+    suspend fun completeAtomically(
+        taskId: Int,
+        completedAt: Long,
+        next: Task?
+    ): AtomicCompletionResult?
     suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot
     suspend fun deleteAll(): List<Int>
     suspend fun restore(snapshot: DeletedTaskSnapshot): Int
