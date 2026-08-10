@@ -20,15 +20,19 @@ class RestoreDeletedTask(
         val restoredId = repository.restore(snapshot)
         val task = snapshot.task
         val reminderAt = task.reminderAt
-        if (
-            task.reminderStatus == ReminderStatus.NONE ||
-            reminderAt == null ||
-            reminderAt <= clock.nowMillis()
-        ) {
-            return RestoreDeletedTaskResult(restoredId, task.reminderStatus)
+        val shouldSchedule =
+            !task.isCompleted &&
+                task.reminderStatus != ReminderStatus.NONE &&
+                reminderAt != null &&
+                reminderAt > clock.nowMillis()
+        if (!shouldSchedule) {
+            if (task.reminderStatus != ReminderStatus.NONE) {
+                repository.updateReminderStatus(restoredId, ReminderStatus.NONE)
+            }
+            return RestoreDeletedTaskResult(restoredId, ReminderStatus.NONE)
         }
 
-        val status = scheduler.schedule(restoredId, reminderAt).toReminderStatus()
+        val status = scheduler.schedule(restoredId, requireNotNull(reminderAt)).toReminderStatus()
         repository.updateReminderStatus(restoredId, status)
         return RestoreDeletedTaskResult(restoredId, status)
     }

@@ -313,6 +313,30 @@ class OfflineRepositoriesTest {
     }
 
     @Test
+    fun futureReminders_includesUnavailableWithoutMarkingItForCancellation() = runTest {
+        tasks.upsert(
+            task(id = 60, title = "Requested", dueAt = 500)
+                .copy(reminderAt = 410, reminderStatus = ReminderStatus.REQUESTED)
+        )
+        tasks.upsert(
+            task(id = 61, title = "Scheduled", dueAt = 500)
+                .copy(reminderAt = 420, reminderStatus = ReminderStatus.SCHEDULED)
+        )
+        tasks.upsert(
+            task(id = 62, title = "Retry", dueAt = 500)
+                .copy(reminderAt = 430, reminderStatus = ReminderStatus.UNAVAILABLE)
+        )
+        tasks.upsert(
+            task(id = 63, title = "No reminder", dueAt = 500)
+                .copy(reminderAt = 440, reminderStatus = ReminderStatus.NONE)
+        )
+
+        assertEquals(listOf(60, 61, 62), tasks.futureReminders(after = 400).map(Task::id))
+
+        assertEquals(listOf(60, 61), tasks.deleteAll())
+    }
+
+    @Test
     fun observeHistory_keepsCompletionChronologyForNonDefaultTaskSorts() = runTest {
         tasks.upsert(
             task(id = 50, title = "Newer high", priority = TaskPriority.HIGH)

@@ -483,21 +483,61 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
-    fun restore_doesNotScheduleExpiredRequestedReminder() = runTest {
+    fun restore_completedTaskKeepsHistoryButNormalizesReminderWithoutScheduling() = runTest {
+        val events = mutableListOf<String>()
+        val original = task(
+            id = 11,
+            reminderAt = 2_000,
+            reminderStatus = ReminderStatus.SCHEDULED
+        )
+        val repository = FakeTaskRepository(original, events = events)
+        val scheduler = FakeReminderScheduler(events = events)
+
+        completeUseCase(repository, scheduler)(11)
+        val snapshot = DeleteTask(repository, scheduler)(11)
+        val result = RestoreDeletedTask(repository, scheduler, AppClock { 1_000 })(snapshot)
+
+        val restored = repository.tasks.getValue(11)
+        assertEquals(RestoreDeletedTaskResult(11, ReminderStatus.NONE), result)
+        assertTrue(restored.isCompleted)
+        assertEquals(1_000L, restored.completedAt)
+        assertEquals(2_000L, restored.reminderAt)
+        assertEquals(ReminderStatus.NONE, restored.reminderStatus)
+        assertTrue(scheduler.scheduled.isEmpty())
+        assertEquals(
+            listOf(
+                "complete:11",
+                "cancel:11",
+                "delete:11",
+                "cancel:11",
+                "restore:11",
+                "status:11:NONE"
+            ),
+            events
+        )
+    }
+
+    @Test
+    fun restore_expiredScheduledReminderPersistsAndReturnsNoneWithoutScheduling() = runTest {
         val events = mutableListOf<String>()
         val snapshot = DeletedTaskSnapshot(
             task(
                 id = 4,
                 reminderAt = 999,
-                reminderStatus = ReminderStatus.REQUESTED
+                reminderStatus = ReminderStatus.SCHEDULED
             )
         )
         val repository = FakeTaskRepository(events = events)
         val scheduler = FakeReminderScheduler(events = events)
 
-        RestoreDeletedTask(repository, scheduler, AppClock { 1_000 })(snapshot)
+        val result = RestoreDeletedTask(repository, scheduler, AppClock { 1_000 })(snapshot)
 
-        assertEquals(listOf("restore:4"), events)
+        val restored = repository.tasks.getValue(4)
+        assertEquals(RestoreDeletedTaskResult(4, ReminderStatus.NONE), result)
+        assertEquals(999L, restored.reminderAt)
+        assertEquals(ReminderStatus.NONE, restored.reminderStatus)
+        assertTrue(scheduler.scheduled.isEmpty())
+        assertEquals(listOf("restore:4", "status:4:NONE"), events)
     }
 
     @Test

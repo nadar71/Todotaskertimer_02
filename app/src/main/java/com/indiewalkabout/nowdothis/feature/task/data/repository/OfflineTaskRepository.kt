@@ -101,7 +101,7 @@ class OfflineTaskRepository @Inject constructor(
             .filter { entity ->
                 !entity.isCompleted &&
                     entity.reminderAt != null &&
-                    entity.reminderStatus in ACTIVE_REMINDER_STATUSES
+                    entity.reminderStatus in CANCELLABLE_REMINDER_STATUSES
             }
             .map { it.id }
         taskDao.deleteAllTasks()
@@ -152,7 +152,7 @@ class OfflineTaskRepository @Inject constructor(
             .filter { entity ->
                 !entity.isCompleted &&
                     entity.reminderAt?.let { it > after } == true &&
-                    entity.reminderStatus in ACTIVE_REMINDER_STATUSES
+                    entity.reminderStatus in RECONCILABLE_REMINDER_STATUSES
             }
             .mapNotNull { taskDao.getTask(it.id) }
             .map(TaskEntityMapper::toDomain)
@@ -193,9 +193,11 @@ class OfflineTaskRepository @Inject constructor(
         map(TaskEntityMapper::toDomain)
 
     private companion object {
-        val ACTIVE_REMINDER_STATUSES = setOf(
+        val CANCELLABLE_REMINDER_STATUSES = setOf(
             ReminderStatus.REQUESTED.name,
             ReminderStatus.SCHEDULED.name
         )
+        val RECONCILABLE_REMINDER_STATUSES =
+            CANCELLABLE_REMINDER_STATUSES + ReminderStatus.UNAVAILABLE.name
     }
 }
