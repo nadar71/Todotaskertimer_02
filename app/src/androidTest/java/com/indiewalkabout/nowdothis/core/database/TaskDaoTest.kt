@@ -217,6 +217,61 @@ class TaskDaoTest {
         assertEquals(200L, updated.updatedAt)
     }
 
+    @Test
+    fun compatibilityDeleteThenRestore_preservesCompleteTaskAndOrderedSubtasks() = runTest {
+        database.categoryDao().insert(
+            CategoryEntity(id = 10, customName = "Clients", colorToken = "BLUE")
+        )
+        val expectedTask = TaskEntity(
+            id = 42,
+            title = "Complete",
+            description = "Preserve every field",
+            priority = "HIGH",
+            categoryId = 10,
+            isCompleted = true,
+            completedAt = 900,
+            dueAt = 800,
+            reminderAt = 700,
+            reminderStatus = "SCHEDULED",
+            recurrence = "MONTHLY",
+            recurrenceEndAt = 1_200,
+            seriesId = "series-42",
+            createdAt = 100,
+            updatedAt = 950
+        )
+        val expectedSubtasks = listOf(
+            SubtaskEntity(
+                id = 91,
+                taskId = 42,
+                title = "First",
+                isCompleted = true,
+                completedAt = 901,
+                position = 0
+            ),
+            SubtaskEntity(
+                id = 90,
+                taskId = 42,
+                title = "Second",
+                isCompleted = false,
+                completedAt = null,
+                position = 1
+            )
+        )
+        dao.insertTask(expectedTask)
+        dao.replaceSubtasks(42, expectedSubtasks.reversed())
+        val repository = ToDoRepository(dao)
+
+        repository.deleteTask(ToDoTask(42, "Complete", "Preserve every field", Priority.HIGH))
+        assertNull(dao.observeTask(42).first())
+        assertEquals(0, scalarInt("SELECT COUNT(*) FROM subtasks WHERE task_id = 42"))
+
+        repository.restoreDeletedTask()
+
+        val restored = dao.observeTask(42).first()!!
+        assertEquals(expectedTask, restored.task)
+        assertEquals(expectedSubtasks, restored.subtasks.sortedBy { it.position })
+    }
+
     private suspend fun insertTask(
         id: Int,
         title: String = "Task $id",

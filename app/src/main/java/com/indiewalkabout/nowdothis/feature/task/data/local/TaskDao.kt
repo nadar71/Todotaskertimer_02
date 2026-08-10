@@ -15,6 +15,10 @@ interface TaskDao {
     fun observeTask(taskId: Int): Flow<TaskWithSubtasks?>
 
     @Transaction
+    @Query("SELECT * FROM tasks WHERE id = :taskId")
+    suspend fun getTask(taskId: Int): TaskWithSubtasks?
+
+    @Transaction
     @Query(
         """
         SELECT * FROM tasks
@@ -140,6 +144,21 @@ interface TaskDao {
     suspend fun deleteTaskById(taskId: Int)
 
     @Transaction
+    suspend fun deleteTaskWithSnapshot(taskId: Int): TaskWithSubtasks? {
+        val snapshot = getTask(taskId) ?: return null
+        deleteTaskById(taskId)
+        return snapshot
+    }
+
+    @Transaction
+    suspend fun restoreTask(snapshot: TaskWithSubtasks) {
+        insertTask(snapshot.task)
+        if (snapshot.subtasks.isNotEmpty()) {
+            insertRestoredSubtasks(snapshot.subtasks)
+        }
+    }
+
+    @Transaction
     suspend fun replaceSubtasks(taskId: Int, subtasks: List<SubtaskEntity>) {
         deleteSubtasks(taskId)
         if (subtasks.isNotEmpty()) {
@@ -152,6 +171,9 @@ interface TaskDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSubtasks(subtasks: List<SubtaskEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertRestoredSubtasks(subtasks: List<SubtaskEntity>)
 
     @Query("SELECT * FROM tasks ORDER BY id ASC")
     fun observeLegacyTasks(): Flow<List<TaskEntity>>

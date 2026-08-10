@@ -179,6 +179,12 @@ class SharedViewModel @Inject constructor(
         }
     }
 
+    private fun restoreDeletedTask() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.restoreDeletedTask()
+        }
+    }
+
     private fun deleteAllTasks() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteAllTasks()
@@ -201,7 +207,7 @@ class SharedViewModel @Inject constructor(
                 deleteAllTasks()
             }
             Action.UNDO -> {
-                addTask()
+                restoreDeletedTask()
                 updateAction(Action.NO_ACTION)
             }
             else -> {

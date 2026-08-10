@@ -2,6 +2,7 @@ package com.indiewalkabout.nowdothis.feature.task.data.repository
 
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskDao
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
+import com.indiewalkabout.nowdothis.feature.task.data.local.TaskWithSubtasks
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Priority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ToDoTask
 import dagger.hilt.android.scopes.ViewModelScoped
@@ -12,6 +13,7 @@ import javax.inject.Inject
 // Temporary compatibility adapter for the legacy UI. Remove in Task 12.
 @ViewModelScoped
 class ToDoRepository @Inject constructor(private val taskDao: TaskDao) {
+    private var deletedTaskSnapshot: TaskWithSubtasks? = null
 
     val getAllTasks: Flow<List<ToDoTask>> = taskDao.observeLegacyTasks().mapToLegacyTasks()
     val sortByLowPriority: Flow<List<ToDoTask>> =
@@ -37,7 +39,14 @@ class ToDoRepository @Inject constructor(private val taskDao: TaskDao) {
     }
 
     suspend fun deleteTask(toDoTask: ToDoTask) {
-        taskDao.deleteTaskById(toDoTask.id)
+        val snapshot = taskDao.deleteTaskWithSnapshot(toDoTask.id) ?: return
+        deletedTaskSnapshot = snapshot
+    }
+
+    suspend fun restoreDeletedTask() {
+        val snapshot = deletedTaskSnapshot ?: return
+        taskDao.restoreTask(snapshot)
+        deletedTaskSnapshot = null
     }
 
     suspend fun deleteAllTasks() {
