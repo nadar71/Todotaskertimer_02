@@ -218,13 +218,13 @@ class AlarmManagerReminderSchedulerTest {
     )
 }
 
-private sealed interface AlarmCall {
+internal sealed interface AlarmCall {
     data class Exact(val taskId: Int, val triggerAt: Long) : AlarmCall
     data class Inexact(val taskId: Int, val triggerAt: Long) : AlarmCall
     data class Cancel(val taskId: Int) : AlarmCall
 }
 
-private class FakeAlarmGateway(
+internal class FakeAlarmGateway(
     override val canScheduleExact: Boolean,
     private val exactResults: MutableMap<Int, Boolean> = mutableMapOf(),
     private val inexactResults: MutableMap<Int, Boolean> = mutableMapOf(),
@@ -249,7 +249,7 @@ private class FakeAlarmGateway(
     }
 }
 
-private class FakeTaskRepository(
+internal class FakeTaskRepository(
     private val reminders: List<Task> = emptyList(),
     private val failingStatusTaskIds: Set<Int> = emptySet()
 ) : TaskRepository {

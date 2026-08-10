@@ -25,12 +25,13 @@ class NotificationPublisher @Inject constructor(
     suspend fun publish(taskId: Int): Boolean {
         if (!canPostNotifications()) return false
 
-        val taskTitle = taskRepository.getTask(taskId)
-            ?.takeUnless { it.isCompleted }
-            ?.title
-            ?.trim()
-            ?.takeIf(String::isNotEmpty)
-            ?: context.getString(R.string.reminder_notification_task_fallback)
+        val content = ReminderNotificationContent.from(taskRepository.getTask(taskId))
+            ?: return false
+        val taskTitle = when (content) {
+            ReminderNotificationContent.Fallback ->
+                context.getString(R.string.reminder_notification_task_fallback)
+            is ReminderNotificationContent.TaskTitle -> content.value
+        }
 
         createChannel()
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
