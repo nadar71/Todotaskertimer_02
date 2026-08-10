@@ -26,6 +26,11 @@
     <string name="sort_action">Sort tasks</string>
     <string name="delete_all_action">Delete all</string>
     <string name="add_button">Add button</string>
+    <string name="reminder_channel_name">Task reminders</string>
+    <string name="reminder_channel_description">Alerts for scheduled task reminders</string>
+    <string name="reminder_notification_title">Task reminder</string>
+    <string name="reminder_notification_body">It’s time for: %1$s</string>
+    <string name="reminder_notification_task_fallback">scheduled task</string>
 
     <plurals name="subtask_progress">
         <item quantity="one">%1$d of %2$d subtask complete</item>

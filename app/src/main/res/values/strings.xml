@@ -26,6 +26,11 @@
     <string name="sort_action">Ordina attività</string>
     <string name="delete_all_action">Elimina tutto</string>
     <string name="add_button">Pulsante aggiungi</string>
+    <string name="reminder_channel_name">Promemoria attività</string>
+    <string name="reminder_channel_description">Avvisi per i promemoria delle attività programmate</string>
+    <string name="reminder_notification_title">Promemoria attività</string>
+    <string name="reminder_notification_body">È il momento di: %1$s</string>
+    <string name="reminder_notification_task_fallback">attività programmata</string>
 
     <plurals name="subtask_progress">
         <item quantity="one">%1$d di %2$d sottoattività completata</item>
