@@ -1,4 +1,4 @@
-package com.indiewalkabout.nowdothis
+package com.indiewalkabout.nowdothis.app
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp

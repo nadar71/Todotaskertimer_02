@@ -1,0 +1,211 @@
+package com.indiewalkabout.nowdothis.feature.task.data.local
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface TaskDao {
+    @Transaction
+    @Query("SELECT * FROM tasks WHERE id = :taskId")
+    fun observeTask(taskId: Int): Flow<TaskWithSubtasks?>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE is_completed = 0
+          AND due_at < :endExclusive
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%')
+          AND (:categoryId IS NULL OR category_id = :categoryId)
+        ORDER BY due_at ASC, id ASC
+        """
+    )
+    fun observeOverdue(
+        endExclusive: Long,
+        query: String,
+        categoryId: Int?
+    ): Flow<List<TaskWithSubtasks>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE is_completed = 0
+          AND due_at >= :start
+          AND due_at < :end
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%')
+          AND (:categoryId IS NULL OR category_id = :categoryId)
+        ORDER BY due_at ASC, id ASC
+        """
+    )
+    fun observeDueBetween(
+        start: Long,
+        end: Long,
+        query: String,
+        categoryId: Int?
+    ): Flow<List<TaskWithSubtasks>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE is_completed = 0
+          AND due_at >= :startInclusive
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%')
+          AND (:categoryId IS NULL OR category_id = :categoryId)
+        ORDER BY due_at ASC, id ASC
+        """
+    )
+    fun observeUpcoming(
+        startInclusive: Long,
+        query: String,
+        categoryId: Int?
+    ): Flow<List<TaskWithSubtasks>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE is_completed = 0
+          AND due_at IS NULL
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%')
+          AND (:categoryId IS NULL OR category_id = :categoryId)
+        ORDER BY id ASC
+        """
+    )
+    fun observeUnscheduled(
+        query: String,
+        categoryId: Int?
+    ): Flow<List<TaskWithSubtasks>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE is_completed = 1
+          AND completed_at >= :start
+          AND completed_at < :end
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%')
+          AND (:categoryId IS NULL OR category_id = :categoryId)
+        ORDER BY completed_at DESC, id DESC
+        """
+    )
+    fun observeCompletedBetween(
+        start: Long,
+        end: Long,
+        query: String,
+        categoryId: Int?
+    ): Flow<List<TaskWithSubtasks>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE due_at >= :start
+          AND due_at < :end
+        ORDER BY due_at ASC, id ASC
+        """
+    )
+    fun observeMonth(start: Long, end: Long): Flow<List<TaskWithSubtasks>>
+
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM tasks
+        WHERE is_completed = 1
+          AND completed_at < :before
+          AND (:query = '' OR title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%')
+          AND (:categoryId IS NULL OR category_id = :categoryId)
+        ORDER BY completed_at DESC, id DESC
+        """
+    )
+    fun observeHistory(
+        before: Long,
+        query: String,
+        categoryId: Int?
+    ): Flow<List<TaskWithSubtasks>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertTask(entity: TaskEntity): Long
+
+    @Update
+    suspend fun updateTask(entity: TaskEntity)
+
+    @Query("DELETE FROM tasks WHERE id = :taskId")
+    suspend fun deleteTaskById(taskId: Int)
+
+    @Transaction
+    suspend fun replaceSubtasks(taskId: Int, subtasks: List<SubtaskEntity>) {
+        deleteSubtasks(taskId)
+        if (subtasks.isNotEmpty()) {
+            insertSubtasks(subtasks.map { it.copy(taskId = taskId) })
+        }
+    }
+
+    @Query("DELETE FROM subtasks WHERE task_id = :taskId")
+    suspend fun deleteSubtasks(taskId: Int)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSubtasks(subtasks: List<SubtaskEntity>)
+
+    @Query("SELECT * FROM tasks ORDER BY id ASC")
+    fun observeLegacyTasks(): Flow<List<TaskEntity>>
+
+    @Query("SELECT * FROM tasks WHERE id = :taskId")
+    fun observeLegacyTask(taskId: Int): Flow<TaskEntity?>
+
+    @Query("SELECT * FROM tasks WHERE title LIKE :searchQuery OR description LIKE :searchQuery ORDER BY id ASC")
+    fun searchLegacyTasks(searchQuery: String): Flow<List<TaskEntity>>
+
+    @Query(
+        """
+        SELECT * FROM tasks ORDER BY
+        CASE
+            WHEN priority = 'LOW' THEN 1
+            WHEN priority = 'MEDIUM' THEN 2
+            WHEN priority = 'HIGH' THEN 3
+            ELSE 4
+        END,
+        id ASC
+        """
+    )
+    fun sortLegacyByLowPriority(): Flow<List<TaskEntity>>
+
+    @Query(
+        """
+        SELECT * FROM tasks ORDER BY
+        CASE
+            WHEN priority = 'HIGH' THEN 1
+            WHEN priority = 'MEDIUM' THEN 2
+            WHEN priority = 'LOW' THEN 3
+            ELSE 4
+        END,
+        id ASC
+        """
+    )
+    fun sortLegacyByHighPriority(): Flow<List<TaskEntity>>
+
+    @Query(
+        """
+        UPDATE tasks
+        SET title = :title,
+            description = :description,
+            priority = :priority
+        WHERE id = :taskId
+        """
+    )
+    suspend fun updateLegacyFields(
+        taskId: Int,
+        title: String,
+        description: String,
+        priority: String
+    )
+
+    @Query("DELETE FROM tasks")
+    suspend fun deleteAllTasks()
+}
