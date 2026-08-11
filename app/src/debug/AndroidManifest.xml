@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity
+            android:name=".feature.category.presentation.CategoryTestActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity
             android:name="com.indiewalkabout.nowdothis.feature.task.presentation.editor.TaskEditorTestActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
