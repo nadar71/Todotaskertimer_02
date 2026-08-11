@@ -3,6 +3,8 @@ package com.indiewalkabout.nowdothis.feature.task.presentation.list
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsToggleable
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasContentDescription
@@ -116,6 +118,10 @@ class TaskListScreenTest {
         assertEquals(TaskListEvent.OpenTaskEditor(11), events[0])
         assertEquals(TaskListEvent.CompleteTask(11), events[1])
         assertEquals(TaskListEvent.DeleteTask(11), events[2])
+
+        composeRule.onNodeWithTag("task-complete-11")
+            .assertIsToggleable()
+            .assertIsOff()
     }
 
     @Test

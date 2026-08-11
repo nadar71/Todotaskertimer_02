@@ -187,6 +187,8 @@ class TaskEditorScreenTest {
 
         composeRule.onNodeWithText(context.getString(R.string.task_editor_reminder_not_active))
             .assertIsDisplayed()
+        composeRule.onNodeWithTag("task-reminder-status")
+            .assertTextEquals(context.getString(R.string.task_editor_reminder_not_active))
         composeRule.onNodeWithText(context.getString(R.string.task_editor_notification_denied))
             .assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.task_editor_inexact_notice))

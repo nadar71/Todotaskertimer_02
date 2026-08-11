@@ -208,7 +208,9 @@ private fun EditorForm(
             if (state.reminderStatus == ReminderStatus.UNAVAILABLE) {
                 Text(
                     text = stringResource(R.string.task_editor_reminder_not_active),
-                    modifier = Modifier.padding(top = 6.dp),
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .testTag("task-reminder-status"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -345,6 +347,9 @@ private fun RecurrenceControl(
             RecurrenceType.entries.forEach { recurrence ->
                 DropdownMenuItem(
                     text = { Text(recurrenceLabel(recurrence)) },
+                    modifier = Modifier.testTag(
+                        "task-recurrence-option-${recurrence.name.lowercase()}"
+                    ),
                     onClick = {
                         expanded = false
                         onEvent(TaskEditorEvent.SelectRecurrence(recurrence))

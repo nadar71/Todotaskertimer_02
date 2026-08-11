@@ -6,12 +6,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.compose.ui.unit.dp
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryColor
 import org.junit.Assert.assertEquals
@@ -32,8 +36,12 @@ class CategoryScreenTest {
 
         composeRule.onNodeWithText("Lavoro").assertIsDisplayed()
         composeRule.onNodeWithText("Clienti").assertIsDisplayed()
-        composeRule.onNodeWithTag("category-color-1").assertIsDisplayed()
+        composeRule.onNodeWithTag("category-color-1")
+            .assertIsDisplayed()
+            .assertContentDescriptionEquals(context.getString(R.string.category_color_blue))
         composeRule.onNodeWithTag("category-up-1").assertIsNotEnabled()
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
         composeRule.onNodeWithTag("category-down-1").assertIsEnabled()
         composeRule.onNodeWithTag("category-up-2").assertIsEnabled()
         composeRule.onNodeWithTag("category-down-2").assertIsNotEnabled()
@@ -83,6 +91,9 @@ class CategoryScreenTest {
         composeRule.onNodeWithText(context.getString(R.string.category_error_duplicate))
             .assertIsDisplayed()
         composeRule.onNodeWithTag("category-palette-green").performClick()
+        composeRule.onNodeWithTag("category-palette-green")
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
         composeRule.onNodeWithText(context.getString(R.string.category_save)).performClick()
 
         assertEquals(

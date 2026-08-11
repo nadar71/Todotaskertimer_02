@@ -202,7 +202,7 @@ private fun CategoryAction(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .testTag(tag)
             .semantics { contentDescription = label }
     ) {
@@ -304,7 +304,7 @@ private fun PaletteSwatch(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .testTag("category-palette-${color.name.lowercase()}")
             .semantics {
                 this.selected = selected
