@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
+import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderPermissionChecker
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -33,4 +34,10 @@ object NotificationModule {
     fun provideReminderScheduler(
         implementation: AlarmManagerReminderScheduler
     ): ReminderScheduler = implementation
+
+    @Provides
+    @Singleton
+    fun provideReminderPermissionChecker(
+        implementation: AndroidReminderPermissionChecker
+    ): ReminderPermissionChecker = implementation
 }

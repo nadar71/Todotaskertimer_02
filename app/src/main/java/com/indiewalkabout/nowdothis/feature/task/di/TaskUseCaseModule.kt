@@ -11,6 +11,8 @@ import com.indiewalkabout.nowdothis.feature.task.domain.usecase.DeleteAllTasks
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.DeleteTask
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ObserveTaskSections
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.RestoreDeletedTask
+import com.indiewalkabout.nowdothis.feature.task.domain.usecase.SaveTask
+import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ValidateTask
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -49,4 +51,11 @@ object TaskUseCaseModule {
         scheduler: ReminderScheduler,
         clock: AppClock
     ) = RestoreDeletedTask(repository, scheduler, clock)
+
+    @Provides
+    fun provideSaveTask(
+        repository: TaskRepository,
+        scheduler: ReminderScheduler,
+        clock: AppClock
+    ) = SaveTask(repository, scheduler, ValidateTask(), clock)
 }
