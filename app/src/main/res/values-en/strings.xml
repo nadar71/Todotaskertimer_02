@@ -136,9 +136,24 @@
     <string name="task_recurrence_daily">Daily</string>
     <string name="task_recurrence_weekly">Weekly</string>
     <string name="task_recurrence_monthly">Monthly</string>
+    <string name="calendar_title">Calendar</string>
+    <string name="calendar_add_task">Add task on selected date</string>
+    <string name="calendar_previous_month">Previous month</string>
+    <string name="calendar_next_month">Next month</string>
+    <string name="calendar_today">Today</string>
+    <string name="calendar_today_description">today</string>
+    <string name="calendar_selected_description">selected</string>
+    <string name="calendar_no_tasks">No tasks on this date.</string>
+    <string name="calendar_load_failed">Could not load the calendar.</string>
+    <string name="calendar_retry">Retry</string>
+    <string name="calendar_task_completed">Completed task</string>
 
     <plurals name="subtask_progress">
         <item quantity="one">%1$d of %2$d subtask complete</item>
         <item quantity="other">%1$d of %2$d subtasks complete</item>
+    </plurals>
+    <plurals name="calendar_task_count">
+        <item quantity="one">%1$d task</item>
+        <item quantity="other">%1$d tasks</item>
     </plurals>
 </resources>
