@@ -1,10 +1,14 @@
 package com.indiewalkabout.nowdothis.feature.task.data.repository
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import com.indiewalkabout.nowdothis.core.util.Constants.PREFERENCE_KEY
+import com.indiewalkabout.nowdothis.core.util.Constants.PREFERENCE_NAME
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSort
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskPreferencesRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -14,6 +18,10 @@ import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = PREFERENCE_NAME
+)
 
 @Singleton
 class DataStoreTaskPreferencesRepository @Inject constructor(

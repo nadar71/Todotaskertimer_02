@@ -97,7 +97,7 @@ class OfflineTaskRepository @Inject constructor(
         }
 
     override suspend fun deleteAll(): List<Int> = database.withTransaction {
-        val reminderTaskIds = taskDao.observeLegacyTasks().first()
+        val reminderTaskIds = taskDao.observeAllTaskEntities().first()
             .filter { entity ->
                 !entity.isCompleted &&
                     entity.reminderAt != null &&
@@ -148,7 +148,7 @@ class OfflineTaskRepository @Inject constructor(
         }
 
     override suspend fun futureReminders(after: Long): List<Task> = database.withTransaction {
-        taskDao.observeLegacyTasks().first()
+        taskDao.observeAllTaskEntities().first()
             .filter { entity ->
                 !entity.isCompleted &&
                     entity.reminderAt?.let { it > after } == true &&

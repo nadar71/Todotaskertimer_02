@@ -5,12 +5,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.indiewalkabout.nowdothis.feature.category.data.local.CategoryEntity
-import com.indiewalkabout.nowdothis.feature.task.data.repository.ToDoRepository
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskDao
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
-import com.indiewalkabout.nowdothis.feature.task.domain.model.Priority
-import com.indiewalkabout.nowdothis.feature.task.domain.model.ToDoTask
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -180,96 +177,6 @@ class TaskDaoTest {
 
         assertEquals(listOf(1, 2, 3), categories.map { it.id })
         assertEquals(listOf("WORK", "PERSONAL", "WISHLIST"), categories.map { it.defaultKey })
-    }
-
-    @Test
-    fun compatibilityUpdate_changesLegacyFieldsWithoutClearingV2Fields() = runTest {
-        database.categoryDao().insert(
-            CategoryEntity(id = 10, customName = "Clients", colorToken = "BLUE")
-        )
-        dao.insertTask(
-            TaskEntity(
-                id = 1,
-                title = "Before",
-                description = "Old",
-                priority = "LOW",
-                categoryId = 10,
-                dueAt = 500,
-                reminderAt = 400,
-                recurrence = "WEEKLY",
-                createdAt = 100,
-                updatedAt = 200
-            )
-        )
-        val repository = ToDoRepository(dao)
-
-        repository.updateTask(ToDoTask(1, "After", "New", Priority.HIGH))
-
-        val updated = dao.observeTask(1).first()!!.task
-        assertEquals("After", updated.title)
-        assertEquals("New", updated.description)
-        assertEquals("HIGH", updated.priority)
-        assertEquals(10, updated.categoryId)
-        assertEquals(500L, updated.dueAt)
-        assertEquals(400L, updated.reminderAt)
-        assertEquals("WEEKLY", updated.recurrence)
-        assertEquals(100L, updated.createdAt)
-        assertEquals(200L, updated.updatedAt)
-    }
-
-    @Test
-    fun compatibilityDeleteThenRestore_preservesCompleteTaskAndOrderedSubtasks() = runTest {
-        database.categoryDao().insert(
-            CategoryEntity(id = 10, customName = "Clients", colorToken = "BLUE")
-        )
-        val expectedTask = TaskEntity(
-            id = 42,
-            title = "Complete",
-            description = "Preserve every field",
-            priority = "HIGH",
-            categoryId = 10,
-            isCompleted = true,
-            completedAt = 900,
-            dueAt = 800,
-            reminderAt = 700,
-            reminderStatus = "SCHEDULED",
-            recurrence = "MONTHLY",
-            recurrenceEndAt = 1_200,
-            seriesId = "series-42",
-            createdAt = 100,
-            updatedAt = 950
-        )
-        val expectedSubtasks = listOf(
-            SubtaskEntity(
-                id = 91,
-                taskId = 42,
-                title = "First",
-                isCompleted = true,
-                completedAt = 901,
-                position = 0
-            ),
-            SubtaskEntity(
-                id = 90,
-                taskId = 42,
-                title = "Second",
-                isCompleted = false,
-                completedAt = null,
-                position = 1
-            )
-        )
-        dao.insertTask(expectedTask)
-        dao.replaceSubtasks(42, expectedSubtasks.reversed())
-        val repository = ToDoRepository(dao)
-
-        repository.deleteTask(ToDoTask(42, "Complete", "Preserve every field", Priority.HIGH))
-        assertNull(dao.observeTask(42).first())
-        assertEquals(0, scalarInt("SELECT COUNT(*) FROM subtasks WHERE task_id = 42"))
-
-        repository.restoreDeletedTask()
-
-        val restored = dao.observeTask(42).first()!!
-        assertEquals(expectedTask, restored.task)
-        assertEquals(expectedSubtasks, restored.subtasks.sortedBy { it.position })
     }
 
     private suspend fun insertTask(

@@ -204,57 +204,7 @@ interface TaskDao {
     suspend fun existingSubtaskIds(subtaskIds: List<Int>): List<Int>
 
     @Query("SELECT * FROM tasks ORDER BY id ASC")
-    fun observeLegacyTasks(): Flow<List<TaskEntity>>
-
-    @Query("SELECT * FROM tasks WHERE id = :taskId")
-    fun observeLegacyTask(taskId: Int): Flow<TaskEntity?>
-
-    @Query("SELECT * FROM tasks WHERE title LIKE :searchQuery OR description LIKE :searchQuery ORDER BY id ASC")
-    fun searchLegacyTasks(searchQuery: String): Flow<List<TaskEntity>>
-
-    @Query(
-        """
-        SELECT * FROM tasks ORDER BY
-        CASE
-            WHEN priority = 'LOW' THEN 1
-            WHEN priority = 'MEDIUM' THEN 2
-            WHEN priority = 'HIGH' THEN 3
-            ELSE 4
-        END,
-        id ASC
-        """
-    )
-    fun sortLegacyByLowPriority(): Flow<List<TaskEntity>>
-
-    @Query(
-        """
-        SELECT * FROM tasks ORDER BY
-        CASE
-            WHEN priority = 'HIGH' THEN 1
-            WHEN priority = 'MEDIUM' THEN 2
-            WHEN priority = 'LOW' THEN 3
-            ELSE 4
-        END,
-        id ASC
-        """
-    )
-    fun sortLegacyByHighPriority(): Flow<List<TaskEntity>>
-
-    @Query(
-        """
-        UPDATE tasks
-        SET title = :title,
-            description = :description,
-            priority = :priority
-        WHERE id = :taskId
-        """
-    )
-    suspend fun updateLegacyFields(
-        taskId: Int,
-        title: String,
-        description: String,
-        priority: String
-    )
+    fun observeAllTaskEntities(): Flow<List<TaskEntity>>
 
     @Query("DELETE FROM tasks")
     suspend fun deleteAllTasks()
