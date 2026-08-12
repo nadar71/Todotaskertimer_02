@@ -3,6 +3,8 @@
 This directory records the architecture that is implemented in Now Do This as of
 2026-08-12. The app deliberately remains a single Android application module with
 feature-first packages, Clean MVVM boundaries, and unidirectional data flow.
+ViewModels may consume domain repository contracts directly for simple reads,
+mutations, and screen coordination; multi-step workflows use domain use cases.
 
 Now Do This is local-first. It has no account, backend, analytics SDK, or network
 synchronization. Room is the source of truth for task data, DataStore holds local

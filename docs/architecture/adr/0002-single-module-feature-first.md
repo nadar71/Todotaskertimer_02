@@ -17,8 +17,8 @@ dependency management, and build maintenance before it creates enforceable value
 ## Decision
 
 Retain the single `:app` Gradle module and feature-first package structure. Preserve
-the dependency direction inside that module through domain contracts, use cases,
-repository implementations, package ownership, and focused tests.
+the dependency direction inside that module through domain contracts, selectively
+applied use cases, repository implementations, package ownership, and focused tests.
 
 A new module requires at least one of:
 

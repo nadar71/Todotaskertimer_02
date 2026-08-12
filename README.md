@@ -16,7 +16,7 @@ Now Do This is a local-first Android task manager built with Kotlin and Jetpack 
 
 ## Architecture
 
-Now Do This deliberately uses a single `:app` Gradle module with feature-first Clean MVVM packages and local-first storage. See the [architecture documentation and decision records](docs/architecture/README.md) for system context, UDF data flow, platform boundaries, trade-offs, and objective modularization triggers.
+Now Do This deliberately uses a single `:app` Gradle module with feature-first Clean MVVM packages and local-first storage. ViewModels use domain repository contracts directly for simple reads, mutations, and screen coordination; multi-step workflows use use cases. See the [architecture documentation and decision records](docs/architecture/README.md) for system context, UDF data flow, platform boundaries, trade-offs, and objective modularization triggers.
 
 ## Build And Test
 
