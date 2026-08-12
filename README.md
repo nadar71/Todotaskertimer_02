@@ -16,13 +16,7 @@ Now Do This is a local-first Android task manager built with Kotlin and Jetpack 
 
 ## Architecture
 
-The app uses one Gradle module with feature-first packages for `task`, `category`, `calendar`, and `history`. Each feature follows clean MVVM boundaries:
-
-```text
-Compose -> ViewModel -> use case -> repository contract -> repository implementation -> Room/platform
-```
-
-Observable data uses `Flow`; screen state uses immutable `StateFlow`; one-time UI work uses effect flows. Navigation uses Navigation 3 serializable keys with saveable-state and destination-scoped ViewModel decorators. Room data stays local and schema changes use explicit migrations.
+Now Do This deliberately uses a single `:app` Gradle module with feature-first Clean MVVM packages and local-first storage. See the [architecture documentation and decision records](docs/architecture/README.md) for system context, UDF data flow, platform boundaries, trade-offs, and objective modularization triggers.
 
 ## Build And Test
 
