@@ -27,6 +27,14 @@ Now Do This deliberately uses a single `:app` Gradle module with feature-first C
 
 The connected suite includes Room migration/DAO tests, feature Compose tests, navigation contracts, localization checks, and a production-activity journey covering category creation, recurring task completion, Calendar, and History.
 
+## Pull-Request Quality Gate
+
+GitHub Actions runs the following gate for every pull request and pushes to `develop`; it also publishes test and lint reports in the `android-quality-reports` artifact.
+
+```bash
+./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
 ## Verification Status
 
 Automated JVM tests, Android-test compilation, lint, and debug assembly are required before integration. The following physical/emulator checks remain intentionally recorded as manual gates until those API levels are attached:
