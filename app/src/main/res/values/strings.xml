@@ -189,18 +189,22 @@
 
     <plurals name="portability_category_count">
         <item quantity="one">%1$d categoria</item>
+        <item quantity="many">%1$d categorie</item>
         <item quantity="other">%1$d categorie</item>
     </plurals>
     <plurals name="portability_task_count">
         <item quantity="one">%1$d attività</item>
+        <item quantity="many">%1$d attività</item>
         <item quantity="other">%1$d attività</item>
     </plurals>
     <plurals name="portability_completed_task_count">
         <item quantity="one">%1$d completata</item>
+        <item quantity="many">%1$d completate</item>
         <item quantity="other">%1$d completate</item>
     </plurals>
     <plurals name="portability_subtask_count">
         <item quantity="one">%1$d sottoattività</item>
+        <item quantity="many">%1$d sottoattività</item>
         <item quantity="other">%1$d sottoattività</item>
     </plurals>
 
