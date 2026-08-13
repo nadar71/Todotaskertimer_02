@@ -8,7 +8,7 @@ These measurements are development evidence collected on an Android emulator. Th
 - Device: Android Studio `Medium_Phone` AVD (`sdk_gphone64_arm64`)
 - API level: 36
 - Serial: `emulator-5554`
-- Source base: `7982f74275dccd2fb0dfb0a5bfd3c6eeffed247e` plus the Task 3 benchmark working tree
+- Source revision: `4b8c3b7` (`feature/production-readiness`)
 - App variant: `nonMinifiedRelease`
 - Benchmark library: Macrobenchmark 1.4.1
 - Iterations: 10 per benchmark and compilation mode
@@ -21,10 +21,10 @@ Cold startup used `StartupTimingMetric` and `StartupMode.COLD`.
 
 | Compilation mode | Median time to initial display | Minimum | Maximum |
 | --- | ---: | ---: | ---: |
-| None | 1122.776063 ms | 822.6755 ms | 2636.928168 ms |
-| Partial, Baseline Profile required | 1028.6894585 ms | 839.474542 ms | 2796.53921 ms |
+| None | 1062.4002504999999 ms | 691.967376 ms | 1780.212043 ms |
+| Partial, Baseline Profile required | 951.897917 ms | 777.244333 ms | 2715.14821 ms |
 
-The profiled median was lower in this run, but the high coefficients of variation (`0.45190022009563574` and `0.4950722813220284`) make this emulator result unsuitable for a performance claim.
+The profiled median was lower in this run, but the coefficients of variation (`0.3248257136212406` and `0.4933481599058441`) make this emulator result unsuitable for a performance claim.
 
 ## Task List
 
@@ -32,10 +32,10 @@ The task-list journey used `FrameTimingMetric`, a deterministic 750-task fixture
 
 | Metric | P50 | P90 | P95 | P99 |
 | --- | ---: | ---: | ---: | ---: |
-| Frame CPU duration | 53.977291 ms | 98.31263320000006 ms | 128.3229792999999 ms | 205.3283940000001 ms |
-| Frame overrun | 57.525386 ms | 117.041241 ms | 157.9542595999996 ms | 281.24893020000025 ms |
+| Frame CPU duration | 54.5372495 ms | 94.32473320000001 ms | 116.83379189999998 ms | 187.38062811999998 ms |
+| Frame overrun | 58.679449 ms | 117.1492548 ms | 142.71264859999985 ms | 249.9934124299998 ms |
 
-Frame count across the 10 runs had a median of `39.5`, minimum `31`, maximum `45`, and coefficient of variation `0.0964021912134672`.
+Frame count across the 10 runs had a median of `39`, minimum `30`, maximum `45`, and coefficient of variation `0.13017661116753135`.
 
 ## Follow-Up
 

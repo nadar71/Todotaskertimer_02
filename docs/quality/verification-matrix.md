@@ -9,9 +9,9 @@ Only `Passed`, `Failed`, and `Pending` are valid statuses. Emulator and physical
 | Debug assembly | Passed | `./gradlew :app:assembleDebug` | Local macOS, API 36 SDK | 2026-08-13 | Debug APK |
 | Optimized release APK/AAB | Passed | `./gradlew clean :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease` | Local macOS | 2026-08-13 | AAB, R8 mapping files, release docs |
 | Feature Compose tests | Passed | Feature-package `connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 39 tests passed; accessibility checklist |
-| Full connected suite | Pending | `./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | - | Final gate not yet run at this revision |
-| Room migration and DAO behavior | Pending | Full connected suite | Medium Phone AVD, API 36 | - | Awaiting final connected gate |
-| Localization | Pending | Full connected suite plus Italian/English screenshot smoke | Medium Phone AVD, API 36 | 2026-08-13 | Screenshots captured; automated final gate pending |
+| Full connected suite | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 57 tests passed |
+| Room migration and DAO behavior | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-13 | DAO and migration tests passed within the 57-test suite |
+| Localization | Passed | Full connected suite plus Italian/English screenshot smoke | Medium Phone AVD, API 36 | 2026-08-13 | Automated localization tests and product screenshots |
 | Baseline Profile generation | Passed | `./gradlew :app:generateBaselineProfile` | Medium Phone AVD, API 36 | 2026-08-13 | Generated profiles under `app/src/release` |
 | Baseline Profile packaging | Passed | Inspect release AAB | Local release build | 2026-08-13 | `BUNDLE-METADATA/com.android.tools.build.profiles/baseline.prof` |
 | Startup/list benchmark | Passed | Macrobenchmark classes, 10 iterations each | Medium Phone AVD, API 36 | 2026-08-13 | [Results](../performance/results-2026-08.md) |
