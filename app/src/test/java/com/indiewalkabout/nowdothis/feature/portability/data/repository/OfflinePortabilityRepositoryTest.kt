@@ -12,6 +12,7 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCat
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PortabilityException
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.RestoreFailed
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.UnsupportedFutureVersion
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.WriteFailed
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -38,6 +39,30 @@ class OfflinePortabilityRepositoryTest {
     }
 
     @Test
+    fun createBackup_writesPayloadAtExactSizeLimit() = runTest {
+        val backup = backupWithEncodedSize(BackupValidator.MAX_DOCUMENT_SIZE_BYTES.toInt())
+        val documents = FakeDocumentGateway()
+        val repository = repository(FakePlanningDataStore(backup), documents, now = backup.createdAtEpochMillis)
+
+        repository.createBackup(DocumentReference("destination"))
+
+        assertEquals(BackupValidator.MAX_DOCUMENT_SIZE_BYTES.toInt(), documents.writes.single().second.size)
+    }
+
+    @Test
+    fun createBackup_rejectsPayloadOneByteOverSizeLimitBeforeWrite() = runTest {
+        val backup = backupWithEncodedSize(BackupValidator.MAX_DOCUMENT_SIZE_BYTES.toInt() + 1)
+        val documents = FakeDocumentGateway()
+        val repository = repository(FakePlanningDataStore(backup), documents, now = backup.createdAtEpochMillis)
+
+        val error = runCatching { repository.createBackup(DocumentReference("destination")) }
+            .exceptionOrNull() as PortabilityException
+
+        assertSame(DocumentTooLarge, error.error)
+        assertTrue(documents.writes.isEmpty())
+    }
+
+    @Test
     fun inspectBackup_readsWithinBoundDecodesAndReturnsValidatedCandidate() = runTest {
         val document = validBackup(createdAt = 777L)
         val documents = FakeDocumentGateway(readBytes = BackupCodec().encode(document))
@@ -55,6 +80,52 @@ class OfflinePortabilityRepositoryTest {
         val repository = repository(
             FakePlanningDataStore(),
             FakeDocumentGateway(readBytes = "not json".encodeToByteArray())
+        )
+
+        val error = runCatching { repository.inspectBackup(DocumentReference("source")) }
+            .exceptionOrNull() as PortabilityException
+
+        assertSame(InvalidBackup, error.error)
+    }
+
+    @Test
+    fun inspectBackup_mapsMalformedUtf8ToInvalidBackupWithoutReplacement() = runTest {
+        val store = FakePlanningDataStore()
+        val repository = repository(
+            store,
+            FakeDocumentGateway(readBytes = byteArrayOf('{'.code.toByte(), 0xC3.toByte(), '}'.code.toByte()))
+        )
+
+        val error = runCatching { repository.inspectBackup(DocumentReference("source")) }
+            .exceptionOrNull() as PortabilityException
+
+        assertSame(InvalidBackup, error.error)
+        assertTrue(store.replacementRequests.isEmpty())
+    }
+
+    @Test
+    fun inspectBackup_reportsFutureVersionBeforeDecodingChangedPayload() = runTest {
+        val store = FakePlanningDataStore()
+        val repository = repository(
+            store,
+            FakeDocumentGateway(
+                readBytes = """{"format":"now-do-this-backup","version":2,"items":"v2-shape"}"""
+                    .encodeToByteArray()
+            )
+        )
+
+        val error = runCatching { repository.inspectBackup(DocumentReference("source")) }
+            .exceptionOrNull() as PortabilityException
+
+        assertEquals(UnsupportedFutureVersion(2), error.error)
+        assertTrue(store.replacementRequests.isEmpty())
+    }
+
+    @Test
+    fun inspectBackup_mapsMissingFutureFormatHeaderToInvalidBackup() = runTest {
+        val repository = repository(
+            FakePlanningDataStore(),
+            FakeDocumentGateway(readBytes = """{"version":2,"items":[]}""".encodeToByteArray())
         )
 
         val error = runCatching { repository.inspectBackup(DocumentReference("source")) }
@@ -187,3 +258,12 @@ private fun backupSummary(createdAt: Long) =
         completedTaskCount = 0,
         subtaskCount = 0
     )
+
+private fun backupWithEncodedSize(targetSize: Int): PlanningBackup {
+    val codec = BackupCodec()
+    val base = validBackup()
+    val baseSize = codec.encode(base).size
+    return base.copy(
+        tasks = base.tasks.map { task -> task.copy(description = "x".repeat(targetSize - baseSize)) }
+    ).also { backup -> assertEquals(targetSize, codec.encode(backup).size) }
+}

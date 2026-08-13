@@ -78,12 +78,17 @@ Subtask completion fields follow the same consistency rule as task completion fi
   `id`, and each task's subtasks by `position` then `id`.
 - Version 1 ignores unknown JSON keys so additive metadata from a compatible writer
   does not prevent restore.
+- UTF-8 decoding is strict. Malformed byte sequences are invalid and are never replaced
+  with substitute characters before restore.
 - Missing required fields, invalid JSON types, unknown stable values, duplicate IDs
   or positions, and broken category/subtask references are invalid.
-- Only version `1` is supported. A version greater than `1` is rejected as a future
-  format before any data changes. Zero, negative, or malformed versions are invalid.
-- The maximum accepted document size is 10 MiB (10,485,760 bytes). Larger documents
-  are rejected before an unbounded in-memory read.
+- Only version `1` is supported. The required `format` and `version` envelope is read
+  before the v1 payload. A version greater than `1` with the correct format is rejected
+  as a future format even when its payload has a different schema. Missing headers,
+  a wrong format, and zero, negative, or malformed versions are invalid.
+- The maximum generated or accepted document size is 10 MiB (10,485,760 bytes).
+  Larger exports are rejected before writing, and larger imports are rejected before
+  an unbounded in-memory read.
 - Timestamps are signed epoch-millisecond integers. Past dates are retained; alarm
   eligibility is decided after restore.
 

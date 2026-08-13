@@ -16,6 +16,7 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.Portability
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PortabilityResult
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.ReadFailed
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.RestoreFailed
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.UnsupportedFutureVersion
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.WriteFailed
 import com.indiewalkabout.nowdothis.feature.portability.domain.repository.PortabilityRepository
 import javax.inject.Inject
@@ -35,10 +36,16 @@ class OfflinePortabilityRepository @Inject constructor(
         withContext(dispatcher) {
             try {
                 val backup = planningDataStore.snapshot(clock.nowMillis())
-                documentGateway.write(reference, backupCodec.encode(backup))
+                val bytes = backupCodec.encode(backup)
+                if (bytes.size.toLong() > BackupValidator.MAX_DOCUMENT_SIZE_BYTES) {
+                    throw PortabilityException(DocumentTooLarge)
+                }
+                documentGateway.write(reference, bytes)
                 PortabilityResult.Exported(backup.summary())
             } catch (cancellation: CancellationException) {
                 throw cancellation
+            } catch (portability: PortabilityException) {
+                throw portability
             } catch (_: Exception) {
                 throw PortabilityException(WriteFailed)
             }
@@ -54,6 +61,20 @@ class OfflinePortabilityRepository @Inject constructor(
                 throw PortabilityException(DocumentTooLarge)
             } catch (_: Exception) {
                 throw PortabilityException(ReadFailed)
+            }
+
+            val envelope = try {
+                backupCodec.decodeEnvelope(bytes)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                throw PortabilityException(InvalidBackup)
+            }
+            if (envelope.format != BackupCodec.SUPPORTED_FORMAT || envelope.version <= 0) {
+                throw PortabilityException(InvalidBackup)
+            }
+            if (envelope.version > BackupCodec.SUPPORTED_VERSION) {
+                throw PortabilityException(UnsupportedFutureVersion(envelope.version))
             }
 
             val backup = try {

@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.nio.charset.CharacterCodingException
 
 class BackupCodecTest {
     private val codec = BackupCodec()
@@ -87,13 +88,32 @@ class BackupCodecTest {
         assertDecodeFails(encoded.replaceFirst("\"version\":1,", ""))
     }
 
+    @Test
+    fun decode_rejectsMalformedUtf8InsteadOfReplacingInvalidBytes() {
+        val encoded = codec.encode(sampleBackup())
+        val titleStart = encoded.indexOfSubsequence("Task".encodeToByteArray())
+        encoded[titleStart] = 0xC3.toByte()
+
+        assertDecodeFails(encoded)
+    }
+
     private fun assertDecodeFails(document: String) {
+        assertDecodeFails(document.encodeToByteArray())
+    }
+
+    private fun assertDecodeFails(document: ByteArray) {
         try {
-            codec.decode(document.encodeToByteArray())
-            fail("Expected a missing required header to fail decoding")
+            codec.decode(document)
+            fail("Expected document decoding to fail")
         } catch (_: SerializationException) {
+        } catch (_: CharacterCodingException) {
         }
     }
+
+    private fun ByteArray.indexOfSubsequence(value: ByteArray): Int =
+        indices.first { start ->
+            start + value.size <= size && value.indices.all { offset -> this[start + offset] == value[offset] }
+        }
 
     private fun sampleBackup() = PlanningBackup(
         format = "now-do-this-backup",
