@@ -62,7 +62,7 @@ class AlarmManagerReminderScheduler @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {
-            // A single stale or failed row must not block the remaining reminders.
+            return ReminderStatus.UNAVAILABLE
         }
         return status
     }

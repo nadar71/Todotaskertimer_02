@@ -180,7 +180,7 @@ class AlarmManagerReminderSchedulerTest {
     }
 
     @Test
-    fun reconcile_continuesWhenOneStatusUpdateFails() = runTest {
+    fun reconcile_reportsUnavailableAndContinuesWhenOneStatusUpdateFails() = runTest {
         val repository = FakeTaskRepository(
             reminders = listOf(
                 task(id = 1, reminderAt = 2_000, status = ReminderStatus.REQUESTED),
@@ -190,9 +190,10 @@ class AlarmManagerReminderSchedulerTest {
         )
         val scheduler = scheduler(FakeAlarmGateway(canScheduleExact = true), repository)
 
-        scheduler.reconcile()
+        val result = scheduler.reconcileWithResult()
 
         assertEquals(listOf(2 to ReminderStatus.SCHEDULED), repository.statusUpdates)
+        assertEquals(ReminderReconcileResult.SOME_UNAVAILABLE, result)
     }
 
     private fun scheduler(
