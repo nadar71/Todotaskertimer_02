@@ -8,6 +8,7 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.Portability
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.RestoreFailed
 import com.indiewalkabout.nowdothis.feature.portability.domain.repository.PortabilityRepository
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
+import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderReconcileResult
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -58,6 +59,24 @@ class RestoreBackupTest {
     }
 
     @Test
+    fun restore_returnsWarningWhenReconciliationReportsUnavailableReminders() = runTest {
+        val events = mutableListOf<String>()
+        val candidate = candidate()
+        val repository = FakePortabilityRepository(events, replacedIds = setOf(4))
+        val result = RestoreBackup(
+            repository = repository,
+            reminderScheduler = FakeReminderScheduler(
+                events = events,
+                reconcileResult = ReminderReconcileResult.SOME_UNAVAILABLE
+            )
+        )(candidate)
+
+        assertEquals(listOf("replace", "cancel:4", "reconcile"), events)
+        assertEquals(1, repository.replaceCalls)
+        assertEquals(PortabilityResult.RestoredWithReminderWarning(candidate.summary), result)
+    }
+
+    @Test
     fun restore_attemptsRemainingCancelsAndReconcileAfterACancelFailure() = runTest {
         val events = mutableListOf<String>()
         val candidate = candidate()
@@ -100,7 +119,8 @@ private class FakePortabilityRepository(
 private class FakeReminderScheduler(
     private val events: MutableList<String>,
     private val failingCancelId: Int? = null,
-    private val failReconcile: Boolean = false
+    private val failReconcile: Boolean = false,
+    private val reconcileResult: ReminderReconcileResult = ReminderReconcileResult.SUCCESS
 ) : ReminderScheduler {
     override suspend fun schedule(
         taskId: Int,
@@ -115,6 +135,11 @@ private class FakeReminderScheduler(
     override suspend fun reconcile() {
         events += "reconcile"
         if (failReconcile) error("reconcile failed")
+    }
+
+    override suspend fun reconcileWithResult(): ReminderReconcileResult {
+        reconcile()
+        return reconcileResult
     }
 }
 

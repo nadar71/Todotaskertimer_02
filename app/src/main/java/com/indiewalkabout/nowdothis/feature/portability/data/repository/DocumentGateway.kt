@@ -23,7 +23,7 @@ class AndroidDocumentGateway @Inject constructor(
     private val contentResolver: ContentResolver = context.contentResolver
 
     override suspend fun write(reference: DocumentReference, bytes: ByteArray) {
-        contentResolver.openOutputStream(Uri.parse(reference.value))?.use { stream ->
+        contentResolver.openOutputStream(Uri.parse(reference.value), "wt")?.use { stream ->
             stream.write(bytes)
         } ?: throw IOException("Unable to open output stream")
     }

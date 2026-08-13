@@ -6,6 +6,7 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.Portability
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.RestoreFailed
 import com.indiewalkabout.nowdothis.feature.portability.domain.repository.PortabilityRepository
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
+import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderReconcileResult
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 
@@ -35,7 +36,9 @@ class RestoreBackup @Inject constructor(
             }
         }
         try {
-            reminderScheduler.reconcile()
+            if (reminderScheduler.reconcileWithResult() == ReminderReconcileResult.SOME_UNAVAILABLE) {
+                reminderWarning = true
+            }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {

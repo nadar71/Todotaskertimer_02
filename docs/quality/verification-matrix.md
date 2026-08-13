@@ -4,15 +4,15 @@ Only `Passed`, `Failed`, and `Pending` are valid statuses. Emulator and physical
 
 | Area | Status | Command or procedure | Environment | Date | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| JVM tests | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-13 | 149 tests passed; 35 portability tests |
+| JVM tests | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-13 | 156 tests passed; 42 portability tests |
 | Android lint | Passed | `./gradlew :app:lintDebug` | Local macOS | 2026-08-13 | `app/build/reports/lint-results-debug.html` |
 | Debug assembly | Passed | `./gradlew :app:assembleDebug` | Local macOS, API 36 SDK | 2026-08-13 | Debug APK |
 | Optimized release APK/AAB | Passed | `./gradlew clean :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease` | Local macOS | 2026-08-13 | AAB, R8 mapping files, release docs |
 | Feature Compose tests | Passed | Feature-package `connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 39 tests passed; accessibility checklist |
-| Full connected suite | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 68 tests passed; 0 skipped, 0 failed |
-| Room migration and DAO behavior | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-13 | DAO, migration, Replace All, and rollback tests passed within the 68-test suite |
-| Data portability JVM contracts | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-13 | 35 codec, validator, repository, use-case, and ViewModel tests passed |
-| Data portability connected journey | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 10 portability tests passed, including 3 export/mutate/restore and no-mutation journey proofs |
+| Full connected suite | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 69 tests passed; 0 skipped, 0 failed |
+| Room migration and DAO behavior | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-13 | DAO, migration, Replace All, and rollback tests passed within the 69-test suite |
+| Data portability JVM contracts | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-13 | 42 codec, validator, repository, use-case, and ViewModel tests passed |
+| Data portability connected journey | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 11 portability tests passed, including provider truncation and 3 export/mutate/restore and no-mutation journey proofs |
 | Localization | Passed | Full connected suite plus Italian/English screenshot smoke | Medium Phone AVD, API 36 | 2026-08-13 | Automated localization tests and product screenshots |
 | Baseline Profile generation | Passed | `./gradlew :app:generateBaselineProfile` | Medium Phone AVD, API 36 | 2026-08-13 | Generated profiles under `app/src/release` |
 | Baseline Profile packaging | Passed | Inspect release AAB | Local release build | 2026-08-13 | `baseline.prof`, `classes.dex` (3 DEX entries), and `resources.pb` present |
