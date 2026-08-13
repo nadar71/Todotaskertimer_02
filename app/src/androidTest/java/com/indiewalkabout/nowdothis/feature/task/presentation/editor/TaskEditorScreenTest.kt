@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -74,8 +75,10 @@ class TaskEditorScreenTest {
             .assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.task_editor_error_description_required))
             .assertIsDisplayed()
+        scrollEditorTo(REMINDER_ITEM_INDEX)
         composeRule.onNodeWithText(context.getString(R.string.task_editor_error_reminder_after_due))
             .assertIsDisplayed()
+        scrollEditorTo(RECURRENCE_ITEM_INDEX)
         composeRule.onNodeWithText(context.getString(R.string.task_editor_error_recurrence_due_required))
             .assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.task_editor_error_end_before_due))
@@ -123,6 +126,7 @@ class TaskEditorScreenTest {
 
         composeRule.onNodeWithTag("task-due-clear").performClick()
         composeRule.onNodeWithTag("task-reminder-clear").performClick()
+        scrollEditorTo(RECURRENCE_ITEM_INDEX)
         composeRule.onNodeWithTag("task-recurrence-field").performClick()
         composeRule.onNodeWithText(context.getString(R.string.task_recurrence_weekly)).performClick()
 
@@ -151,6 +155,7 @@ class TaskEditorScreenTest {
             onEvent = events::add
         )
 
+        scrollEditorTo(SUBTASK_ITEM_INDEX)
         composeRule.onNodeWithTag("subtask-title--1").performTextReplacement("Renamed")
         assertEquals(listOf(TaskEditorEvent.RenameSubtask(-1, "Renamed")), events)
 
@@ -191,6 +196,7 @@ class TaskEditorScreenTest {
             )
         )
 
+        scrollEditorTo(REMINDER_ITEM_INDEX)
         composeRule.onNodeWithText(context.getString(R.string.task_editor_reminder_not_active))
             .assertIsDisplayed()
         composeRule.onNodeWithTag("task-reminder-status")
@@ -227,6 +233,17 @@ class TaskEditorScreenTest {
             }
         }
         composeRule.waitForIdle()
+    }
+
+    private fun scrollEditorTo(index: Int) {
+        composeRule.onNodeWithTag("task-editor-form").performScrollToIndex(index)
+        composeRule.waitForIdle()
+    }
+
+    private companion object {
+        const val REMINDER_ITEM_INDEX = 5
+        const val RECURRENCE_ITEM_INDEX = 6
+        const val SUBTASK_ITEM_INDEX = 7
     }
 }
 

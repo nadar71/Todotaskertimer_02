@@ -147,7 +147,8 @@ private fun EditorForm(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .imePadding(),
+            .imePadding()
+            .testTag("task-editor-form"),
         contentPadding = PaddingValues(
             start = 16.dp,
             top = contentPadding.calculateTopPadding() + 8.dp,

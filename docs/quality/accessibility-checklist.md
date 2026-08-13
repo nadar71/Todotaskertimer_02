@@ -28,7 +28,7 @@
 | Check | Environment | Date | Result |
 | --- | --- | --- | --- |
 | Feature Compose semantics | Medium Phone AVD, API 36 | 2026-08-13 | Passed after accessibility fixes |
-| Large font, `font_scale=2.0` | Medium Phone AVD, API 36 | - | Pending dedicated run |
+| Large font, `font_scale=2.0` | Medium Phone AVD, API 36 | 2026-08-13 | Passed: 39 feature tests |
 | Light and dark contrast review | Pending physical-device review | - | Pending |
 | TalkBack: create task | Pending physical-device review | - | Pending |
 | TalkBack: complete task | Pending physical-device review | - | Pending |

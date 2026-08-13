@@ -16,7 +16,7 @@ Only `Passed`, `Failed`, and `Pending` are valid statuses. Emulator and physical
 | Baseline Profile packaging | Passed | Inspect release AAB | Local release build | 2026-08-13 | `BUNDLE-METADATA/com.android.tools.build.profiles/baseline.prof` |
 | Startup/list benchmark | Passed | Macrobenchmark classes, 10 iterations each | Medium Phone AVD, API 36 | 2026-08-13 | [Results](../performance/results-2026-08.md) |
 | Accessibility semantics | Passed | Feature Compose tests and lint | Medium Phone AVD, API 36 | 2026-08-13 | [Checklist](accessibility-checklist.md) |
-| Large font at 200% | Pending | Feature tests and manual layout pass at `font_scale=2.0` | Medium Phone AVD, API 36 | - | Dedicated run pending |
+| Large font at 200% | Passed | Feature tests at `font_scale=2.0`, including editor scroll reachability | Medium Phone AVD, API 36 | 2026-08-13 | 39 feature tests passed; accessibility checklist |
 | Light/dark contrast | Pending | Manual visual review | Physical release candidate | - | Manual review pending |
 | TalkBack workflows | Pending | Create, complete, delete/undo, categories, Calendar, History | Physical release candidate | - | Manual review pending |
 | Notification permission | Pending | Deny/grant and reminder delivery | API 33+ physical device | - | Manual platform check pending |
