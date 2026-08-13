@@ -47,7 +47,12 @@ class BackupValidatorTest {
     }
 
     @Test
-    fun validate_rejectsDuplicateOrNonPositiveIdsAndPositions() {
+    fun validate_acceptsZeroBasedPositions() {
+        assertTrue(validate(validBackup()) is BackupValidationResult.Valid)
+    }
+
+    @Test
+    fun validate_rejectsDuplicateOrNonPositiveIdsAndNegativePositions() {
         assertError<InvalidBackup>(validate(validBackup().copy(categories = listOf(category(), category()))))
         assertError<InvalidBackup>(validate(validBackup().copy(categories = listOf(category(id = 0)))))
         assertError<InvalidBackup>(validate(validBackup().copy(categories = listOf(category(position = -1)))))

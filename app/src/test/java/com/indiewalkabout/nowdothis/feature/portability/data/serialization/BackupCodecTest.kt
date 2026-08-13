@@ -6,7 +6,13 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSub
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class BackupCodecTest {
     private val codec = BackupCodec()
@@ -49,6 +55,21 @@ class BackupCodecTest {
     }
 
     @Test
+    fun encode_alwaysWritesTheExactV1Headers() {
+        val backup = sampleBackup().copy(format = "untrusted-format", version = 99)
+
+        val document = Json.parseToJsonElement(codec.encode(backup).decodeToString()).jsonObject
+        val decoded = codec.decode(codec.encode(backup))
+
+        assertEquals(BackupDocumentV1.FORMAT, document.getValue("format").jsonPrimitive.content)
+        assertEquals(BackupDocumentV1.VERSION, document.getValue("version").jsonPrimitive.int)
+        assertEquals(
+            backup.copy(format = BackupDocumentV1.FORMAT, version = BackupDocumentV1.VERSION).sorted(),
+            decoded
+        )
+    }
+
+    @Test
     fun decode_ignoresUnknownRootAndNestedKeys() {
         val encoded = codec.encode(sampleBackup()).decodeToString()
             .replace("\"format\":", "\"futureRootField\":true,\"format\":")
@@ -56,6 +77,22 @@ class BackupCodecTest {
             .replace("\"title\":\"First\"", "\"futureSubtaskField\":\"value\",\"title\":\"First\"")
 
         assertEquals(sampleBackup().sorted(), codec.decode(encoded.encodeToByteArray()))
+    }
+
+    @Test
+    fun decode_rejectsDocumentsMissingRequiredHeaders() {
+        val encoded = codec.encode(sampleBackup()).decodeToString()
+
+        assertDecodeFails(encoded.replaceFirst("\"format\":\"now-do-this-backup\",", ""))
+        assertDecodeFails(encoded.replaceFirst("\"version\":1,", ""))
+    }
+
+    private fun assertDecodeFails(document: String) {
+        try {
+            codec.decode(document.encodeToByteArray())
+            fail("Expected a missing required header to fail decoding")
+        } catch (_: SerializationException) {
+        }
     }
 
     private fun sampleBackup() = PlanningBackup(

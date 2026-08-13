@@ -30,7 +30,7 @@
 - [ ] Write failing codec tests covering every persisted field, deterministic category/task/subtask ordering, exact format/version, round trip, and unknown-key tolerance.
 - [ ] Run `./gradlew :app:testDebugUnitTest --tests '*BackupCodecTest'` and confirm failure.
 - [ ] Implement explicit v1 DTOs and `Json { ignoreUnknownKeys = true; explicitNulls = true; encodeDefaults = true }` UTF-8 codec.
-- [ ] Write validation tests for size boundary, wrong/future version, duplicate/non-positive IDs and positions, broken references, invalid stable enum names, category naming, blank titles, completion consistency, and recurrence end before due.
+- [ ] Write validation tests for size boundary, wrong/future version, duplicate/non-positive IDs and negative positions, broken references, invalid stable enum names, category naming, blank titles, completion consistency, and recurrence end before due.
 - [ ] Implement validation using existing enum names and exact 10 MiB limit; summary counts categories, tasks, completed tasks, and subtasks.
 - [ ] Run focused tests and `./gradlew :app:testDebugUnitTest`; commit `feat: define versioned planning backup`.
 

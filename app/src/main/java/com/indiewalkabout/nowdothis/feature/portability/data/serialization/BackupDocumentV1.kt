@@ -8,8 +8,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 internal data class BackupDocumentV1(
-    val format: String = FORMAT,
-    val version: Int = VERSION,
+    val format: String,
+    val version: Int,
     val createdAtEpochMillis: Long,
     val categories: List<BackupCategoryV1>,
     val tasks: List<BackupTaskV1>
@@ -27,8 +27,8 @@ internal data class BackupDocumentV1(
         const val VERSION = 1
 
         fun fromDomain(backup: PlanningBackup): BackupDocumentV1 = BackupDocumentV1(
-            format = backup.format,
-            version = backup.version,
+            format = FORMAT,
+            version = VERSION,
             createdAtEpochMillis = backup.createdAtEpochMillis,
             categories = backup.categories
                 .sortedWith(compareBy(PlanningCategory::position, PlanningCategory::id))
