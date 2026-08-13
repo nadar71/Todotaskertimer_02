@@ -190,7 +190,8 @@ class TaskListViewModelTest {
             TaskListEvent.OpenTaskEditor(7) to TaskListEffect.OpenTaskEditor(7),
             TaskListEvent.OpenCategoryManagement to TaskListEffect.OpenCategoryManagement,
             TaskListEvent.OpenCalendar to TaskListEffect.OpenCalendar,
-            TaskListEvent.OpenHistory to TaskListEffect.OpenHistory
+            TaskListEvent.OpenHistory to TaskListEffect.OpenHistory,
+            TaskListEvent.OpenDataPortability to TaskListEffect.OpenDataPortability
         )
 
         effects.forEach { (event, expected) ->

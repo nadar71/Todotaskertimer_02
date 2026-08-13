@@ -17,6 +17,7 @@ fun TaskListRoute(
     onOpenCategoryManagement: () -> Unit,
     onOpenCalendar: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenDataPortability: () -> Unit,
     viewModel: TaskListViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -43,6 +44,7 @@ fun TaskListRoute(
                 TaskListEffect.OpenCategoryManagement -> onOpenCategoryManagement()
                 TaskListEffect.OpenCalendar -> onOpenCalendar()
                 TaskListEffect.OpenHistory -> onOpenHistory()
+                TaskListEffect.OpenDataPortability -> onOpenDataPortability()
             }
         }
     }

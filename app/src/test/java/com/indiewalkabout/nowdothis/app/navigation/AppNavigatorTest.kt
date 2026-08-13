@@ -4,6 +4,7 @@ import androidx.navigation3.runtime.NavKey
 import com.indiewalkabout.nowdothis.feature.calendar.navigation.CalendarKey
 import com.indiewalkabout.nowdothis.feature.category.navigation.CategoryManagementKey
 import com.indiewalkabout.nowdothis.feature.history.navigation.CompletionHistoryKey
+import com.indiewalkabout.nowdothis.feature.portability.navigation.DataPortabilityKey
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskEditorKey
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskListKey
 import org.junit.Assert.assertEquals
@@ -33,14 +34,16 @@ class AppNavigatorTest {
     }
 
     @Test
-    fun openCategoryAndHistory_pushTheirDestinations() {
+    fun openCategoryHistoryAndDataPortability_pushTheirDestinations() {
         val navigator = AppNavigator(mutableListOf(TaskListKey))
 
         navigator.openCategoryManagement()
         navigator.navigateBack()
         navigator.openCompletionHistory()
+        navigator.navigateBack()
+        navigator.openDataPortability()
 
-        assertEquals(CompletionHistoryKey, navigator.backStack.last())
+        assertEquals(DataPortabilityKey, navigator.backStack.last())
     }
 
     @Test

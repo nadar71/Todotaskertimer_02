@@ -35,6 +35,7 @@ sealed interface TaskListEvent {
     data object OpenCategoryManagement : TaskListEvent
     data object OpenCalendar : TaskListEvent
     data object OpenHistory : TaskListEvent
+    data object OpenDataPortability : TaskListEvent
 }
 
 sealed interface TaskListEffect {
@@ -48,4 +49,5 @@ sealed interface TaskListEffect {
     data object OpenCategoryManagement : TaskListEffect
     data object OpenCalendar : TaskListEffect
     data object OpenHistory : TaskListEffect
+    data object OpenDataPortability : TaskListEffect
 }
