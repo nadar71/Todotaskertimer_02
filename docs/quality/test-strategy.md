@@ -4,10 +4,10 @@ Tests are selected by risk and boundary rather than by a repository-wide coverag
 
 | Test type | Primary risks |
 | --- | --- |
-| Pure JVM | Recurrence calculation, task classification, validation, use cases, and ViewModel reducers |
-| Room instrumentation | DAOs, relations, migrations, transaction behavior, and deterministic fixtures |
+| Pure JVM | Recurrence calculation, task classification, backup codec/validation, use cases, and ViewModel reducers |
+| Room instrumentation | DAOs, relations, migrations, atomic Replace All/rollback behavior, and deterministic fixtures |
 | Compose instrumentation | Semantics, layout contracts, and feature interaction |
-| Journey instrumentation | Production activity navigation and cross-feature behavior |
+| Journey instrumentation | Production activity navigation, cross-feature behavior, and full backup/mutate/restore data flow |
 | Macrobenchmark | Cold startup and 750-task list frame timing |
 | Manual matrix | TalkBack, contrast, notification permission, exact alarms, reboot, and API coverage |
 
@@ -15,7 +15,12 @@ Tests are selected by risk and boundary rather than by a repository-wide coverag
 
 Pure domain and ViewModel tests use focused repository/platform fakes so reducers and invariants are deterministic. Room instrumentation uses a real Room database rather than mocking SQL behavior. Journey tests launch the production activity and navigation graph. Macrobenchmarks install the real optimized target app and seed Room through a debug/benchmark-only fixture provider.
 
-Android framework behavior is not claimed from JVM mocks. Alarm delivery, notification permission UX, reboot broadcasts, TalkBack reading order, visual contrast, and vendor-specific behavior require an emulator or physical device and remain separate matrix rows.
+Android framework behavior is not claimed from JVM mocks. The portability journey uses real in-memory Room plus the production codec, validator, repository, and use cases; its document gateway and reminder scheduler are deterministic boundary fakes. Alarm delivery, notification permission UX, reboot broadcasts, document-provider UX, TalkBack reading order, visual contrast, and vendor-specific behavior require an emulator or physical device and remain separate matrix rows.
+
+Data Portability v1 has explicit regression proofs for full-field deterministic round
+trip, graph validation, the 10 MiB bound, atomic rollback, repeated restore, invalid and
+future-version no-mutation behavior, reminder ordering/warnings, UDF busy state, and
+Italian/English Compose semantics. Its normative contract is [documented here](../data-portability/backup-format-v1.md).
 
 ## Local Gates
 
