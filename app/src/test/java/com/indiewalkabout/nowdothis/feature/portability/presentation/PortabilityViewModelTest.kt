@@ -21,13 +21,17 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -66,6 +70,8 @@ class PortabilityViewModelTest {
         val repository = FakePortabilityRepository()
         val viewModel = createViewModel(repository)
 
+        viewModel.onEvent(PortabilityEvent.CreateBackup)
+        assertTrue(viewModel.uiState.value.isBusy)
         viewModel.onEvent(PortabilityEvent.BackupDestinationSelected(null))
         advanceUntilIdle()
 
@@ -81,6 +87,7 @@ class PortabilityViewModelTest {
         val repository = FakePortabilityRepository().apply { exportedSummary = summary }
         val viewModel = createViewModel(repository)
 
+        viewModel.onEvent(PortabilityEvent.CreateBackup)
         viewModel.onEvent(PortabilityEvent.BackupDestinationSelected(DocumentReference("content://backup")))
         advanceUntilIdle()
 
@@ -104,6 +111,8 @@ class PortabilityViewModelTest {
         val repository = FakePortabilityRepository()
         val viewModel = createViewModel(repository)
 
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
+        assertTrue(viewModel.uiState.value.isBusy)
         viewModel.onEvent(PortabilityEvent.BackupSourceSelected(null))
         advanceUntilIdle()
 
@@ -119,6 +128,7 @@ class PortabilityViewModelTest {
         val repository = FakePortabilityRepository().apply { inspectedCandidate = candidate }
         val viewModel = createViewModel(repository)
 
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
         viewModel.onEvent(PortabilityEvent.BackupSourceSelected(DocumentReference("content://restore")))
         advanceUntilIdle()
 
@@ -133,10 +143,12 @@ class PortabilityViewModelTest {
         val original = candidate(summary(taskCount = 2))
         val repository = FakePortabilityRepository().apply { inspectedCandidate = original }
         val viewModel = createViewModel(repository)
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
         viewModel.onEvent(PortabilityEvent.BackupSourceSelected(DocumentReference("content://valid")))
         advanceUntilIdle()
 
         repository.inspectionFailure = PortabilityException(InvalidBackup)
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
         viewModel.onEvent(PortabilityEvent.BackupSourceSelected(DocumentReference("content://invalid")))
         advanceUntilIdle()
 
@@ -146,17 +158,21 @@ class PortabilityViewModelTest {
     }
 
     @Test
-    fun dismissRestore_hidesConfirmationAndRetainsPreview() = runTest(dispatcher) {
+    fun dismissRestore_revokesCandidateAndConfirmDoesNotRestore() = runTest(dispatcher) {
         val candidate = candidate(summary())
         val repository = FakePortabilityRepository().apply { inspectedCandidate = candidate }
         val viewModel = createViewModel(repository)
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
         viewModel.onEvent(PortabilityEvent.BackupSourceSelected(DocumentReference("content://restore")))
         advanceUntilIdle()
 
         viewModel.onEvent(PortabilityEvent.DismissRestore)
+        viewModel.onEvent(PortabilityEvent.ConfirmRestore)
+        advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.showRestoreConfirmation)
-        assertEquals(candidate.summary, viewModel.uiState.value.candidate)
+        assertNull(viewModel.uiState.value.candidate)
+        assertTrue(repository.restoredCandidates.isEmpty())
     }
 
     @Test
@@ -164,6 +180,7 @@ class PortabilityViewModelTest {
         val candidate = candidate(summary(taskCount = 4))
         val repository = FakePortabilityRepository().apply { inspectedCandidate = candidate }
         val viewModel = createViewModel(repository)
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
         viewModel.onEvent(PortabilityEvent.BackupSourceSelected(DocumentReference("content://restore")))
         advanceUntilIdle()
 
@@ -177,10 +194,45 @@ class PortabilityViewModelTest {
     }
 
     @Test
+    fun pendingPicker_suppressesRepeatedAndCrossCommandTapsUntilCancellation() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        val effects = mutableListOf<PortabilityEffect>()
+        val collector = launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.effects.collect(effects::add)
+        }
+
+        viewModel.onEvent(PortabilityEvent.CreateBackup)
+        viewModel.onEvent(PortabilityEvent.CreateBackup)
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.isBusy)
+        assertEquals(
+            listOf(PortabilityEffect.LaunchCreateDocument("now-do-this-backup-2026-08-13.json")),
+            effects
+        )
+
+        viewModel.onEvent(PortabilityEvent.BackupDestinationSelected(null))
+        assertFalse(viewModel.uiState.value.isBusy)
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(
+                PortabilityEffect.LaunchCreateDocument("now-do-this-backup-2026-08-13.json"),
+                PortabilityEffect.LaunchOpenDocument
+            ),
+            effects
+        )
+        collector.cancel()
+    }
+
+    @Test
     fun concurrentCommands_areSuppressedWhileOneOperationIsBusy() = runTest(dispatcher) {
         val repository = FakePortabilityRepository().apply { createGate = CompletableDeferred() }
         val viewModel = createViewModel(repository)
 
+        viewModel.onEvent(PortabilityEvent.CreateBackup)
         viewModel.onEvent(PortabilityEvent.BackupDestinationSelected(DocumentReference("content://backup")))
         advanceUntilIdle()
         assertTrue(viewModel.uiState.value.isBusy)
@@ -201,9 +253,41 @@ class PortabilityViewModelTest {
     }
 
     @Test
+    fun reminderWarning_exposesTerminalResultAndOneMessage() = runTest(dispatcher) {
+        val candidate = candidate(summary(taskCount = 4))
+        val repository = FakePortabilityRepository().apply { inspectedCandidate = candidate }
+        val viewModel = createViewModel(repository, ReminderWarningScheduler)
+        val openPicker = async(UnconfinedTestDispatcher(testScheduler)) { viewModel.effects.first() }
+
+        viewModel.onEvent(PortabilityEvent.RestoreBackup)
+        assertEquals(PortabilityEffect.LaunchOpenDocument, openPicker.await())
+        viewModel.onEvent(PortabilityEvent.BackupSourceSelected(DocumentReference("content://restore")))
+        advanceUntilIdle()
+        val warning = async(UnconfinedTestDispatcher(testScheduler)) { viewModel.effects.first() }
+
+        viewModel.onEvent(PortabilityEvent.ConfirmRestore)
+        advanceUntilIdle()
+
+        assertEquals(
+            PortabilityUiResult.RestoredWithReminderWarning(candidate.summary),
+            viewModel.uiState.value.result
+        )
+        assertEquals(
+            PortabilityEffect.ShowMessage(PortabilityMessage.ReminderWarning),
+            warning.await()
+        )
+        val secondMessage = async(UnconfinedTestDispatcher(testScheduler)) {
+            withTimeoutOrNull(1) { viewModel.effects.first() }
+        }
+        advanceTimeBy(1)
+        assertNull(secondMessage.await())
+    }
+
+    @Test
     fun clearResult_removesOnlyTerminalResult() = runTest(dispatcher) {
         val repository = FakePortabilityRepository().apply { exportedSummary = summary() }
         val viewModel = createViewModel(repository)
+        viewModel.onEvent(PortabilityEvent.CreateBackup)
         viewModel.onEvent(PortabilityEvent.BackupDestinationSelected(DocumentReference("content://backup")))
         advanceUntilIdle()
 
@@ -213,10 +297,13 @@ class PortabilityViewModelTest {
         assertNull(viewModel.uiState.value.error)
     }
 
-    private fun createViewModel(repository: FakePortabilityRepository = FakePortabilityRepository()) = PortabilityViewModel(
+    private fun createViewModel(
+        repository: FakePortabilityRepository = FakePortabilityRepository(),
+        reminderScheduler: ReminderScheduler = NoOpReminderScheduler
+    ) = PortabilityViewModel(
         createBackup = CreateBackup(repository),
         inspectBackup = InspectBackup(repository),
-        restoreBackup = RestoreBackup(repository, NoOpReminderScheduler),
+        restoreBackup = RestoreBackup(repository, reminderScheduler),
         clock = AppClock { now },
         zoneIdProvider = ZoneIdProvider { rome }
     )
@@ -255,6 +342,14 @@ private object NoOpReminderScheduler : ReminderScheduler {
     override suspend fun cancel(taskId: Int) = Unit
 
     override suspend fun reconcile() = Unit
+}
+
+private object ReminderWarningScheduler : ReminderScheduler {
+    override suspend fun schedule(taskId: Int, triggerAt: Long) = ReminderScheduleResult.EXACT
+
+    override suspend fun cancel(taskId: Int) = Unit
+
+    override suspend fun reconcile() = error("Reminder reconciliation failed")
 }
 
 private fun summary(taskCount: Int = 1) = BackupSummary(

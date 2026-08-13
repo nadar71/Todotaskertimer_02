@@ -36,6 +36,7 @@ class PortabilityViewModel @Inject constructor(
     private val effectChannel = Channel<PortabilityEffect>(Channel.BUFFERED)
     private var validatedCandidate: BackupCandidate? = null
     private var operationJob: Job? = null
+    private var pendingPicker: PendingPicker? = null
 
     val uiState = mutableUiState.asStateFlow()
     val effects: Flow<PortabilityEffect> = effectChannel.receiveAsFlow()
@@ -56,12 +57,18 @@ class PortabilityViewModel @Inject constructor(
     }
 
     private fun requestBackupDestination() {
-        if (isOperationRunning()) return
+        if (isInteractionBusy()) return
+        pendingPicker = PendingPicker.BACKUP_DESTINATION
+        mutableUiState.value = mutableUiState.value.copy(isBusy = true)
         emitEffect(PortabilityEffect.LaunchCreateDocument(suggestedBackupName()))
     }
 
     private fun exportTo(reference: DocumentReference?) {
-        if (reference == null || isOperationRunning()) return
+        if (!consumePicker(PendingPicker.BACKUP_DESTINATION)) return
+        if (reference == null) {
+            finishPickerCancellation()
+            return
+        }
         launchOperation {
             when (val result = createBackup(reference)) {
                 is PortabilityResult.Exported -> mutableUiState.value = mutableUiState.value.copy(
@@ -75,12 +82,18 @@ class PortabilityViewModel @Inject constructor(
     }
 
     private fun requestBackupSource() {
-        if (isOperationRunning()) return
+        if (isInteractionBusy()) return
+        pendingPicker = PendingPicker.BACKUP_SOURCE
+        mutableUiState.value = mutableUiState.value.copy(isBusy = true)
         emitEffect(PortabilityEffect.LaunchOpenDocument)
     }
 
     private fun inspectSource(reference: DocumentReference?) {
-        if (reference == null || isOperationRunning()) return
+        if (!consumePicker(PendingPicker.BACKUP_SOURCE)) return
+        if (reference == null) {
+            finishPickerCancellation()
+            return
+        }
         launchOperation {
             when (val result = inspectBackup(reference)) {
                 is PortabilityResult.Inspected -> acceptCandidate(result.candidate)
@@ -102,7 +115,7 @@ class PortabilityViewModel @Inject constructor(
 
     private fun restoreCandidate() {
         val candidate = validatedCandidate ?: return
-        if (isOperationRunning()) return
+        if (!mutableUiState.value.showRestoreConfirmation || isInteractionBusy()) return
         launchOperation {
             when (val result = restoreBackup(candidate)) {
                 is PortabilityResult.Restored -> finishRestore(PortabilityUiResult.Restored(result.summary))
@@ -127,8 +140,12 @@ class PortabilityViewModel @Inject constructor(
     }
 
     private fun dismissRestore() {
-        if (isOperationRunning()) return
-        mutableUiState.value = mutableUiState.value.copy(showRestoreConfirmation = false)
+        if (isInteractionBusy()) return
+        validatedCandidate = null
+        mutableUiState.value = mutableUiState.value.copy(
+            candidate = null,
+            showRestoreConfirmation = false
+        )
     }
 
     private fun launchOperation(block: suspend () -> Unit) {
@@ -145,6 +162,16 @@ class PortabilityViewModel @Inject constructor(
         }
     }
 
+    private fun consumePicker(expectedPicker: PendingPicker): Boolean {
+        if (pendingPicker != expectedPicker) return false
+        pendingPicker = null
+        return true
+    }
+
+    private fun finishPickerCancellation() {
+        mutableUiState.value = mutableUiState.value.copy(isBusy = false)
+    }
+
     private suspend fun reportError(error: PortabilityError) {
         mutableUiState.value = mutableUiState.value.copy(error = error)
         effectChannel.send(PortabilityEffect.ShowMessage(PortabilityMessage.Error(error)))
@@ -156,11 +183,18 @@ class PortabilityViewModel @Inject constructor(
 
     private fun isOperationRunning(): Boolean = operationJob?.isActive == true
 
+    private fun isInteractionBusy(): Boolean = pendingPicker != null || isOperationRunning()
+
     private fun suggestedBackupName(): String {
         val date = Instant.ofEpochMilli(clock.nowMillis())
             .atZone(zoneIdProvider.zoneId())
             .toLocalDate()
             .format(DateTimeFormatter.ISO_LOCAL_DATE)
         return "now-do-this-backup-$date.json"
+    }
+
+    private enum class PendingPicker {
+        BACKUP_DESTINATION,
+        BACKUP_SOURCE
     }
 }
