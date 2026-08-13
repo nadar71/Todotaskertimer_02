@@ -11,6 +11,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.indiewalkabout.nowdothis.R
@@ -44,6 +49,9 @@ class HistoryScreenTest {
         composeRule.onNodeWithTag("history-date-$date").assertIsDisplayed()
         composeRule.onNodeWithText("Archiviata").assertIsDisplayed()
         composeRule.onNodeWithTag("history-task-1").performClick()
+        composeRule.onNodeWithTag("history-task-1")
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
 
         assertEquals(listOf(HistoryEvent.Inspect(1)), events)
     }

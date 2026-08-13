@@ -4,6 +4,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -91,6 +95,8 @@ class TaskEditorScreenTest {
         )
 
         composeRule.onNodeWithTag("task-priority-high").performClick()
+        composeRule.onNodeWithTag("task-priority-high")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
         composeRule.onNodeWithTag("task-category-field").performClick()
         composeRule.onNodeWithText("Client").performClick()
 
@@ -189,6 +195,12 @@ class TaskEditorScreenTest {
             .assertIsDisplayed()
         composeRule.onNodeWithTag("task-reminder-status")
             .assertTextEquals(context.getString(R.string.task_editor_reminder_not_active))
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    context.getString(R.string.task_editor_reminder_not_active)
+                )
+            )
         composeRule.onNodeWithText(context.getString(R.string.task_editor_notification_denied))
             .assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.task_editor_inexact_notice))

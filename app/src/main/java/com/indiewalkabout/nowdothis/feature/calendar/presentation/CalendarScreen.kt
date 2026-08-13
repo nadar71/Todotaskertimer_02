@@ -117,7 +117,7 @@ private fun MonthHeader(state: CalendarUiState, onEvent: (CalendarEvent) -> Unit
     ) {
         IconButton(
             onClick = { onEvent(CalendarEvent.PreviousMonth) },
-            modifier = Modifier.testTag("calendar-prev")
+            modifier = Modifier.size(48.dp).testTag("calendar-prev")
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowLeft,
@@ -139,7 +139,7 @@ private fun MonthHeader(state: CalendarUiState, onEvent: (CalendarEvent) -> Unit
         }
         IconButton(
             onClick = { onEvent(CalendarEvent.NextMonth) },
-            modifier = Modifier.testTag("calendar-next")
+            modifier = Modifier.size(48.dp).testTag("calendar-next")
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,

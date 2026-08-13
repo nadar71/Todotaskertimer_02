@@ -9,6 +9,11 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -90,10 +95,12 @@ class CategoryScreenTest {
             .assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.category_error_duplicate))
             .assertIsDisplayed()
-        composeRule.onNodeWithTag("category-palette-green").performClick()
-        composeRule.onNodeWithTag("category-palette-green")
+        composeRule.onNodeWithTag("category-palette-blue")
             .assertHeightIsAtLeast(48.dp)
             .assertWidthIsAtLeast(48.dp)
+            .assertIsSelected()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
+        composeRule.onNodeWithTag("category-palette-green").performClick()
         composeRule.onNodeWithText(context.getString(R.string.category_save)).performClick()
 
         assertEquals(
