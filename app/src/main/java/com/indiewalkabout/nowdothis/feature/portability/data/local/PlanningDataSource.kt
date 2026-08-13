@@ -11,10 +11,16 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTas
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 
+interface PlanningDataStore {
+    suspend fun snapshot(createdAtEpochMillis: Long): PlanningBackup
+
+    suspend fun replaceAll(backup: PlanningBackup): Set<Int>
+}
+
 class PlanningDataSource(
     private val database: AppDatabase
-) {
-    suspend fun snapshot(createdAtEpochMillis: Long): PlanningBackup = database.withTransaction {
+) : PlanningDataStore {
+    override suspend fun snapshot(createdAtEpochMillis: Long): PlanningBackup = database.withTransaction {
         val subtasksByTaskId = database.taskDao().getAllSubtaskEntities()
             .groupBy(SubtaskEntity::taskId)
 
@@ -31,7 +37,7 @@ class PlanningDataSource(
         )
     }
 
-    suspend fun replaceAll(backup: PlanningBackup): Set<Int> = database.withTransaction {
+    override suspend fun replaceAll(backup: PlanningBackup): Set<Int> = database.withTransaction {
         val taskDao = database.taskDao()
         val categoryDao = database.categoryDao()
         val preRestoreTaskIds = taskDao.getAllTaskIds().toSet()
