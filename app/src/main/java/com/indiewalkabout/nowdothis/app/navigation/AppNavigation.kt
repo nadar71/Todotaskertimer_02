@@ -17,6 +17,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -45,7 +47,10 @@ fun AppNavigation(openTaskIds: Flow<Int>) {
         openTaskIds.collect { taskId -> navigator.openTaskEditor(taskId, null) }
     }
 
-    AppNavDisplay(navigator)
+    AppNavDisplay(
+        navigator = navigator,
+        modifier = Modifier.semantics { testTagsAsResourceId = true }
+    )
 }
 
 @Composable

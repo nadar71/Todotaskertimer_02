@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("androidx.baselineprofile")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
     id("androidx.room")
@@ -52,7 +53,25 @@ android {
         }
     }
 
+    sourceSets {
+        listOf("benchmarkRelease", "nonMinifiedRelease").forEach { variantName ->
+            maybeCreate(variantName).apply {
+                java.srcDir("src/debug/java/com/indiewalkabout/nowdothis/benchmark")
+            }
+        }
+    }
+
     namespace = "com.indiewalkabout.nowdothis"
+}
+
+androidComponents {
+    onVariants { variant ->
+        if (variant.name in setOf("benchmarkRelease", "nonMinifiedRelease")) {
+            variant.sources.manifests.addStaticManifestFile(
+                "src/debug/benchmark/AndroidManifest.xml"
+            )
+        }
+    }
 }
 
 room {
@@ -72,6 +91,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:2.10.0")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.hilt:hilt-lifecycle-viewmodel-compose:1.3.0")
     implementation("androidx.activity:activity-compose:1.9.2")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
@@ -107,4 +127,5 @@ dependencies {
     // KotlinX Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.9.0")
+    baselineProfile(project(":benchmark"))
 }
