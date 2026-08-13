@@ -17,15 +17,34 @@ android {
         minSdk = 23
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
 
+    val signingValues = listOf(
+        "NOWDOTHIS_STORE_FILE",
+        "NOWDOTHIS_STORE_PASSWORD",
+        "NOWDOTHIS_KEY_ALIAS",
+        "NOWDOTHIS_KEY_PASSWORD"
+    ).associateWith { providers.environmentVariable(it).orNull }
+    val releaseEnvironmentSigning = if (signingValues.values.all { !it.isNullOrBlank() }) {
+        signingConfigs.create("releaseEnvironment") {
+            storeFile = file(requireNotNull(signingValues["NOWDOTHIS_STORE_FILE"]))
+            storePassword = signingValues["NOWDOTHIS_STORE_PASSWORD"]
+            keyAlias = signingValues["NOWDOTHIS_KEY_ALIAS"]
+            keyPassword = signingValues["NOWDOTHIS_KEY_PASSWORD"]
+        }
+    } else {
+        null
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            releaseEnvironmentSigning?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
