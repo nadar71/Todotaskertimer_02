@@ -36,6 +36,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,6 +100,7 @@ internal fun TaskRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onOpen)
+                        .semantics { role = Role.Button }
                         .testTag("task-row-${task.id}")
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.Top

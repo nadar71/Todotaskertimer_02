@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("androidx.baselineprofile")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
     id("androidx.room")
@@ -16,15 +17,34 @@ android {
         minSdk = 23
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
 
+    val signingValues = listOf(
+        "NOWDOTHIS_STORE_FILE",
+        "NOWDOTHIS_STORE_PASSWORD",
+        "NOWDOTHIS_KEY_ALIAS",
+        "NOWDOTHIS_KEY_PASSWORD"
+    ).associateWith { providers.environmentVariable(it).orNull }
+    val releaseEnvironmentSigning = if (signingValues.values.all { !it.isNullOrBlank() }) {
+        signingConfigs.create("releaseEnvironment") {
+            storeFile = file(requireNotNull(signingValues["NOWDOTHIS_STORE_FILE"]))
+            storePassword = signingValues["NOWDOTHIS_STORE_PASSWORD"]
+            keyAlias = signingValues["NOWDOTHIS_KEY_ALIAS"]
+            keyPassword = signingValues["NOWDOTHIS_KEY_PASSWORD"]
+        }
+    } else {
+        null
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            releaseEnvironmentSigning?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -52,7 +72,25 @@ android {
         }
     }
 
+    sourceSets {
+        listOf("benchmarkRelease", "nonMinifiedRelease").forEach { variantName ->
+            maybeCreate(variantName).apply {
+                java.srcDir("src/debug/java/com/indiewalkabout/nowdothis/benchmark")
+            }
+        }
+    }
+
     namespace = "com.indiewalkabout.nowdothis"
+}
+
+androidComponents {
+    onVariants { variant ->
+        if (variant.name in setOf("benchmarkRelease", "nonMinifiedRelease")) {
+            variant.sources.manifests.addStaticManifestFile(
+                "src/debug/benchmark/AndroidManifest.xml"
+            )
+        }
+    }
 }
 
 room {
@@ -72,6 +110,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:2.10.0")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.hilt:hilt-lifecycle-viewmodel-compose:1.3.0")
     implementation("androidx.activity:activity-compose:1.9.2")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
@@ -107,4 +146,5 @@ dependencies {
     // KotlinX Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.9.0")
+    baselineProfile(project(":benchmark"))
 }

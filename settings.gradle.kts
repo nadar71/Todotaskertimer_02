@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "NowDoThis"
-include(":app")
+include(":app", ":benchmark")

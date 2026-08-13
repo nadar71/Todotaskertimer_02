@@ -49,6 +49,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
@@ -142,7 +147,8 @@ private fun EditorForm(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .imePadding(),
+            .imePadding()
+            .testTag("task-editor-form"),
         contentPadding = PaddingValues(
             start = 16.dp,
             top = contentPadding.calculateTopPadding() + 8.dp,
@@ -206,11 +212,15 @@ private fun EditorForm(
                 onValueChange = { onEvent(TaskEditorEvent.UpdateReminderAt(it)) }
             )
             if (state.reminderStatus == ReminderStatus.UNAVAILABLE) {
+                val reminderUnavailable = stringResource(R.string.task_editor_reminder_not_active)
                 Text(
-                    text = stringResource(R.string.task_editor_reminder_not_active),
+                    text = reminderUnavailable,
                     modifier = Modifier
                         .padding(top = 6.dp)
-                        .testTag("task-reminder-status"),
+                        .testTag("task-reminder-status")
+                        .semantics {
+                            stateDescription = reminderUnavailable
+                        },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -278,6 +288,10 @@ private fun PriorityControl(
                 modifier = Modifier
                     .weight(1f)
                     .testTag("task-priority-${priority.name.lowercase()}")
+                    .semantics {
+                        role = Role.RadioButton
+                        this.selected = selected == priority
+                    }
             ) {
                 Text(priorityLabel(priority))
             }

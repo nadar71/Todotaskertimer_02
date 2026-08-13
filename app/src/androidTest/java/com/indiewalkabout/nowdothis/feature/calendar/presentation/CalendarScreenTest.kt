@@ -8,6 +8,9 @@ import androidx.compose.ui.test.assertContentDescriptionContains
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -67,6 +70,13 @@ class CalendarScreenTest {
         composeRule.onNodeWithTag("calendar-today").performClick()
         composeRule.onNodeWithTag("calendar-add").performClick()
         composeRule.onNodeWithTag("calendar-day-2025-03-13").performClick()
+
+        composeRule.onNodeWithTag("calendar-prev")
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag("calendar-next")
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
 
         assertEquals(
             listOf(
