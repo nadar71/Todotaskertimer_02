@@ -5,6 +5,7 @@ import com.indiewalkabout.nowdothis.core.notifications.NotificationPublisher
 import com.indiewalkabout.nowdothis.feature.calendar.navigation.CalendarKey
 import com.indiewalkabout.nowdothis.feature.category.navigation.CategoryManagementKey
 import com.indiewalkabout.nowdothis.feature.history.navigation.CompletionHistoryKey
+import com.indiewalkabout.nowdothis.feature.portability.navigation.DataPortabilityKey
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskEditorKey
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskListKey
 
@@ -39,6 +40,10 @@ class AppNavigator(
 
     fun openCompletionHistory() {
         backStack.add(CompletionHistoryKey)
+    }
+
+    fun openDataPortability() {
+        backStack.add(DataPortabilityKey)
     }
 
     fun navigateBack(): Boolean {

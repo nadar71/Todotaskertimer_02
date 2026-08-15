@@ -75,6 +75,26 @@
     <string name="task_more_actions">More actions</string>
     <string name="task_manage_categories">Manage categories</string>
     <string name="task_open_history">Completion history</string>
+    <string name="portability_menu_action">Backup and restore</string>
+    <string name="portability_title">Backup and restore</string>
+    <string name="portability_back">Back</string>
+    <string name="portability_create_backup">Create backup</string>
+    <string name="portability_restore_backup">Restore backup</string>
+    <string name="portability_summary_created">Backup created %1$s</string>
+    <string name="portability_summary_counts">%1$s, %2$s, %3$s, %4$s</string>
+    <string name="portability_replace_title">Replace current data?</string>
+    <string name="portability_replace_warning">All current categories, tasks, and subtasks will be replaced by this backup. This cannot be undone.</string>
+    <string name="portability_replace_confirm">Replace</string>
+    <string name="portability_replace_cancel">Cancel</string>
+    <string name="portability_backup_created">Backup created.</string>
+    <string name="portability_restore_completed">Backup restored.</string>
+    <string name="portability_restore_reminder_warning">Backup restored. Some reminders may update on the next app start.</string>
+    <string name="portability_error_invalid_backup">The selected file is not a valid backup.</string>
+    <string name="portability_error_unsupported_version">This backup version is not supported.</string>
+    <string name="portability_error_document_too_large">The selected file is too large.</string>
+    <string name="portability_error_read_failed">Could not read the backup.</string>
+    <string name="portability_error_write_failed">Could not create the backup.</string>
+    <string name="portability_error_restore_failed">Could not restore the backup.</string>
     <string name="task_open_calendar">Open calendar</string>
     <string name="task_sort_default">Default order</string>
     <string name="task_sort_low_first">Low priority first</string>
@@ -166,6 +186,23 @@
     <string name="history_delete_body">This completed task will be permanently deleted. This cannot be undone.</string>
     <string name="history_delete_confirm">Delete</string>
     <string name="history_cancel">Cancel</string>
+
+    <plurals name="portability_category_count">
+        <item quantity="one">%1$d category</item>
+        <item quantity="other">%1$d categories</item>
+    </plurals>
+    <plurals name="portability_task_count">
+        <item quantity="one">%1$d task</item>
+        <item quantity="other">%1$d tasks</item>
+    </plurals>
+    <plurals name="portability_completed_task_count">
+        <item quantity="one">%1$d completed</item>
+        <item quantity="other">%1$d completed</item>
+    </plurals>
+    <plurals name="portability_subtask_count">
+        <item quantity="one">%1$d subtask</item>
+        <item quantity="other">%1$d subtasks</item>
+    </plurals>
 
     <plurals name="subtask_progress">
         <item quantity="one">%1$d of %2$d subtask complete</item>

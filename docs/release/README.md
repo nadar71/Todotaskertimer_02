@@ -17,4 +17,5 @@ Secret values are never committed or logged. A missing or partial set produces a
 ./gradlew clean :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease
 ```
 
-See [checklist.md](checklist.md) and [migration-and-rollback.md](migration-and-rollback.md).
+See [checklist.md](checklist.md), [migration-and-rollback.md](migration-and-rollback.md),
+and the [Data Portability v1 contract](../data-portability/backup-format-v1.md).

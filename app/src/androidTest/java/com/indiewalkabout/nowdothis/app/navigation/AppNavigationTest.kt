@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.indiewalkabout.nowdothis.feature.calendar.navigation.CalendarKey
 import com.indiewalkabout.nowdothis.feature.category.navigation.CategoryManagementKey
 import com.indiewalkabout.nowdothis.feature.history.navigation.CompletionHistoryKey
+import com.indiewalkabout.nowdothis.feature.portability.navigation.DataPortabilityKey
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskEditorKey
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskListKey
 import kotlinx.serialization.json.Json
@@ -24,6 +25,10 @@ class AppNavigationTest {
         assertEquals(
             CompletionHistoryKey,
             Json.decodeFromString<CompletionHistoryKey>(Json.encodeToString(CompletionHistoryKey))
+        )
+        assertEquals(
+            DataPortabilityKey,
+            Json.decodeFromString<DataPortabilityKey>(Json.encodeToString(DataPortabilityKey))
         )
         val editor = TaskEditorKey(taskId = 9, initialDueAt = 12_000L)
         assertEquals(editor, Json.decodeFromString<TaskEditorKey>(Json.encodeToString(editor)))

@@ -32,6 +32,8 @@ import com.indiewalkabout.nowdothis.feature.category.navigation.CategoryManageme
 import com.indiewalkabout.nowdothis.feature.category.presentation.CategoryRoute
 import com.indiewalkabout.nowdothis.feature.history.navigation.CompletionHistoryKey
 import com.indiewalkabout.nowdothis.feature.history.presentation.HistoryRoute
+import com.indiewalkabout.nowdothis.feature.portability.navigation.DataPortabilityKey
+import com.indiewalkabout.nowdothis.feature.portability.presentation.PortabilityRoute
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskEditorKey
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskListKey
 import com.indiewalkabout.nowdothis.feature.task.presentation.editor.TaskEditorRoute
@@ -122,7 +124,8 @@ private fun AppNavDisplay(navigator: AppNavigator, modifier: Modifier = Modifier
                         onOpenTaskEditor = { navigator.openTaskEditor(it, null) },
                         onOpenCategoryManagement = navigator::openCategoryManagement,
                         onOpenCalendar = { navigator.selectRoot(CalendarKey) },
-                        onOpenHistory = navigator::openCompletionHistory
+                        onOpenHistory = navigator::openCompletionHistory,
+                        onOpenDataPortability = navigator::openDataPortability
                     )
                 }
             }
@@ -139,6 +142,9 @@ private fun AppNavDisplay(navigator: AppNavigator, modifier: Modifier = Modifier
             }
             entry<CompletionHistoryKey> {
                 HistoryRoute(onBack = { navigator.navigateBack() })
+            }
+            entry<DataPortabilityKey> {
+                PortabilityRoute(onBack = { navigator.navigateBack() })
             }
         }
     )

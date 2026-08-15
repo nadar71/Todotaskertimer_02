@@ -131,6 +131,13 @@ private fun TaskListTopBar(sort: TaskSort, onEvent: (TaskListEvent) -> Unit) {
                     }
                 )
                 DropdownMenuItem(
+                    text = { Text(stringResource(R.string.portability_menu_action)) },
+                    onClick = {
+                        expanded = false
+                        onEvent(TaskListEvent.OpenDataPortability)
+                    }
+                )
+                DropdownMenuItem(
                     text = { Text(stringResource(R.string.task_open_calendar)) },
                     onClick = {
                         expanded = false

@@ -17,6 +17,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -153,6 +154,21 @@ class TaskListScreenTest {
         assertEquals(TaskListEvent.OpenHistory, events[0])
         assertEquals(TaskListEvent.ConfirmDeleteAll, events[1])
         assertFalse(events.contains(TaskListEvent.UndoDelete))
+    }
+
+    @Test
+    fun overflow_backupAndRestore_dispatchesDataPortabilityEventAfterHistory() {
+        val events = mutableListOf<TaskListEvent>()
+        setScreen(
+            state = TaskListUiState(isLoading = false),
+            onEvent = events::add
+        )
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.task_more_actions)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.task_open_history)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.portability_menu_action)).performClick()
+
+        assertEquals(listOf(TaskListEvent.OpenDataPortability), events)
     }
 
     @Test

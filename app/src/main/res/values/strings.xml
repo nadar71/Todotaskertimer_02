@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
     <string name="app_name">NowDoThis</string>
 
     <string name="to_do_logo">NowDoThis</string>
@@ -75,6 +75,26 @@
     <string name="task_more_actions">Altre azioni</string>
     <string name="task_manage_categories">Gestisci categorie</string>
     <string name="task_open_history">Cronologia completate</string>
+    <string name="portability_menu_action">Backup e ripristino</string>
+    <string name="portability_title">Backup e ripristino</string>
+    <string name="portability_back">Indietro</string>
+    <string name="portability_create_backup">Crea backup</string>
+    <string name="portability_restore_backup">Ripristina backup</string>
+    <string name="portability_summary_created">Backup creato il %1$s</string>
+    <string name="portability_summary_counts">%1$s, %2$s, %3$s, %4$s</string>
+    <string name="portability_replace_title">Sostituire i dati attuali?</string>
+    <string name="portability_replace_warning">Tutte le categorie, le attività e le sottoattività attuali verranno sostituite dal backup. Non è possibile annullare.</string>
+    <string name="portability_replace_confirm">Sostituisci</string>
+    <string name="portability_replace_cancel">Annulla</string>
+    <string name="portability_backup_created">Backup creato.</string>
+    <string name="portability_restore_completed">Backup ripristinato.</string>
+    <string name="portability_restore_reminder_warning">Backup ripristinato. Alcuni promemoria potrebbero essere aggiornati al prossimo avvio.</string>
+    <string name="portability_error_invalid_backup">Il file selezionato non è un backup valido.</string>
+    <string name="portability_error_unsupported_version">Questa versione del backup non è supportata.</string>
+    <string name="portability_error_document_too_large">Il file selezionato è troppo grande.</string>
+    <string name="portability_error_read_failed">Impossibile leggere il backup.</string>
+    <string name="portability_error_write_failed">Impossibile creare il backup.</string>
+    <string name="portability_error_restore_failed">Impossibile ripristinare il backup.</string>
     <string name="task_open_calendar">Apri calendario</string>
     <string name="task_sort_default">Ordine predefinito</string>
     <string name="task_sort_low_first">Priorità bassa prima</string>
@@ -166,6 +186,27 @@
     <string name="history_delete_body">Questa attività completata verrà eliminata in modo permanente. Non è possibile annullare.</string>
     <string name="history_delete_confirm">Elimina</string>
     <string name="history_cancel">Annulla</string>
+
+    <plurals name="portability_category_count">
+        <item quantity="one">%1$d categoria</item>
+        <item quantity="many">%1$d categorie</item>
+        <item quantity="other">%1$d categorie</item>
+    </plurals>
+    <plurals name="portability_task_count">
+        <item quantity="one">%1$d attività</item>
+        <item quantity="many">%1$d attività</item>
+        <item quantity="other">%1$d attività</item>
+    </plurals>
+    <plurals name="portability_completed_task_count">
+        <item quantity="one">%1$d completata</item>
+        <item quantity="many">%1$d completate</item>
+        <item quantity="other">%1$d completate</item>
+    </plurals>
+    <plurals name="portability_subtask_count">
+        <item quantity="one">%1$d sottoattività</item>
+        <item quantity="many">%1$d sottoattività</item>
+        <item quantity="other">%1$d sottoattività</item>
+    </plurals>
 
     <plurals name="subtask_progress">
         <item quantity="one">%1$d di %2$d sottoattività completata</item>

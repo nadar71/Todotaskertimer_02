@@ -131,6 +131,7 @@ class TaskListViewModel @Inject constructor(
             TaskListEvent.OpenCategoryManagement -> emitEffect(TaskListEffect.OpenCategoryManagement)
             TaskListEvent.OpenCalendar -> emitEffect(TaskListEffect.OpenCalendar)
             TaskListEvent.OpenHistory -> emitEffect(TaskListEffect.OpenHistory)
+            TaskListEvent.OpenDataPortability -> emitEffect(TaskListEffect.OpenDataPortability)
         }
     }
 

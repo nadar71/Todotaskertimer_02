@@ -162,6 +162,9 @@ interface TaskDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertTask(entity: TaskEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertTasks(entities: List<TaskEntity>)
+
     @Update
     suspend fun updateTask(entity: TaskEntity)
 
@@ -205,6 +208,15 @@ interface TaskDao {
 
     @Query("SELECT * FROM tasks ORDER BY id ASC")
     fun observeAllTaskEntities(): Flow<List<TaskEntity>>
+
+    @Query("SELECT * FROM tasks ORDER BY id ASC")
+    suspend fun getAllTaskEntities(): List<TaskEntity>
+
+    @Query("SELECT * FROM subtasks ORDER BY task_id ASC, position ASC, id ASC")
+    suspend fun getAllSubtaskEntities(): List<SubtaskEntity>
+
+    @Query("SELECT id FROM tasks ORDER BY id ASC")
+    suspend fun getAllTaskIds(): List<Int>
 
     @Query("DELETE FROM tasks")
     suspend fun deleteAllTasks()

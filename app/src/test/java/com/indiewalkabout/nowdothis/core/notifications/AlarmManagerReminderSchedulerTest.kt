@@ -10,6 +10,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
+import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderReconcileResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -116,7 +117,7 @@ class AlarmManagerReminderSchedulerTest {
         )
         val scheduler = scheduler(gateway, repository)
 
-        scheduler.reconcile()
+        val result = scheduler.reconcileWithResult()
 
         assertEquals(1_000L, repository.requestedAfter)
         assertEquals(
@@ -127,6 +128,7 @@ class AlarmManagerReminderSchedulerTest {
             ),
             repository.statusUpdates
         )
+        assertEquals(ReminderReconcileResult.SOME_UNAVAILABLE, result)
     }
 
     @Test
@@ -143,10 +145,11 @@ class AlarmManagerReminderSchedulerTest {
         val gateway = FakeAlarmGateway(canScheduleExact = true)
         val scheduler = scheduler(gateway, repository)
 
-        scheduler.reconcile()
+        val result = scheduler.reconcileWithResult()
 
         assertEquals(listOf(AlarmCall.Exact(5, 5_000)), gateway.calls)
         assertEquals(listOf(5 to ReminderStatus.SCHEDULED), repository.statusUpdates)
+        assertEquals(ReminderReconcileResult.SUCCESS, result)
     }
 
     @Test
@@ -163,7 +166,7 @@ class AlarmManagerReminderSchedulerTest {
         )
         val scheduler = scheduler(gateway, repository)
 
-        scheduler.reconcile()
+        val result = scheduler.reconcileWithResult()
 
         assertEquals(
             listOf(
@@ -173,10 +176,11 @@ class AlarmManagerReminderSchedulerTest {
             repository.statusUpdates
         )
         assertTrue(gateway.calls.contains(AlarmCall.Exact(2, 3_000)))
+        assertEquals(ReminderReconcileResult.SOME_UNAVAILABLE, result)
     }
 
     @Test
-    fun reconcile_continuesWhenOneStatusUpdateFails() = runTest {
+    fun reconcile_reportsUnavailableAndContinuesWhenOneStatusUpdateFails() = runTest {
         val repository = FakeTaskRepository(
             reminders = listOf(
                 task(id = 1, reminderAt = 2_000, status = ReminderStatus.REQUESTED),
@@ -186,9 +190,10 @@ class AlarmManagerReminderSchedulerTest {
         )
         val scheduler = scheduler(FakeAlarmGateway(canScheduleExact = true), repository)
 
-        scheduler.reconcile()
+        val result = scheduler.reconcileWithResult()
 
         assertEquals(listOf(2 to ReminderStatus.SCHEDULED), repository.statusUpdates)
+        assertEquals(ReminderReconcileResult.SOME_UNAVAILABLE, result)
     }
 
     private fun scheduler(

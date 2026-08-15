@@ -7,6 +7,8 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ### Added
 
 - Production-readiness evidence, CI gates, accessibility contracts, and performance benchmarks.
+- Versioned JSON backup and confirmed Replace All restore for categories, tasks, completion history, subtasks, recurrence, and reminder metadata.
+- Italian and English backup/restore UI through Android's native document picker.
 
 ### Performance
 

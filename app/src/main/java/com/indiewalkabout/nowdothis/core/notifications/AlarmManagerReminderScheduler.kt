@@ -4,6 +4,7 @@ import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
+import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderReconcileResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 import javax.inject.Inject
@@ -28,13 +29,22 @@ class AlarmManagerReminderScheduler @Inject constructor(
     override suspend fun cancel(taskId: Int) = gateway.cancel(taskId)
 
     override suspend fun reconcile() {
-        val now = clock.nowMillis()
-        taskRepository.futureReminders(now)
-            .filter { it.isEligibleAt(now) }
-            .forEach { task -> reconcile(task) }
+        reconcileWithResult()
     }
 
-    private suspend fun reconcile(task: Task) {
+    override suspend fun reconcileWithResult(): ReminderReconcileResult {
+        val now = clock.nowMillis()
+        val statuses = taskRepository.futureReminders(now)
+            .filter { it.isEligibleAt(now) }
+            .map { task -> reconcile(task) }
+        return if (ReminderStatus.UNAVAILABLE in statuses) {
+            ReminderReconcileResult.SOME_UNAVAILABLE
+        } else {
+            ReminderReconcileResult.SUCCESS
+        }
+    }
+
+    private suspend fun reconcile(task: Task): ReminderStatus {
         val status = try {
             when (schedule(task.id, requireNotNull(task.reminderAt))) {
                 ReminderScheduleResult.EXACT,
@@ -52,8 +62,9 @@ class AlarmManagerReminderScheduler @Inject constructor(
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {
-            // A single stale or failed row must not block the remaining reminders.
+            return ReminderStatus.UNAVAILABLE
         }
+        return status
     }
 
     private fun Task.isEligibleAt(now: Long): Boolean =
