@@ -34,6 +34,14 @@ class AppNavigator(
         backStack.add(TaskEditorKey(taskId, initialDueAt))
     }
 
+    fun openNewTask() {
+        openTaskEditor(taskId = null, initialDueAt = null)
+    }
+
+    fun openTask(taskId: Int) {
+        openTaskEditor(taskId = taskId, initialDueAt = null)
+    }
+
     fun openCategoryManagement() {
         backStack.add(CategoryManagementKey)
     }

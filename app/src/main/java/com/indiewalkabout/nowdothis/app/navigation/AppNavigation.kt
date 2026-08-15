@@ -41,12 +41,17 @@ import com.indiewalkabout.nowdothis.feature.task.presentation.list.TaskListRoute
 import kotlinx.coroutines.flow.Flow
 
 @Composable
-fun AppNavigation(openTaskIds: Flow<Int>) {
+fun AppNavigation(taskEditorRequests: Flow<TaskEditorRequest>) {
     val backStack = rememberNavBackStack(TaskListKey)
     val navigator = remember(backStack) { AppNavigator(backStack) }
 
-    LaunchedEffect(openTaskIds) {
-        openTaskIds.collect { taskId -> navigator.openTaskEditor(taskId, null) }
+    LaunchedEffect(taskEditorRequests) {
+        taskEditorRequests.collect { request ->
+            when (request) {
+                TaskEditorRequest.Add -> navigator.openNewTask()
+                is TaskEditorRequest.Open -> navigator.openTask(request.taskId)
+            }
+        }
     }
 
     AppNavDisplay(
@@ -72,7 +77,7 @@ private fun RootScaffold(
         floatingActionButton = {
             if (showAddTask) {
                 FloatingActionButton(
-                    onClick = { navigator.openTaskEditor(null, null) },
+                    onClick = navigator::openNewTask,
                     modifier = Modifier.testTag("task-add")
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_task))

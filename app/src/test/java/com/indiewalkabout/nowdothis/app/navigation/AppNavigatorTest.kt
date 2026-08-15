@@ -34,6 +34,24 @@ class AppNavigatorTest {
     }
 
     @Test
+    fun openNewTask_pushesAnEmptyTaskEditor() {
+        val navigator = AppNavigator(mutableListOf(TaskListKey))
+
+        navigator.openNewTask()
+
+        assertEquals(TaskEditorKey(null, null), navigator.backStack.last())
+    }
+
+    @Test
+    fun openTask_pushesTheRequestedTaskEditor() {
+        val navigator = AppNavigator(mutableListOf(TaskListKey))
+
+        navigator.openTask(42)
+
+        assertEquals(TaskEditorKey(42, null), navigator.backStack.last())
+    }
+
+    @Test
     fun openCategoryHistoryAndDataPortability_pushTheirDestinations() {
         val navigator = AppNavigator(mutableListOf(TaskListKey))
 
