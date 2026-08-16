@@ -85,6 +85,35 @@ class MainActivityQuickCaptureNavigationTest {
         navigateBackToTaskList()
     }
 
+    @Test
+    fun coldLaunchWithWidgetAddIntent_opensNewTaskEditorWithoutReplay() {
+        val launchIntent = QuickCaptureWidgetIntents.add(context)
+        scenario = ActivityScenario.launch(launchIntent)
+
+        assertNewTaskEditor()
+        assertIntentConsumed()
+        syncScenarioLaunchIntentWithConsumedActivityIntent(launchIntent)
+        scenario.recreate()
+        assertNewTaskEditor()
+        assertIntentConsumed()
+        navigateBackToTaskList()
+    }
+
+    @Test
+    fun coldLaunchWithWidgetOpenIntent_opensRequestedTaskEditorWithoutReplay() {
+        val title = "Cold launch widget task"
+        val launchIntent = QuickCaptureWidgetIntents.open(context, seedTask(title))
+        scenario = ActivityScenario.launch(launchIntent)
+
+        assertExistingTaskEditor(title)
+        assertIntentConsumed()
+        syncScenarioLaunchIntentWithConsumedActivityIntent(launchIntent)
+        scenario.recreate()
+        assertExistingTaskEditor(title)
+        assertIntentConsumed()
+        navigateBackToTaskList()
+    }
+
     private fun deliverNewIntent(intent: Intent) {
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         instrumentation.waitForIdleSync()
@@ -93,6 +122,12 @@ class MainActivityQuickCaptureNavigationTest {
     private fun assertIntentConsumed() = scenario.onActivity { activity ->
         assertNull(activity.intent.action)
         assertNull(activity.intent.data)
+    }
+
+    private fun syncScenarioLaunchIntentWithConsumedActivityIntent(intent: Intent) {
+        // ActivityScenario retains this mutable launch Intent to match recreation callbacks.
+        intent.action = null
+        intent.data = null
     }
 
     private fun seedTask(title: String): Int = runBlocking {

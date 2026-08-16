@@ -29,7 +29,11 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(taskEditorRequestFlow)
             }
         }
-        if (savedInstanceState == null) routeNavigationIntent(intent)
+        if (savedInstanceState == null) {
+            routeNavigationIntent(intent, deferConsumption = true)
+        } else {
+            clearNavigationIntent(intent)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -38,22 +42,34 @@ class MainActivity : ComponentActivity() {
         routeNavigationIntent(intent)
     }
 
-    private fun routeNavigationIntent(intent: Intent?) {
-        consumeNavigationIntent(intent)?.let(taskEditorRequests::trySend)
+    private fun routeNavigationIntent(intent: Intent?, deferConsumption: Boolean = false) {
+        navigationRequest(intent)?.let { request ->
+            taskEditorRequests.trySend(request)
+            if (deferConsumption) {
+                // Route through the buffered channel now, then clear after initial lifecycle dispatch.
+                window.decorView.post { clearNavigationIntent(intent) }
+            } else {
+                clearNavigationIntent(intent)
+            }
+        }
     }
 }
 
 fun consumeNavigationIntent(intent: Intent?): TaskEditorRequest? {
-    val request = QuickCaptureWidgetIntents.parse(intent)
+    return navigationRequest(intent)?.also { clearNavigationIntent(intent) }
+}
+
+private fun navigationRequest(intent: Intent?): TaskEditorRequest? =
+    QuickCaptureWidgetIntents.parse(intent)
         ?: notificationTaskId(
             action = intent?.action,
             hasTaskId = intent?.hasExtra(ReminderReceiver.EXTRA_TASK_ID) == true,
             taskId = intent?.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0) ?: 0
         )?.let(TaskEditorRequest::Open)
-    return request?.also {
-        intent?.action = null
-        intent?.data = null
-        intent?.removeExtra(QuickCaptureWidgetIntents.EXTRA_TASK_ID)
-        intent?.removeExtra(ReminderReceiver.EXTRA_TASK_ID)
-    }
+
+private fun clearNavigationIntent(intent: Intent?) {
+    intent?.action = null
+    intent?.data = null
+    intent?.removeExtra(QuickCaptureWidgetIntents.EXTRA_TASK_ID)
+    intent?.removeExtra(ReminderReceiver.EXTRA_TASK_ID)
 }
