@@ -23,13 +23,6 @@ import org.robolectric.Shadows.shadowOf
 @RunWith(RobolectricTestRunner::class)
 class QuickCaptureWidgetProviderTest {
     @Test
-    fun providerCapacity_usesApprovedThresholdsForTheLargestHostHeight() {
-        assertEquals(3, quickCaptureCapacityForHeight(200))
-        assertEquals(5, quickCaptureCapacityForHeight(320))
-        assertEquals(8, quickCaptureCapacityForHeight(464))
-    }
-
-    @Test
     fun compositionFailure_installsRawLocalizedErrorRemoteViews() {
         val context = RuntimeEnvironment.getApplication()
         val manager = AppWidgetManager.getInstance(context)

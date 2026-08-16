@@ -144,7 +144,7 @@ class QuickCaptureWidgetContentTest {
             )
         }
 
-        onNode(hasTestTag("quick-capture-title-1")).assertHasText("Titolo in ritardo")
+        onNode(hasTestTag("quick-capture-title-text-1")).assertHasText("Titolo in ritardo")
         onNode(hasTestTag("quick-capture-due-1")).assertHasText("In ritardo")
         onNode(hasTestTag("quick-capture-due-2")).assertHasText("Oggi")
         onNode(hasTestTag("quick-capture-due-3")).assertHasText("In arrivo")

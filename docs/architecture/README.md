@@ -1,7 +1,7 @@
 # Architecture
 
 This directory records the architecture that is implemented in Now Do This as of
-2026-08-13. The app deliberately remains a single Android application module with
+2026-08-16. The app deliberately remains a single Android application module with
 feature-first packages, Clean MVVM boundaries, and unidirectional data flow.
 ViewModels may consume domain repository contracts directly for screen-specific
 reads, mutations, and coordination. Use cases own reusable business rules, operations
@@ -19,6 +19,14 @@ use cases coordinate backup/inspection/restore, and the repository combines a pu
 versioned codec with a transactional Room data source and platform document gateway.
 Restore validates before mutation, replaces the complete graph atomically, then
 reconciles reminders after commit.
+
+The `feature/quickcapture` boundary is a Glance/AppWidget presentation surface over
+the existing task domain and Room source of truth. Each responsive composition
+observes the capacity selected from its host-provided size, while add/open intents
+enter the production `MainActivity` Navigation 3 host and completion invokes the
+shared task-completion use case. The receiver and Glance callback can reconstruct
+dependencies from the application entry point when no app activity or process is
+running; no widget cache or app-authored `WorkManager` pipeline is introduced.
 
 ## Documents
 

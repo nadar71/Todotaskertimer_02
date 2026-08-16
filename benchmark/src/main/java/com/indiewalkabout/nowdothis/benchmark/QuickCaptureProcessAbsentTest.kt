@@ -7,14 +7,18 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
 import android.os.SystemClock
+import android.util.SizeF
 import android.view.View
 import android.view.ViewGroup
 import android.widget.RemoteViews
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,7 +30,7 @@ class QuickCaptureProcessAbsentTest {
     private val device = UiDevice.getInstance(instrumentation)
 
     @Test
-    fun providerUpdateAndCompletionStartTheAbsentTargetProcessAndUseFreshRoomState() {
+    fun updateCompletionAddAndOpen_useFreshRoomStateAcrossAbsentAndRunningProcesses() {
         resetFixture()
         device.executeShellCommand(
             "content call --uri content://$FIXTURE_AUTHORITY --method $PREPARE_METHOD"
@@ -35,6 +39,14 @@ class QuickCaptureProcessAbsentTest {
         assertTargetProcessAbsent()
 
         withWidgetHost { hostView ->
+            hostView.awaitText(TASK_TITLE)
+
+            stopTargetProcess()
+            assertTargetProcessAbsent()
+            val updateCountBeforeResize = hostView.updateCount
+            hostView.requestHostUpdate()
+            waitUntil { targetProcessId().isNotBlank() }
+            hostView.awaitUpdateAfter(updateCountBeforeResize)
             hostView.awaitText(TASK_TITLE)
 
             stopTargetProcess()
@@ -48,10 +60,26 @@ class QuickCaptureProcessAbsentTest {
                 val state = device.executeShellCommand(
                     "content call --uri content://$FIXTURE_AUTHORITY --method $QUERY_METHOD"
                 )
-                "original_completed=true" in state && "pending_count=0" in state
+                "original_completed=true" in state &&
+                    "next_occurrence_count=1" in state &&
+                    "next_due_at_advanced=true" in state &&
+                    "pending_count=1" in state
             }
             hostView.awaitUpdateAfter(updateCount)
-            hostView.awaitTextAbsent(TASK_TITLE)
+            hostView.awaitText(TASK_TITLE)
+
+            stopTargetProcess()
+            assertTargetProcessAbsent()
+            assertTrue(hostView.clickAdd())
+            device.waitForTag(TASK_EDITOR_TAG)
+            device.waitForText(NEW_TASK_TITLE)
+            device.shellBack()
+            device.waitForTag(TASK_LIST_TAG)
+
+            assertTrue(hostView.clickOpenFor(TASK_TITLE))
+            device.waitForTag(TASK_EDITOR_TAG)
+            device.waitForText(EDIT_TASK_TITLE)
+            device.waitForText(TASK_TITLE)
         }
 
         resetFixture()
@@ -142,17 +170,30 @@ class QuickCaptureProcessAbsentTest {
 
         fun awaitText(text: String) = waitUntil { text in renderedTexts() }
 
-        fun awaitTextAbsent(text: String) = waitUntil { text !in renderedTexts() }
-
         fun awaitUpdateAfter(previousCount: Int) = waitUntil { updateCount > previousCount }
 
+        fun requestHostUpdate() {
+            instrumentation.runOnMainSync {
+                updateAppWidgetSize(
+                    Bundle(),
+                    listOf(SizeF(COMPACT_WIDTH_DP, COMPACT_HEIGHT_DP))
+                )
+            }
+        }
+
+        fun clickAdd(): Boolean = clickDescribedAction(ADD_DESCRIPTION)
+
+        fun clickOpenFor(title: String): Boolean = clickDescribedAction("Open $title")
+
         fun clickCompletionFor(title: String): Boolean =
+            clickDescribedAction("Mark $title complete")
+
+        private fun clickDescribedAction(description: String): Boolean =
             instrumentation.runOnMainSyncWithResult {
-                val completionAction = descendants()
-                    .filter { it.contentDescription?.toString()?.contains(title) == true }
-                    .lastOrNull()
+                val action = descendants()
+                    .firstOrNull { it.contentDescription?.toString() == description }
                     ?: return@runOnMainSyncWithResult false
-                generateSequence(completionAction) { it.parent as? View }
+                generateSequence(action) { it.parent as? View }
                     .firstOrNull(View::isClickable)
                     ?.performClick() == true
             }
@@ -178,10 +219,22 @@ class QuickCaptureProcessAbsentTest {
         const val QUERY_METHOD = "query_quick_capture"
         const val RESET_METHOD = "reset"
         const val TASK_TITLE = "Process absent task"
+        const val ADD_DESCRIPTION = "Add task"
+        const val NEW_TASK_TITLE = "New task"
+        const val EDIT_TASK_TITLE = "Edit task"
+        const val TASK_EDITOR_TAG = "task-title"
         const val WIDGET_RECEIVER_CLASS =
             "com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetReceiver"
         const val HOST_ID = 0x5145
+        const val COMPACT_WIDTH_DP = 180f
+        const val COMPACT_HEIGHT_DP = 200f
         const val WAIT_TIMEOUT_MILLIS = 15_000L
         const val POLL_INTERVAL_MILLIS = 100L
+    }
+}
+
+private fun UiDevice.waitForText(text: String) {
+    requireNotNull(wait(Until.findObject(By.text(text)), 15_000L)) {
+        "Timed out waiting for text '$text'"
     }
 }

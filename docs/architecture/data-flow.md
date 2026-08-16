@@ -92,3 +92,26 @@ leaving persistent screen content in `UiState`.
   DAOs, and mapping between persistence and domain models.
 - App and core packages own composition, Navigation 3, database construction,
   notifications, alarms, time, and shared design primitives.
+
+## Quick Capture Widget
+
+```mermaid
+flowchart LR
+    Host["Android AppWidget host"] --> Receiver["Glance receiver / callback"]
+    Receiver --> EntryPoint["Hilt application entry point"]
+    EntryPoint --> Load["LoadQuickCaptureTasks"]
+    EntryPoint --> Complete["CompleteTask"]
+    Load --> Room["Room task source of truth"]
+    Complete --> Room
+    Room -->|Flow| Widget["Responsive Glance composition (3 / 5 / 8)"]
+    Widget --> Host
+    Widget -->|explicit immutable intent| Activity["MainActivity Navigation 3"]
+```
+
+The host-selected `LocalSize` determines each responsive composition's task
+capacity. Data is read directly from Room, so a receiver update or completion can
+start a previously absent application process and rebuild current state without a
+widget-only cache. Add and open actions use explicit immutable activity intents;
+completion uses a Glance callback and the shared recurring-aware completion use
+case. Glance may use its own internal worker for session execution, but the app does
+not schedule widget work through an application-owned `WorkManager` pipeline.

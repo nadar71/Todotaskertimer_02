@@ -7,6 +7,13 @@
 - [ ] Room schema export and migration diff are reviewed; no destructive migration exists.
 - [ ] Notification permission, reminder delivery, exact-alarm fallback, and reboot reconciliation are checked.
 - [ ] Localization smoke tests pass in Italian and English.
+- [ ] Quick Capture 3/5/8 responsive capacities, empty/unavailable states, locale,
+  theme, 200% text, 48 dp actions, and multiple bound instances pass host tests.
+- [ ] Quick Capture update, recurring completion, add, and open pass with the
+  optimized target process absent; launcher placement/resize evidence is identified
+  as manual rather than automated.
+- [ ] Release manifest keeps the widget receiver non-exported with provider metadata,
+  and release artifacts exclude benchmark fixture classes and methods.
 - [ ] Create backup, preview, confirmation, Replace All restore, cancellation, and invalid/future rejection are checked against [format v1](../data-portability/backup-format-v1.md).
 - [ ] A backup from the release candidate restores category/task/subtask IDs, completion state, recurrence, and reminder metadata on a clean test install.
 - [ ] Backup privacy wording remains clear: JSON is local, user-directed, and unencrypted.

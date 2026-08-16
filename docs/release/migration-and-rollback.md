@@ -17,3 +17,12 @@ defaulted v1 representation and a new backup format with a documented migration 
 The exact contract and privacy limitations are in the [backup format reference](../data-portability/backup-format-v1.md).
 
 For code-only regressions that do not change the schema, issue a corrected patch release. Preserve the affected AAB, mapping files, changelog, and verification record so the failure can be reproduced and symbolicated.
+
+Quick Capture is a code-and-manifest addition and does not change the Room schema,
+backup format, or user task data. A corrected patch may disable or remove the
+non-exported widget receiver, its provider metadata/resources, and the Glance
+dependency without migrating or deleting Room data. Existing launcher instances
+then become unavailable and can be removed by the host; reinstalling a corrected
+receiver rebuilds content from the same Room source of truth. Retain the affected
+APK/AAB and mapping artifacts, and repeat process-absent and launcher-host checks
+after re-enabling the surface.

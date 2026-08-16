@@ -8,9 +8,10 @@ import android.net.Uri
 import android.widget.RemoteViews
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.glance.GlanceId
+import androidx.glance.LocalSize
 import androidx.glance.appwidget.GlanceAppWidget
-import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.provideContent
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.feature.quickcapture.di.QuickCaptureWidgetEntryPoint
@@ -27,13 +28,14 @@ class QuickCaptureWidget : GlanceAppWidget(
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val entryPoint = quickCaptureWidgetEntryPoint(context)
-        val states = observeQuickCaptureWidgetState(
-            loadTasks = entryPoint.loadQuickCaptureTasks(),
-            capacity = widgetCapacity(context, id)
-        )
+        val loadTasks = entryPoint.loadQuickCaptureTasks()
         val inFlightTaskIds = entryPoint.completeQuickCaptureTask().inFlightTaskIds
 
         provideContent {
+            val capacity = capacityFor(LocalSize.current)
+            val states = remember(capacity) {
+                observeQuickCaptureWidgetState(loadTasks, capacity)
+            }
             val state by states.collectAsState(QuickCaptureWidgetState.Loading)
             val inFlight by inFlightTaskIds.collectAsState()
             val renderedState = if (state is QuickCaptureWidgetState.Content) {
@@ -99,23 +101,3 @@ internal fun quickCaptureWidgetEntryPoint(context: Context): QuickCaptureWidgetE
         context.applicationContext,
         QuickCaptureWidgetEntryPoint::class.java
     )
-
-private suspend fun widgetCapacity(context: Context, glanceId: GlanceId): Int {
-    val maxHeight = GlanceAppWidgetManager(context)
-        .getAppWidgetSizes(glanceId)
-        .maxOfOrNull { it.height.value.toInt() }
-        ?: CompactWidgetSize.height.value.toInt()
-    return quickCaptureCapacityForHeight(maxHeight)
-}
-
-internal fun quickCaptureCapacityForHeight(heightDp: Int): Int {
-    return when {
-        heightDp >= ExpandedWidgetSize.height.value -> EXPANDED_CAPACITY
-        heightDp >= MediumWidgetSize.height.value -> MEDIUM_CAPACITY
-        else -> COMPACT_CAPACITY
-    }
-}
-
-private const val COMPACT_CAPACITY = 3
-private const val MEDIUM_CAPACITY = 5
-private const val EXPANDED_CAPACITY = 8

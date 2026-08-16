@@ -10,6 +10,10 @@
 - Calendar days expose full localized dates, today and selected state, and task count.
 - Previous and next month controls are at least 48 dp in both dimensions.
 - Category move, edit, delete, and palette targets are at least 48 dp.
+- Quick Capture add, retry, task-open, and completion actions expose localized
+  descriptions; available actions retain at least 48 dp targets at 200% text.
+- Quick Capture host rendering verifies English/Italian strings, light/dark palettes,
+  3/5/8 capacities, and non-overlapping sibling text in production `RemoteViews`.
 
 ## Non-Color Cues
 
@@ -29,6 +33,9 @@
 | --- | --- | --- | --- |
 | Feature Compose semantics | Medium Phone AVD, API 36 | 2026-08-13 | Passed after accessibility fixes |
 | Large font, `font_scale=2.0` | Medium Phone AVD, API 36 | 2026-08-13 | Passed: 39 feature tests |
+| Quick Capture production host at 200% text | Medium Phone AVD, API 36 | 2026-08-16 | Passed: automated 48 dp action-target and non-overlap assertions |
+| Quick Capture English/light and Italian/dark visual smoke | Pixel Launcher, API 36 emulator | 2026-08-16 | Passed: operator-placed medium/expanded widget; screenshots retained |
+| Quick Capture TalkBack reading order | Pending physical-device review | - | Pending; content descriptions are automated, spoken order is not claimed |
 | Light and dark contrast review | Pending physical-device review | - | Pending |
 | TalkBack: create task | Pending physical-device review | - | Pending |
 | TalkBack: complete task | Pending physical-device review | - | Pending |

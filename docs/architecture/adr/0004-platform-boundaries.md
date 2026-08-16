@@ -22,6 +22,7 @@ Treat the following as explicit platform or framework boundaries:
 | Notifications | receivers, `NotificationPublisher`, permission checker, and Hilt module in `core.notifications` | Reminder contracts, task identifiers, and route-level permission effects |
 | Locale selection | Android resource locale configuration and Compose locale lookup at the UI edge | Localized resources and locale-aware presentation values; no locale-specific domain persistence |
 | Navigation 3 | `AppNavigation`, `AppNavigator`, and serializable feature navigation keys | Presentation effects and route callbacks expressed with domain identifiers |
+| AppWidget / Glance | `feature.quickcapture.presentation.widget` receiver, responsive composition, callbacks, and explicit intents | Existing task-domain load/completion use cases and application entry point |
 
 Keep Room entities, DataStore keys, AlarmManager and notification objects, locale
 framework objects, and Navigation 3 back-stack operations in their listed owners.
@@ -40,6 +41,10 @@ it when it already belongs entirely to a platform-owned UI or composition bounda
   visible at specific integration points.
 - Some app and presentation code intentionally uses Compose or Navigation types at
   the UI edge; complete framework independence is not a goal.
+- AppWidget hosts own placement and size selection. The widget maps host size to
+  fixed 3/5/8 capacities, reads current Room state after process reconstruction, and
+  relies on Glance's internal session machinery rather than an app-owned widget
+  worker or duplicate persistence layer.
 - Platform upgrades can require focused adapter and integration-test changes even
   when domain contracts remain stable.
 

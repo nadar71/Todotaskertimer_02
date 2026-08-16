@@ -1,6 +1,6 @@
 # Now Do This
 
-Now Do This is a local-first Android task manager built with Kotlin and Jetpack Compose. It supports task and subtask completion, categories, priorities, due dates, one reminder, recurrence, Calendar planning, completion History, user-owned JSON backup/restore, and Android-native per-app language selection. Italian is the primary language and English is included.
+Now Do This is a local-first Android task manager built with Kotlin and Jetpack Compose. It supports task and subtask completion, categories, priorities, due dates, one reminder, recurrence, Calendar planning, completion History, home-screen Quick Capture, user-owned JSON backup/restore, and Android-native per-app language selection. Italian is the primary language and English is included.
 
 ## Product
 
@@ -12,13 +12,17 @@ Now Do This is a local-first Android task manager built with Kotlin and Jetpack 
 | --- | --- |
 | ![Categories in Italian](docs/images/categories-it-light.png) | ![History in English, dark theme](docs/images/history-en-dark.png) |
 
-Core workflows include grouped pending tasks, completion and recurring occurrence generation, user-managed categories, task search and sorting, swipe-delete undo, a monthly Calendar, searchable read-only completion History, and Storage Access Framework backup with confirmed Replace All restore.
+| Quick Capture, English light | Quick Capture, Italian dark |
+| --- | --- |
+| ![Quick Capture widget in English light theme at medium size](docs/images/quick-capture-en-light-medium.png) | ![Quick Capture widget in Italian dark theme at expanded size](docs/images/quick-capture-it-dark-expanded.png) |
+
+Core workflows include grouped pending tasks, completion and recurring occurrence generation, user-managed categories, task search and sorting, swipe-delete undo, a monthly Calendar, searchable read-only completion History, home-screen add/open/complete actions, and Storage Access Framework backup with confirmed Replace All restore.
 
 The [backup format v1 reference](docs/data-portability/backup-format-v1.md) documents the complete planning-data contract, compatibility policy, privacy scope, and restore semantics.
 
 ## Architectural Highlights
 
-- Single `:app` production module with feature-first packages for `task`, `category`, `calendar`, `history`, and `portability`.
+- Single `:app` production module with feature-first packages for `task`, `category`, `calendar`, `history`, `quickcapture`, and `portability`.
 - Clean MVVM boundaries: Compose UI, ViewModel, reusable use cases, domain repository contracts, and offline implementations.
 - Unidirectional data flow with immutable UI state, UI events, `StateFlow`, and one-off effect flows.
 - Local-first persistence with Room and DataStore plus user-directed JSON documents; no account, backend, analytics SDK, or network synchronization.
@@ -38,6 +42,7 @@ See the [documented UDF flow](docs/architecture/data-flow.md) and [Clean MVVM de
 - Room schema exports, explicit migrations, DAO/transaction instrumentation tests, and forward-only migration policy.
 - Atomic full-fidelity planning backup/restore with versioned serialization, graph validation, stable IDs, and post-commit reminder reconciliation.
 - AlarmManager reminders with exact-alarm capability fallback, notification permission handling, boot/startup reconciliation, and editor deep links.
+- A responsive Glance Quick Capture widget backed directly by Room, with 3/5/8-task host sizes and process-independent add, open, complete, and refresh paths.
 - Android-native per-app locale selection with generated locale configuration.
 - Accessibility semantics for roles, selected/toggle states, localized spoken descriptions, and minimum interactive targets.
 - R8 optimization, resource shrinking, optional environment-based release signing, mapping artifacts, and packaged Baseline Profile.
@@ -75,4 +80,4 @@ The ADRs record rejected alternatives and concrete revisit triggers rather than 
 
 ## Roadmap
 
-Candidate product investments include widgets, richer recurrence, faster capture, and improved planning workflows. KMP/iOS remains deferred until product behavior and shared-domain value justify the additional platform and architecture cost.
+Candidate product investments include richer recurrence, configurable widget views, and improved planning workflows. KMP/iOS remains deferred until product behavior and shared-domain value justify the additional platform and architecture cost.

@@ -198,8 +198,7 @@ private fun QuickCaptureWidgetTaskRow(
             .background(colors.surface)
             .semantics { testTag = "quick-capture-row-${task.id}" }
     ) {
-        Text(
-            text = task.title,
+        Row(
             modifier = GlanceModifier
                 .defaultWeight()
                 .fillMaxHeight()
@@ -207,18 +206,26 @@ private fun QuickCaptureWidgetTaskRow(
                 .semantics {
                     testTag = "quick-capture-title-${task.id}"
                     contentDescription = openDescription
-                },
-            style = TextStyle(color = colors.onSurface),
-            maxLines = QuickCaptureWidgetDimensions.titleMaxLines
-        )
-        Text(
-            text = dueLabel,
-            modifier = GlanceModifier
-                .padding(horizontal = 4.dp)
-                .semantics { testTag = "quick-capture-due-${task.id}" },
-            style = TextStyle(color = dueColor),
-            maxLines = QuickCaptureWidgetDimensions.titleMaxLines
-        )
+                }
+        ) {
+            Text(
+                text = task.title,
+                modifier = GlanceModifier
+                    .defaultWeight()
+                    .fillMaxHeight()
+                    .semantics { testTag = "quick-capture-title-text-${task.id}" },
+                style = TextStyle(color = colors.onSurface),
+                maxLines = QuickCaptureWidgetDimensions.titleMaxLines
+            )
+            Text(
+                text = dueLabel,
+                modifier = GlanceModifier
+                    .padding(horizontal = 4.dp)
+                    .semantics { testTag = "quick-capture-due-${task.id}" },
+                style = TextStyle(color = dueColor),
+                maxLines = QuickCaptureWidgetDimensions.titleMaxLines
+            )
+        }
         QuickCaptureWidgetIconAction(
             imageRes = R.drawable.ic_quick_capture_complete,
             contentDescription = completeDescription,

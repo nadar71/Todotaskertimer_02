@@ -1,4 +1,4 @@
-package com.indiewalkabout.nowdothis.app
+package com.indiewalkabout.nowdothis.feature.quickcapture
 
 import android.content.Intent
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
@@ -10,6 +10,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.indiewalkabout.nowdothis.R
+import com.indiewalkabout.nowdothis.app.MainActivity
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.core.database.DebugDatabaseEntryPoint
 import com.indiewalkabout.nowdothis.core.notifications.NotificationPublisher
@@ -21,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -28,7 +30,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
-class MainActivityQuickCaptureNavigationTest {
+class QuickCaptureNavigationJourneyTest {
     @get:Rule
     val composeRule = createEmptyComposeRule()
 
@@ -126,6 +128,8 @@ class MainActivityQuickCaptureNavigationTest {
     private fun assertIntentConsumed() = scenario.onActivity { activity ->
         assertNull(activity.intent.action)
         assertNull(activity.intent.data)
+        assertFalse(activity.intent.hasExtra(QuickCaptureWidgetIntents.EXTRA_TASK_ID))
+        assertFalse(activity.intent.hasExtra(ReminderReceiver.EXTRA_TASK_ID))
     }
 
     private fun syncScenarioLaunchIntentWithConsumedActivityIntent(intent: Intent) {
