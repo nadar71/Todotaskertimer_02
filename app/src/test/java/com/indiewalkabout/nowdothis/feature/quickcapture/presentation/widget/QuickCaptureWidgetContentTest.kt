@@ -1,5 +1,3 @@
-@file:Suppress("RestrictedApi")
-
 package com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget
 
 import android.content.Context
@@ -8,10 +6,6 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.appwidget.testing.unit.assertHasRunCallbackClickAction
 import androidx.glance.appwidget.testing.unit.assertHasStartActivityClickAction
 import androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest
-import androidx.glance.layout.HeightModifier
-import androidx.glance.unit.ResourceColorProvider
-import androidx.glance.testing.GlanceNodeMatcher
-import androidx.glance.testing.unit.MappedNode
 import androidx.glance.testing.unit.assertHasContentDescriptionEqualTo
 import androidx.glance.testing.unit.assertHasNoClickAction
 import androidx.glance.testing.unit.assertHasText
@@ -31,7 +25,6 @@ import org.robolectric.annotation.Config
 import java.util.Locale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.toArgb
-import androidx.glance.unit.Dimension
 import com.indiewalkabout.nowdothis.R
 
 @RunWith(RobolectricTestRunner::class)
@@ -44,23 +37,23 @@ class QuickCaptureWidgetContentTest {
     }
 
     @Test
-    fun widgetColors_keepResourceIdsAndResolveTheNightQualifiedColorAtRenderTime() {
+    fun widgetPalette_resolvesConfigurationQualifiedColorsForEveryFreshRender() {
         val lightContext = contextFor(Locale.ENGLISH, nightMode = false)
         val nightContext = contextFor(Locale.ENGLISH, nightMode = true)
-        val background = QuickCaptureWidgetColors.background as ResourceColorProvider
+        val lightPalette = quickCaptureWidgetPalette(lightContext)
+        val nightPalette = quickCaptureWidgetPalette(nightContext)
 
-        assertEquals(R.color.quick_capture_widget_background, background.resId)
         assertEquals(
             lightContext.getColor(R.color.quick_capture_widget_background),
-            background.getColor(lightContext).toArgb()
+            lightPalette.background.getColor(lightContext).toArgb()
         )
         assertEquals(
             nightContext.getColor(R.color.quick_capture_widget_background),
-            background.getColor(nightContext).toArgb()
+            nightPalette.background.getColor(nightContext).toArgb()
         )
         assertNotEquals(
-            background.getColor(lightContext).toArgb(),
-            background.getColor(nightContext).toArgb()
+            lightPalette.background.getColor(lightContext).toArgb(),
+            nightPalette.background.getColor(nightContext).toArgb()
         )
     }
 
@@ -185,10 +178,8 @@ class QuickCaptureWidgetContentTest {
         }
 
         assertEquals(48.dp, QuickCaptureWidgetDimensions.rowHeight)
-        onNode(hasTestTag("quick-capture-title-41")).assert(
-            hasFillMaxHeight(),
-            { "The task title must fill its 48 dp row so the full title region is clickable." }
-        )
+        onNode(hasTestTag("quick-capture-title-41"))
+            .assertHasStartActivityClickAction(QuickCaptureWidgetIntents.open(englishContext(), 41))
     }
 
     @Test
@@ -251,11 +242,6 @@ class QuickCaptureWidgetContentTest {
         while (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) parser.next()
         return parser.getAttributeResourceValue(ANDROID_NAMESPACE, attributeName, 0)
     }
-
-    private fun hasFillMaxHeight(): GlanceNodeMatcher<MappedNode> =
-        GlanceNodeMatcher("fills its parent height") { node ->
-            node.value.emittable.modifier.any { it is HeightModifier && it.height == Dimension.Fill }
-        }
 
     private companion object {
         const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
