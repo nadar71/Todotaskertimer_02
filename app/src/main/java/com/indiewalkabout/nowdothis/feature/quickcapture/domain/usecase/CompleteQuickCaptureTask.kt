@@ -39,20 +39,31 @@ class CompleteQuickCaptureTask(
         if (!claimed) return refresh(CompleteQuickCaptureResult.Ignored)
 
         var cancellation: CancellationException? = null
+        var refreshFailed = false
         var result: CompleteQuickCaptureResult = CompleteQuickCaptureResult.Failed
         try {
-            result = try {
-                when (completeTask(taskId)) {
-                    CompleteTaskResult.NotFound,
-                    CompleteTaskResult.AlreadyCompleted -> CompleteQuickCaptureResult.Ignored
-
-                    is CompleteTaskResult.Completed -> CompleteQuickCaptureResult.Completed
-                }
+            try {
+                updater.updateAll()
             } catch (exception: CancellationException) {
                 cancellation = exception
-                CompleteQuickCaptureResult.Failed
             } catch (_: Exception) {
-                CompleteQuickCaptureResult.Failed
+                refreshFailed = true
+            }
+
+            if (cancellation == null) {
+                result = try {
+                    when (completeTask(taskId)) {
+                        CompleteTaskResult.NotFound,
+                        CompleteTaskResult.AlreadyCompleted -> CompleteQuickCaptureResult.Ignored
+
+                        is CompleteTaskResult.Completed -> CompleteQuickCaptureResult.Completed
+                    }
+                } catch (exception: CancellationException) {
+                    cancellation = exception
+                    CompleteQuickCaptureResult.Failed
+                } catch (_: Exception) {
+                    CompleteQuickCaptureResult.Failed
+                }
             }
         } finally {
             withContext(NonCancellable) {
@@ -63,14 +74,14 @@ class CompleteQuickCaptureTask(
                     updater.updateAll()
                 } catch (exception: CancellationException) {
                     cancellation = cancellation ?: exception
-                    result = CompleteQuickCaptureResult.Failed
+                    refreshFailed = true
                 } catch (_: Exception) {
-                    result = CompleteQuickCaptureResult.Failed
+                    refreshFailed = true
                 }
             }
         }
         cancellation?.let { throw it }
-        return result
+        return if (refreshFailed) CompleteQuickCaptureResult.Failed else result
     }
 
     private suspend fun refresh(result: CompleteQuickCaptureResult): CompleteQuickCaptureResult = try {

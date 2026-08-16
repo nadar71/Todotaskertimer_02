@@ -5,6 +5,7 @@
     <string name="quick_capture_widget_empty">No pending tasks.</string>
     <string name="quick_capture_widget_unavailable">Could not refresh tasks.</string>
     <string name="quick_capture_widget_add_description">Add task</string>
+    <string name="quick_capture_widget_retry">Retry</string>
     <string name="quick_capture_widget_retry_description">Retry refreshing tasks</string>
     <string name="quick_capture_widget_open_description">Open %1$s</string>
     <string name="quick_capture_widget_complete_description">Mark %1$s complete</string>

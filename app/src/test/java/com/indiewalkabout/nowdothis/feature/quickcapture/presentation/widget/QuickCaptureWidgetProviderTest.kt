@@ -1,9 +1,11 @@
 package com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget
 
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.widget.Button
 import android.widget.TextView
 import androidx.glance.appwidget.AppWidgetId
 import com.indiewalkabout.nowdothis.R
@@ -13,6 +15,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -86,7 +89,37 @@ class QuickCaptureWidgetProviderTest {
 
         val errorText = shadowManager.getViewFor(appWidgetId)
             .findViewById<TextView>(R.id.quick_capture_widget_error_text)
+        val retry = shadowManager.getViewFor(appWidgetId)
+            .findViewById<Button>(R.id.quick_capture_widget_error_retry)
         assertEquals(context.getString(R.string.quick_capture_widget_unavailable), errorText.text.toString())
+        assertEquals(context.getString(R.string.quick_capture_widget_retry), retry.text.toString())
+        assertTrue(retry.performClick())
+    }
+
+    @Test
+    fun compositionRetry_usesProductionExplicitImmutableUniqueProviderUpdateIntent() {
+        val context = RuntimeEnvironment.getApplication()
+        val first = quickCaptureRetryPendingIntent(context, appWidgetId = 73)
+        val second = quickCaptureRetryPendingIntent(context, appWidgetId = 74)
+        val shadow = shadowOf(first)
+
+        assertTrue(shadow.isBroadcast)
+        assertTrue(shadow.isImmutable)
+        assertEquals(
+            ComponentName(context, QuickCaptureWidgetReceiver::class.java),
+            shadow.savedIntent.component
+        )
+        assertEquals(AppWidgetManager.ACTION_APPWIDGET_UPDATE, shadow.savedIntent.action)
+        assertEquals("nowdothis://quick-capture/widget/73/retry", shadow.savedIntent.dataString)
+        assertEquals(
+            listOf(73),
+            shadow.savedIntent.getIntArrayExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS)?.toList()
+        )
+        assertEquals(PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT, shadow.flags)
+        assertFalse(first == second)
+
+        first.cancel()
+        second.cancel()
     }
 
     @Test
@@ -110,6 +143,7 @@ class QuickCaptureWidgetProviderTest {
             R.xml.quick_capture_widget_info,
             receiverInfo.metaData.getInt(AppWidgetManager.META_DATA_APPWIDGET_PROVIDER)
         )
+        assertFalse(receiverInfo.exported)
         assertTrue(registeredReceivers(context.packageName, AppWidgetManager.ACTION_APPWIDGET_UPDATE).contains(component))
         assertTrue(registeredReceivers(context.packageName, Intent.ACTION_LOCALE_CHANGED).contains(component))
     }

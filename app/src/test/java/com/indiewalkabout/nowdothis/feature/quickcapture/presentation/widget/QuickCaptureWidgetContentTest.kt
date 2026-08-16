@@ -1,8 +1,12 @@
 package com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.res.Configuration
+import android.widget.RemoteViews
 import androidx.glance.action.actionParametersOf
+import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
+import androidx.glance.appwidget.GlanceRemoteViews
 import androidx.glance.appwidget.testing.unit.assertHasRunCallbackClickAction
 import androidx.glance.appwidget.testing.unit.assertHasStartActivityClickAction
 import androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest
@@ -15,12 +19,17 @@ import androidx.glance.testing.unit.hasText
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.model.QuickCaptureDueState
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.model.QuickCaptureSnapshot
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.model.QuickCaptureTask
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.Locale
 import androidx.compose.ui.unit.dp
@@ -166,6 +175,47 @@ class QuickCaptureWidgetContentTest {
     }
 
     @Test
+    @OptIn(ExperimentalGlanceRemoteViewsApi::class)
+    fun productionRenderedAddAndOpenActions_areImmutableExplicitAndDistinct() = runTest {
+        val context = englishContext()
+        val add = renderProductionViews(context, QuickCaptureWidgetState.Empty)
+            .pendingIntents()
+            .single { shadowOf(it).savedIntent.action == QuickCaptureWidgetIntents.ACTION_ADD }
+        val open = renderProductionViews(
+            context = context,
+            state = QuickCaptureWidgetState.Content(
+                QuickCaptureSnapshot(listOf(task(41, "Pay bills", QuickCaptureDueState.TODAY)))
+            )
+        ).pendingIntents()
+            .single { shadowOf(it).savedIntent.action == QuickCaptureWidgetIntents.ACTION_OPEN }
+        val addShadow = shadowOf(add)
+        val openShadow = shadowOf(open)
+        val addIntent = addShadow.savedIntent
+        val openIntent = openShadow.savedIntent
+
+        assertTrue(addShadow.isActivity)
+        assertTrue(addShadow.isImmutable)
+        assertNotNull(addIntent.component)
+        assertEquals(context.packageName, addIntent.component?.packageName)
+        assertEquals(QuickCaptureWidgetIntents.ACTION_ADD, addIntent.action)
+        assertEquals("nowdothis://quick-capture/add", addIntent.dataString)
+        assertTrue(openShadow.isActivity)
+        assertTrue(openShadow.isImmutable)
+        assertNotNull(openIntent.component)
+        assertEquals(context.packageName, openIntent.component?.packageName)
+        assertEquals(QuickCaptureWidgetIntents.ACTION_OPEN, openIntent.action)
+        assertEquals("nowdothis://quick-capture/task/41", openIntent.dataString)
+        assertEquals(41, openIntent.getIntExtra(QuickCaptureWidgetIntents.EXTRA_TASK_ID, 0))
+        assertEquals(PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT, addShadow.flags)
+        assertEquals(PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT, openShadow.flags)
+        assertFalse(add == open)
+        assertFalse(addIntent.filterEquals(openIntent))
+
+        add.cancel()
+        open.cancel()
+    }
+
+    @Test
     fun taskTitle_fillsTheShared48DpTaskRowHeight() = runGlanceAppWidgetUnitTest {
         setContext(englishContext())
         setAppWidgetSize(CompactWidgetSize)
@@ -213,6 +263,41 @@ class QuickCaptureWidgetContentTest {
             onNode(hasTestTag("quick-capture-row-$count")).assertExists()
             onNode(hasTestTag("quick-capture-row-${count + 1}")).assertDoesNotExist()
         }
+
+    @OptIn(ExperimentalGlanceRemoteViewsApi::class)
+    private suspend fun renderProductionViews(
+        context: Context,
+        state: QuickCaptureWidgetState
+    ): RemoteViews = GlanceRemoteViews().compose(
+        context = context,
+        size = CompactWidgetSize,
+        content = { QuickCaptureWidgetContent(state) }
+    ).remoteViews
+
+    private fun RemoteViews.pendingIntents(): List<PendingIntent> {
+        return (readField("mActions") as? List<*>).orEmpty().flatMap { action ->
+            when (action?.javaClass?.simpleName) {
+                "SetOnClickResponse" -> listOfNotNull(
+                    action.readField("mResponse")?.readField("mPendingIntent") as? PendingIntent
+                )
+                "ViewGroupActionAdd" -> listOfNotNull(
+                    action.readField("mNestedViews") as? RemoteViews
+                ).flatMap { it.pendingIntents() }
+                else -> emptyList()
+            }
+        }
+    }
+
+    private fun Any.readField(name: String): Any? {
+        var type: Class<*>? = javaClass
+        while (type != null) {
+            runCatching {
+                return type.getDeclaredField(name).apply { isAccessible = true }.get(this)
+            }
+            type = type.superclass
+        }
+        return null
+    }
 
     private fun task(
         id: Int,

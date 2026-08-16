@@ -5,6 +5,7 @@
     <string name="quick_capture_widget_empty">Nessuna attività in sospeso.</string>
     <string name="quick_capture_widget_unavailable">Impossibile aggiornare le attività.</string>
     <string name="quick_capture_widget_add_description">Aggiungi attività</string>
+    <string name="quick_capture_widget_retry">Riprova</string>
     <string name="quick_capture_widget_retry_description">Riprova ad aggiornare le attività</string>
     <string name="quick_capture_widget_open_description">Apri %1$s</string>
     <string name="quick_capture_widget_complete_description">Segna %1$s come completata</string>

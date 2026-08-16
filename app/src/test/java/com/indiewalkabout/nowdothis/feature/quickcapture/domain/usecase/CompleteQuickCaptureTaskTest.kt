@@ -44,7 +44,7 @@ class CompleteQuickCaptureTaskTest {
         assertEquals(CompleteQuickCaptureResult.Completed, result)
         assertTrue(repository.tasks.getValue(7).isCompleted)
         assertEquals(listOf(7), repository.completedIds)
-        assertEquals(1, updater.updateCount)
+        assertEquals(2, updater.updateCount)
     }
 
     @Test
@@ -59,7 +59,7 @@ class CompleteQuickCaptureTaskTest {
         assertEquals(CompleteQuickCaptureResult.Completed, result)
         assertEquals(1, repository.createdOccurrences)
         assertEquals(listOf(8), repository.completedIds)
-        assertEquals(1, updater.updateCount)
+        assertEquals(2, updater.updateCount)
     }
 
     @Test
@@ -71,7 +71,7 @@ class CompleteQuickCaptureTaskTest {
         assertEquals(CompleteQuickCaptureResult.Ignored, complete(404))
         assertEquals(CompleteQuickCaptureResult.Ignored, complete(9))
         assertTrue(repository.completedIds.isEmpty())
-        assertEquals(2, updater.updateCount)
+        assertEquals(4, updater.updateCount)
     }
 
     @Test
@@ -84,7 +84,111 @@ class CompleteQuickCaptureTaskTest {
         val result = useCase(repository, updater)(10)
 
         assertEquals(CompleteQuickCaptureResult.Failed, result)
-        assertEquals(1, updater.updateCount)
+        assertEquals(2, updater.updateCount)
+    }
+
+    @Test
+    fun claimedTask_refreshesDisabledStateBeforeCompleteTaskAndClearsItBeforeTerminalRefresh() =
+        runTest {
+            val repository = FakeTaskRepository(task(13))
+            val firstUpdateGate = CompletableDeferred<Unit>()
+            val renderedInFlightStates = mutableListOf<Set<Int>>()
+            lateinit var complete: CompleteQuickCaptureTask
+            val updater = QuickCaptureWidgetUpdater {
+                renderedInFlightStates += complete.inFlightTaskIds.value
+                if (renderedInFlightStates.size == 1) firstUpdateGate.await()
+            }
+            complete = useCase(repository, updater)
+
+            val action = async { complete(13) }
+            runCurrent()
+
+            val statesBeforeCompletion = renderedInFlightStates.toList()
+            val readsBeforeCompletion = repository.getTaskCalls
+            firstUpdateGate.complete(Unit)
+            val result = action.await()
+
+            assertEquals(listOf(setOf(13)), statesBeforeCompletion)
+            assertEquals(0, readsBeforeCompletion)
+            assertEquals(CompleteQuickCaptureResult.Completed, result)
+            assertEquals(listOf(setOf(13), emptySet()), renderedInFlightStates)
+        }
+
+    @Test
+    fun initialRefreshFailure_doesNotPreventCompletionAndReturnsFailedAfterTerminalRefresh() =
+        runTest {
+            val repository = FakeTaskRepository(task(14))
+            var updates = 0
+            val updater = QuickCaptureWidgetUpdater {
+                updates++
+                if (updates == 1) throw IllegalStateException("host unavailable")
+            }
+
+            val result = useCase(repository, updater)(14)
+
+            assertEquals(CompleteQuickCaptureResult.Failed, result)
+            assertEquals(listOf(14), repository.completedIds)
+            assertEquals(2, updates)
+        }
+
+    @Test
+    fun initialRefreshCancellation_propagatesWithoutCompletingAndStillClearsAndRefreshes() =
+        runTest {
+            val repository = FakeTaskRepository(task(15))
+            var updates = 0
+            lateinit var complete: CompleteQuickCaptureTask
+            val updater = QuickCaptureWidgetUpdater {
+                updates++
+                if (updates == 1) throw CancellationException("cancel initial render")
+            }
+            complete = useCase(repository, updater)
+
+            val action = async { complete(15) }
+            runCurrent()
+
+            assertTrue(action.isCancelled)
+            assertEquals(0, repository.getTaskCalls)
+            assertFalse(15 in complete.inFlightTaskIds.value)
+            assertEquals(2, updates)
+        }
+
+    @Test
+    fun terminalRefreshFailure_returnsFailedAfterCompletionAndClearsInFlightState() = runTest {
+        val repository = FakeTaskRepository(task(16))
+        var updates = 0
+        lateinit var complete: CompleteQuickCaptureTask
+        val updater = QuickCaptureWidgetUpdater {
+            updates++
+            if (updates == 2) throw IllegalStateException("terminal host failure")
+        }
+        complete = useCase(repository, updater)
+
+        val result = complete(16)
+
+        assertEquals(CompleteQuickCaptureResult.Failed, result)
+        assertEquals(listOf(16), repository.completedIds)
+        assertFalse(16 in complete.inFlightTaskIds.value)
+        assertEquals(2, updates)
+    }
+
+    @Test
+    fun terminalRefreshCancellation_propagatesAfterCompletionAndClearsInFlightState() = runTest {
+        val repository = FakeTaskRepository(task(17))
+        var updates = 0
+        lateinit var complete: CompleteQuickCaptureTask
+        val updater = QuickCaptureWidgetUpdater {
+            updates++
+            if (updates == 2) throw CancellationException("cancel terminal render")
+        }
+        complete = useCase(repository, updater)
+
+        val action = async { complete(17) }
+        runCurrent()
+
+        assertTrue(action.isCancelled)
+        assertEquals(listOf(17), repository.completedIds)
+        assertFalse(17 in complete.inFlightTaskIds.value)
+        assertEquals(2, updates)
     }
 
     @Test
@@ -107,7 +211,7 @@ class CompleteQuickCaptureTaskTest {
         repository.completionGate?.complete(Unit)
         assertEquals(CompleteQuickCaptureResult.Completed, first.await())
         assertEquals(1, repository.getTaskCalls)
-        assertEquals(2, updater.updateCount)
+        assertEquals(3, updater.updateCount)
     }
 
     @Test
@@ -125,7 +229,7 @@ class CompleteQuickCaptureTaskTest {
 
         assertTrue(action.isCancelled)
         assertFalse(12 in complete.inFlightTaskIds.value)
-        assertEquals(1, updater.updateCount)
+        assertEquals(2, updater.updateCount)
     }
 
     private fun useCase(

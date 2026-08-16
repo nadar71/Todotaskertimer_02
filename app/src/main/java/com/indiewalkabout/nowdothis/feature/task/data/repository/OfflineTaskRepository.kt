@@ -58,6 +58,7 @@ class OfflineTaskRepository @Inject constructor(
         next: Task?
     ): AtomicCompletionResult? = database.withTransaction {
         val current = taskDao.getTask(taskId) ?: return@withTransaction null
+        if (current.task.isCompleted) return@withTransaction null
         val completedTask = current.task.copy(
             isCompleted = true,
             completedAt = completedAt,

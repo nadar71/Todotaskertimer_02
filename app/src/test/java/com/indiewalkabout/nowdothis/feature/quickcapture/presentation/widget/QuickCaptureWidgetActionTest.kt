@@ -41,7 +41,7 @@ class QuickCaptureWidgetActionTest {
 
         assertEquals(listOf(21), repository.requestedTaskIds)
         assertTrue(repository.task?.isCompleted == true)
-        assertEquals(1, updater.updateCount)
+        assertEquals(2, updater.updateCount)
     }
 
     @Test

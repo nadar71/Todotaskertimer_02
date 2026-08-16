@@ -1,7 +1,10 @@
 package com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget
 
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.widget.RemoteViews
 import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidget
@@ -37,11 +40,31 @@ class QuickCaptureWidget : GlanceAppWidget(
         appWidgetId: Int,
         throwable: Throwable
     ) {
+        val errorViews = RemoteViews(context.packageName, R.layout.quick_capture_widget_error).apply {
+            setOnClickPendingIntent(
+                R.id.quick_capture_widget_error_retry,
+                quickCaptureRetryPendingIntent(context, appWidgetId)
+            )
+        }
         AppWidgetManager.getInstance(context).updateAppWidget(
             appWidgetId,
-            RemoteViews(context.packageName, R.layout.quick_capture_widget_error)
+            errorViews
         )
     }
+}
+
+internal fun quickCaptureRetryPendingIntent(context: Context, appWidgetId: Int): PendingIntent {
+    val intent = Intent(context, QuickCaptureWidgetReceiver::class.java).apply {
+        action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+        data = Uri.parse("nowdothis://quick-capture/widget/$appWidgetId/retry")
+        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(appWidgetId))
+    }
+    return PendingIntent.getBroadcast(
+        context,
+        appWidgetId,
+        intent,
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+    )
 }
 
 internal suspend fun loadQuickCaptureWidgetState(
