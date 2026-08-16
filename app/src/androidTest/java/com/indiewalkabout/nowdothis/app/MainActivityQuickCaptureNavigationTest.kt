@@ -1,13 +1,14 @@
 package com.indiewalkabout.nowdothis.app
 
 import android.content.Intent
+import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.By
-import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiObject2
-import androidx.test.uiautomator.Until
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.core.database.DebugDatabaseEntryPoint
@@ -22,14 +23,17 @@ import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertNull
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityQuickCaptureNavigationTest {
+    @get:Rule
+    val composeRule = createEmptyComposeRule()
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val device = UiDevice.getInstance(instrumentation)
     private lateinit var scenario: ActivityScenario<MainActivity>
     private val database: AppDatabase by lazy {
         EntryPointAccessors.fromApplication(
@@ -154,17 +158,22 @@ class MainActivityQuickCaptureNavigationTest {
     }
 
     private fun navigateBackToTaskList() {
-        waitForTag("task-editor-back").click()
+        waitForTag("task-editor-back")
+        composeRule.onNodeWithTag("task-editor-back").performClick()
         waitForTag("task-search")
     }
 
-    private fun waitForTag(tag: String): UiObject2 = requireNotNull(
-        device.wait(Until.findObject(By.res(tag)), WAIT_TIMEOUT_MILLIS)
-    ) { "Timed out waiting for test tag '$tag'" }
+    private fun waitForTag(tag: String) {
+        composeRule.waitUntil(WAIT_TIMEOUT_MILLIS) {
+            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
 
-    private fun waitForText(text: String): UiObject2 = requireNotNull(
-        device.wait(Until.findObject(By.text(text)), WAIT_TIMEOUT_MILLIS)
-    ) { "Timed out waiting for text '$text'" }
+    private fun waitForText(text: String) {
+        composeRule.waitUntil(WAIT_TIMEOUT_MILLIS) {
+            composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
 
     private companion object {
         const val WAIT_TIMEOUT_MILLIS = 10_000L

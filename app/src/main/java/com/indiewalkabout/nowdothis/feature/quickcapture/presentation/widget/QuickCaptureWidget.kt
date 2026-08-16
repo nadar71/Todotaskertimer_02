@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.RemoteViews
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
@@ -15,6 +17,8 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.di.QuickCaptureWidgetEn
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuickCaptureTasks
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 
 class QuickCaptureWidget : GlanceAppWidget(
     errorUiLayout = R.layout.quick_capture_widget_error
@@ -23,14 +27,21 @@ class QuickCaptureWidget : GlanceAppWidget(
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val entryPoint = quickCaptureWidgetEntryPoint(context)
-        val state = loadQuickCaptureWidgetState(
+        val states = observeQuickCaptureWidgetState(
             loadTasks = entryPoint.loadQuickCaptureTasks(),
-            capacity = widgetCapacity(context, id),
-            inFlightTaskIds = entryPoint.completeQuickCaptureTask().inFlightTaskIds.value
+            capacity = widgetCapacity(context, id)
         )
+        val inFlightTaskIds = entryPoint.completeQuickCaptureTask().inFlightTaskIds
 
         provideContent {
-            QuickCaptureWidgetContent(state)
+            val state by states.collectAsState(QuickCaptureWidgetState.Loading)
+            val inFlight by inFlightTaskIds.collectAsState()
+            val renderedState = if (state is QuickCaptureWidgetState.Content) {
+                (state as QuickCaptureWidgetState.Content).copy(inFlightTaskIds = inFlight)
+            } else {
+                state
+            }
+            QuickCaptureWidgetContent(renderedState)
         }
     }
 
@@ -83,6 +94,22 @@ internal suspend fun loadQuickCaptureWidgetState(
 } catch (_: Exception) {
     QuickCaptureWidgetState.Unavailable
 }
+
+internal fun observeQuickCaptureWidgetState(
+    loadTasks: LoadQuickCaptureTasks,
+    capacity: Int
+) = loadTasks.observe(capacity)
+    .map { snapshot ->
+        if (snapshot.tasks.isEmpty()) {
+            QuickCaptureWidgetState.Empty
+        } else {
+            QuickCaptureWidgetState.Content(snapshot)
+        }
+    }
+    .catch { exception ->
+        if (exception is CancellationException) throw exception
+        emit(QuickCaptureWidgetState.Unavailable)
+    }
 
 internal fun quickCaptureWidgetEntryPoint(context: Context): QuickCaptureWidgetEntryPoint =
     EntryPointAccessors.fromApplication(

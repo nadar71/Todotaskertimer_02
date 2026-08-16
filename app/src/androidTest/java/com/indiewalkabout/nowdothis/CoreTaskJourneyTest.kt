@@ -27,17 +27,24 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import org.junit.After
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
+import org.junit.runner.Description
 import org.junit.runner.RunWith
+import org.junit.runners.model.Statement
 
 @RunWith(AndroidJUnit4::class)
 class CoreTaskJourneyTest {
-    @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
+
+    @get:Rule
+    val rules: TestRule = RuleChain
+        .outerRule(ApplicationLocaleRule("it"))
+        .around(composeRule)
 
     private val database: AppDatabase by lazy {
         val application = InstrumentationRegistry.getInstrumentation()
@@ -47,20 +54,9 @@ class CoreTaskJourneyTest {
     }
 
     @Before
-    fun resetLocalStateAndSelectItalian() {
-        assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-        composeRule.activity.getSystemService(LocaleManager::class.java).applicationLocales =
-            LocaleList.forLanguageTags("it")
+    fun resetLocalState() {
         runBlocking { withContext(Dispatchers.IO) { database.clearAllTables() } }
         composeRule.waitForIdle()
-    }
-
-    @After
-    fun clearApplicationLocale() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            composeRule.activity.getSystemService(LocaleManager::class.java).applicationLocales =
-                LocaleList.getEmptyLocaleList()
-        }
     }
 
     @Test
@@ -170,4 +166,24 @@ class CoreTaskJourneyTest {
 
     private fun text(id: Int, vararg args: Any): String =
         composeRule.activity.getString(id, *args)
+
+    private class ApplicationLocaleRule(private val languageTags: String) : TestRule {
+        override fun apply(base: Statement, description: Description): Statement =
+            object : Statement() {
+                override fun evaluate() {
+                    assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                    val instrumentation = InstrumentationRegistry.getInstrumentation()
+                    val localeManager = instrumentation.targetContext.applicationContext
+                        .getSystemService(LocaleManager::class.java)
+                    localeManager.applicationLocales = LocaleList.forLanguageTags(languageTags)
+                    instrumentation.waitForIdleSync()
+                    try {
+                        base.evaluate()
+                    } finally {
+                        localeManager.applicationLocales = LocaleList.getEmptyLocaleList()
+                        instrumentation.waitForIdleSync()
+                    }
+                }
+            }
+    }
 }
