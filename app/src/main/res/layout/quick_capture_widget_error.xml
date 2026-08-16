@@ -1,7 +1,9 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/quick_capture_widget_background">
+    android:background="@drawable/quick_capture_widget_background"
+    tools:ignore="UnusedResources">
 
     <TextView
         android:id="@+id/quick_capture_widget_error_text"

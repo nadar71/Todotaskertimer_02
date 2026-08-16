@@ -1,3 +1,5 @@
+@file:Suppress("RestrictedApi")
+
 package com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget
 
 import android.content.Context
@@ -6,6 +8,10 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.appwidget.testing.unit.assertHasRunCallbackClickAction
 import androidx.glance.appwidget.testing.unit.assertHasStartActivityClickAction
 import androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest
+import androidx.glance.layout.HeightModifier
+import androidx.glance.unit.ResourceColorProvider
+import androidx.glance.testing.GlanceNodeMatcher
+import androidx.glance.testing.unit.MappedNode
 import androidx.glance.testing.unit.assertHasContentDescriptionEqualTo
 import androidx.glance.testing.unit.assertHasNoClickAction
 import androidx.glance.testing.unit.assertHasText
@@ -16,11 +22,17 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.domain.model.QuickCaptu
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.model.QuickCaptureSnapshot
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.model.QuickCaptureTask
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 import java.util.Locale
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.toArgb
+import androidx.glance.unit.Dimension
+import com.indiewalkabout.nowdothis.R
 
 @RunWith(RobolectricTestRunner::class)
 class QuickCaptureWidgetContentTest {
@@ -29,6 +41,42 @@ class QuickCaptureWidgetContentTest {
         assertEquals(3, capacityFor(CompactWidgetSize))
         assertEquals(5, capacityFor(MediumWidgetSize))
         assertEquals(8, capacityFor(ExpandedWidgetSize))
+    }
+
+    @Test
+    fun widgetColors_keepResourceIdsAndResolveTheNightQualifiedColorAtRenderTime() {
+        val lightContext = contextFor(Locale.ENGLISH, nightMode = false)
+        val nightContext = contextFor(Locale.ENGLISH, nightMode = true)
+        val background = QuickCaptureWidgetColors.background as ResourceColorProvider
+
+        assertEquals(R.color.quick_capture_widget_background, background.resId)
+        assertEquals(
+            lightContext.getColor(R.color.quick_capture_widget_background),
+            background.getColor(lightContext).toArgb()
+        )
+        assertEquals(
+            nightContext.getColor(R.color.quick_capture_widget_background),
+            background.getColor(nightContext).toArgb()
+        )
+        assertNotEquals(
+            background.getColor(lightContext).toArgb(),
+            background.getColor(nightContext).toArgb()
+        )
+    }
+
+    @Test
+    @Config(sdk = [30])
+    fun providerMetadata_omitsPreviewLayoutBelowApi31() {
+        assertEquals(0, providerAttributeResource("previewLayout"))
+    }
+
+    @Test
+    @Config(sdk = [31])
+    fun providerMetadata_includesPreviewLayoutFromApi31() {
+        assertEquals(
+            R.layout.quick_capture_widget_loading,
+            providerAttributeResource("previewLayout")
+        )
     }
 
     @Test
@@ -125,6 +173,25 @@ class QuickCaptureWidgetContentTest {
     }
 
     @Test
+    fun taskTitle_fillsTheShared48DpTaskRowHeight() = runGlanceAppWidgetUnitTest {
+        setContext(englishContext())
+        setAppWidgetSize(CompactWidgetSize)
+        provideComposable {
+            QuickCaptureWidgetContent(
+                QuickCaptureWidgetState.Content(
+                    QuickCaptureSnapshot(listOf(task(41, "Pay bills", QuickCaptureDueState.TODAY)))
+                )
+            )
+        }
+
+        assertEquals(48.dp, QuickCaptureWidgetDimensions.rowHeight)
+        onNode(hasTestTag("quick-capture-title-41")).assert(
+            hasFillMaxHeight(),
+            { "The task title must fill its 48 dp row so the full title region is clickable." }
+        )
+    }
+
+    @Test
     fun inFlightCompletion_isDisabledAndDescribedAsCompleting() = runGlanceAppWidgetUnitTest {
         setContext(englishContext())
         setAppWidgetSize(CompactWidgetSize)
@@ -166,10 +233,31 @@ class QuickCaptureWidgetContentTest {
 
     private fun englishContext(): Context = contextFor(Locale.ENGLISH)
 
-    private fun contextFor(locale: Locale): Context {
+    private fun contextFor(locale: Locale, nightMode: Boolean = false): Context {
         val application = RuntimeEnvironment.getApplication()
         val configuration = Configuration(application.resources.configuration)
         configuration.setLocale(locale)
+        configuration.uiMode = configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()
+        configuration.uiMode = configuration.uiMode or if (nightMode) {
+            Configuration.UI_MODE_NIGHT_YES
+        } else {
+            Configuration.UI_MODE_NIGHT_NO
+        }
         return application.createConfigurationContext(configuration)
+    }
+
+    private fun providerAttributeResource(attributeName: String): Int {
+        val parser = RuntimeEnvironment.getApplication().resources.getXml(R.xml.quick_capture_widget_info)
+        while (parser.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) parser.next()
+        return parser.getAttributeResourceValue(ANDROID_NAMESPACE, attributeName, 0)
+    }
+
+    private fun hasFillMaxHeight(): GlanceNodeMatcher<MappedNode> =
+        GlanceNodeMatcher("fills its parent height") { node ->
+            node.value.emittable.modifier.any { it is HeightModifier && it.height == Dimension.Fill }
+        }
+
+    private companion object {
+        const val ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
     }
 }

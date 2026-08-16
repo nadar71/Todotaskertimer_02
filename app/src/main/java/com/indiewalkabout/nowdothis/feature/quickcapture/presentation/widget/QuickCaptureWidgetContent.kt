@@ -18,6 +18,7 @@ import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.fillMaxSize
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
@@ -106,7 +107,7 @@ private fun QuickCaptureWidgetHeader(
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(QuickCaptureWidgetDimensions.rowHeight)
             .semantics { testTag = "quick-capture-header" }
     ) {
         Text(
@@ -133,7 +134,7 @@ private fun QuickCaptureWidgetLoadingContent(capacity: Int, colors: QuickCapture
         Box(
             modifier = GlanceModifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .height(QuickCaptureWidgetDimensions.rowHeight)
                 .background(colors.surface)
                 .semantics { testTag = if (index == 0) "quick-capture-loading" else "quick-capture-loading-$index" }
         ) {}
@@ -149,7 +150,7 @@ private fun QuickCaptureWidgetMessage(
     Box(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(QuickCaptureWidgetDimensions.rowHeight)
             .semantics { testTag = tag }
     ) {
         Text(
@@ -168,7 +169,7 @@ private fun QuickCaptureWidgetUnavailableContent(
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(QuickCaptureWidgetDimensions.rowHeight)
             .semantics { testTag = "quick-capture-unavailable" }
     ) {
         Text(
@@ -210,7 +211,7 @@ private fun QuickCaptureWidgetTaskRow(
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(QuickCaptureWidgetDimensions.rowHeight)
             .background(colors.surface)
             .semantics { testTag = "quick-capture-row-${task.id}" }
     ) {
@@ -218,6 +219,7 @@ private fun QuickCaptureWidgetTaskRow(
             text = task.title,
             modifier = GlanceModifier
                 .defaultWeight()
+                .fillMaxHeight()
                 .clickable(actionStartActivity(QuickCaptureWidgetIntents.open(context, task.id)))
                 .semantics {
                     testTag = "quick-capture-title-${task.id}"

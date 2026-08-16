@@ -5,6 +5,7 @@
     android:minResizeHeight="200dp"
     android:minResizeWidth="180dp"
     android:minWidth="180dp"
+    android:previewLayout="@layout/quick_capture_widget_loading"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="3600000"
     android:widgetCategory="home_screen" />
