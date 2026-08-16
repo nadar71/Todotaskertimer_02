@@ -11,7 +11,6 @@ import androidx.glance.background
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.layout.Box
@@ -39,22 +38,6 @@ val QuickCaptureWidgetSizeMode = SizeMode.Responsive(
 
 object QuickCaptureWidgetActionParameters {
     val taskId = androidx.glance.action.ActionParameters.Key<Int>("quick_capture_task_id")
-}
-
-class QuickCaptureCompleteAction : ActionCallback {
-    override suspend fun onAction(
-        context: Context,
-        glanceId: androidx.glance.GlanceId,
-        parameters: androidx.glance.action.ActionParameters
-    ) = Unit
-}
-
-class QuickCaptureRetryAction : ActionCallback {
-    override suspend fun onAction(
-        context: Context,
-        glanceId: androidx.glance.GlanceId,
-        parameters: androidx.glance.action.ActionParameters
-    ) = Unit
 }
 
 @Composable
