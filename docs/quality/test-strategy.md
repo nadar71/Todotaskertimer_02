@@ -8,7 +8,8 @@ Tests are selected by risk and boundary rather than by a repository-wide coverag
 | Room instrumentation | DAOs, relations, migrations, atomic Replace All/rollback behavior, and deterministic fixtures |
 | Compose instrumentation | Semantics, layout contracts, and feature interaction |
 | Journey instrumentation | Production activity navigation, cross-feature behavior, and full backup/mutate/restore data flow |
-| AppWidget host instrumentation | Responsive `RemoteViews`, 3/5/8 capacities, Room refresh, locale/theme/large-font rendering, action targets, and multiple host instances |
+| Direct Glance rendering instrumentation | Production `RemoteViews`, 3/5/8 capacities, states, locale/theme/large-font rendering, action targets, and non-overlap |
+| Bound AppWidget host instrumentation | Compact/default-font Room refresh through multiple `AppWidgetHostView` instances |
 | Benchmark process instrumentation | Update, recurring completion, add, and open while the optimized target process is absent |
 | Macrobenchmark | Cold startup and 750-task list frame timing |
 | Manual matrix | TalkBack, contrast, notification permission, exact alarms, reboot, and API coverage |
@@ -19,12 +20,14 @@ Pure domain and ViewModel tests use focused repository/platform fakes so reducer
 
 Android framework behavior is not claimed from JVM mocks. The portability journey uses real in-memory Room plus the production codec, validator, repository, and use cases; its document gateway and reminder scheduler are deterministic boundary fakes. Alarm delivery, notification permission UX, reboot broadcasts, document-provider UX, TalkBack reading order, visual contrast, and vendor-specific behavior require an emulator or physical device and remain separate matrix rows.
 
-Quick Capture host automation binds production `RemoteViews` to a real
-`AppWidgetHostView` under instrumentation. The separate benchmark test stops the
-optimized target process and exercises host update, recurring completion, and real
-add/open actions against authoritative Room state. Pixel Launcher placement and
-resize remain operator-driven evidence because launcher drag-and-drop is not treated
-as deterministic automation.
+Quick Capture responsive, state, localization, theme, and 200% text checks compose
+the production Glance content and apply its `RemoteViews` directly to a measured
+view container. Bound-host coverage is separate: two compact widgets at the default
+font scale attach to `AppWidgetHostView` and refresh from Room. The benchmark stops
+the optimized target process and exercises host update, recurring completion, and
+real add/open actions against authoritative Room state. Pixel Launcher placement
+and resize remain operator-driven evidence because launcher drag-and-drop is not
+treated as deterministic automation.
 
 Data Portability v1 has explicit regression proofs for full-field deterministic round
 trip, graph validation, the 10 MiB bound, atomic rollback, repeated restore, invalid and

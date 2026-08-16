@@ -7,8 +7,10 @@
 - [ ] Room schema export and migration diff are reviewed; no destructive migration exists.
 - [ ] Notification permission, reminder delivery, exact-alarm fallback, and reboot reconciliation are checked.
 - [ ] Localization smoke tests pass in Italian and English.
-- [ ] Quick Capture 3/5/8 responsive capacities, empty/unavailable states, locale,
-  theme, 200% text, 48 dp actions, and multiple bound instances pass host tests.
+- [ ] Quick Capture direct production Glance rendering covers 3/5/8 responsive
+  capacities, empty/unavailable states, locale, theme, 200% text, and 48 dp actions.
+- [ ] Separate compact/default-font `AppWidgetHostView` coverage proves multiple
+  bound instances refresh from Room.
 - [ ] Quick Capture update, recurring completion, add, and open pass with the
   optimized target process absent; launcher placement/resize evidence is identified
   as manual rather than automated.

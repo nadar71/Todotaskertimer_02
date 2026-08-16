@@ -17,11 +17,11 @@ Only `Passed`, `Failed`, and `Pending` are valid statuses. Emulator and physical
 | Baseline Profile generation | Passed | `./gradlew :app:generateBaselineProfile` | Medium Phone AVD, API 36 | 2026-08-13 | Generated profiles under `app/src/release` |
 | Baseline Profile packaging | Passed | Inspect release AAB | Local release build | 2026-08-16 | `baseline.prof`, `baseline.profm`, 3 DEX entries, and `resources.pb` present |
 | Startup/list benchmark | Passed | Macrobenchmark classes, 10 iterations each | Medium Phone AVD, API 36 | 2026-08-13 | [Results](../performance/results-2026-08.md) |
-| Accessibility semantics | Passed | Feature Compose, production AppWidget host tests, and lint | Medium Phone AVD, API 36 | 2026-08-16 | Localized descriptions and 48 dp Quick Capture targets; [checklist](accessibility-checklist.md) |
-| Large font at 200% | Passed | Feature tests plus production Quick Capture `RemoteViews` host rendering | Medium Phone AVD, API 36 | 2026-08-16 | Widget target-size/non-overlap assertions plus existing editor coverage |
+| Accessibility semantics | Passed | Feature Compose, direct production Glance rendering, bound AppWidget host tests, and lint | Medium Phone AVD, API 36 | 2026-08-16 | Localized descriptions and 48 dp Quick Capture targets; [checklist](accessibility-checklist.md) |
+| Large font at 200% | Passed | Feature tests plus direct production Quick Capture Glance `RemoteViews` rendering | Medium Phone AVD, API 36 | 2026-08-16 | Direct-render target-size/non-overlap assertions plus existing editor coverage; not a bound-host claim |
 | Quick Capture production navigation | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-16 | 3 cold/running/recreation add/open/reminder tests through `MainActivity` Navigation 3 |
-| Quick Capture AppWidget host | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-16 | 2 tests: responsive states/locales/themes/200% targets and two-instance Room refresh |
-| Quick Capture process absent | Passed | Separate `QuickCaptureProcessAbsentTest` benchmark invocation | Optimized target, Medium Phone AVD, API 36 | 2026-08-16 | 1 passed; update, recurring completion, add, and open with target process stopped |
+| Quick Capture rendering/AppWidget host | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-16 | 2 tests: direct responsive states/locales/themes/200% targets; separate two-instance compact/default-font bound-host Room refresh |
+| Quick Capture process absent | Passed | Separate `QuickCaptureProcessAbsentTest` benchmark invocation | Optimized target, Medium Phone AVD, API 36 | 2026-08-16 | 1 passed; PID absent before update, recurring completion, add, and open; PID restored by the production open action before fixture query |
 | Quick Capture Pixel Launcher placement/resize | Passed | Operator pin confirmation and resize; Android screen capture | Pixel Launcher, API 36 emulator | 2026-08-16 | Manual evidence only; 5-row English/light and 8-row Italian/dark screenshots |
 | Light/dark contrast | Pending | Manual visual review | Physical release candidate | - | Manual review pending |
 | TalkBack workflows | Pending | Create, complete, delete/undo, categories, Calendar, History | Physical release candidate | - | Manual review pending |
@@ -30,4 +30,4 @@ Only `Passed`, `Failed`, and `Pending` are valid statuses. Emulator and physical
 | Reboot reconciliation | Pending | Schedule reminder, reboot, verify restoration | API 33+ physical device | - | Manual platform check pending |
 | Minimum API smoke | Pending | Core create/edit/delete/recurrence journey | API 23 device/emulator | - | Device run pending |
 
-The screenshot set under `docs/images/` is product evidence, not a substitute for the pending interaction and platform rows. Full commands, automation boundaries, artifacts, and hashes are in the [Task 6 evidence record](../release/quick-capture-evidence-2026-08-16.md).
+The screenshot set under `docs/images/` is product evidence, not a substitute for the pending interaction and platform rows. Full commands, automation boundaries, and recorded-build artifact hash snapshots are in the [Task 6 evidence record](../release/quick-capture-evidence-2026-08-16.md).

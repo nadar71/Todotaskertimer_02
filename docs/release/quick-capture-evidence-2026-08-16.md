@@ -21,16 +21,22 @@ packages were uninstalled before the successful clean matrix.
 | Lint | Passed: 0 errors, 68 warnings | `app/build/reports/lint-results-debug.html` |
 | Full connected suite | Passed: 82/82, 0 failed/errors/skipped | `app/build/outputs/androidTest-results/connected/debug/` |
 | Production navigation | Passed: 3/3 | Cold and running add/open, reminder compatibility, recreation, back-stack return, and consumed-intent no-replay checks |
-| Production AppWidget host | Passed: 2/2 | Real `RemoteViews` applied to `AppWidgetHostView`; 3/5/8 sizes, content/empty/unavailable, English/Italian, light/dark, 200% text, 48 dp actions, non-overlap, and two bound instances refreshing from Room |
-| Optimized process-absent journey | Passed: 1/1 | `benchmark/build/outputs/androidTest-results/connected/benchmarkRelease/`; update, recurring completion/successor, add, and open after stopping the target process |
+| Production Glance rendering and AppWidget host | Passed: 2/2 | Direct production `RemoteViews` rendering covers 3/5/8 sizes, content/empty/unavailable, English/Italian, light/dark, 200% text, 48 dp actions, and non-overlap; a separate compact/default-font test binds two `AppWidgetHostView` instances and refreshes both from Room |
+| Optimized process-absent journey | Passed: 1/1 | `benchmark/build/outputs/androidTest-results/connected/benchmarkRelease/`; PID absent before update, recurring completion/successor, add, and open, with PID restored by the production open action before fixture query |
 | Release packaging | Passed | Unsigned optimized APK/AAB, R8 mapping, manifest, Baseline Profile, DEX, resources, and fixture-exclusion inspection |
 
-The deterministic host tests use a custom production `AppWidgetHostView`; they do
-not claim to automate Pixel Launcher. The process test uses `am stop-app` before
-update, completion, and add so existing host `PendingIntent` tokens remain valid. It
-queries the debug/benchmark-only fixture boundary only to prove authoritative Room
-state: the original recurring task is completed, exactly one successor exists, its
-due time advances by one day, and one pending task remains.
+The responsive/state/localization/theme/200% assertions compose production Glance
+content and apply its `RemoteViews` directly to a measured view container; they are
+not bound-host evidence. Separately, two compact/default-font production widgets are
+bound to a custom `AppWidgetHostView` and refreshed from Room. Neither test claims to
+automate Pixel Launcher. The process test uses `am stop-app` before update,
+completion, and add, then stops the process again after returning from Add and before
+Open, so existing host `PendingIntent` tokens remain valid. It asserts PID absence
+before each action and PID restoration after update, completion, and the production
+Open action. The Open PID assertion occurs before querying the debug/benchmark-only
+fixture boundary. That query proves authoritative Room state: the original recurring
+task is completed, exactly one successor exists, its due time advances by one day,
+and one pending task remains.
 
 ## Commands
 
@@ -44,6 +50,27 @@ The final process-absent journey was run separately and passed 1/1 in 2 minutes 
 
 ```bash
 ANDROID_SERIAL=emulator-5554 ./gradlew :benchmark:connectedBenchmarkReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.benchmark.QuickCaptureProcessAbsentTest
+```
+
+The Task 6 evidence corrections were verified separately on the same emulator. The
+focused direct-render/bound-host class passed 2/2 in 30 seconds, the strengthened
+process-absent benchmark passed 1/1 in 38 seconds, and the complete connected suite
+was rerun afterward so its retained report again records 82/82 in 2 minutes 55
+seconds. Counts did not change:
+
+```bash
+ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.quickcapture.QuickCaptureWidgetHostJourneyTest
+ANDROID_SERIAL=emulator-5554 ./gradlew :benchmark:connectedBenchmarkReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.benchmark.QuickCaptureProcessAbsentTest
+ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
+```
+
+The JVM/lint correction gate completed successfully in 24 seconds. No JVM inputs
+changed, so Gradle retained `:app:testDebugUnitTest` as up to date; its XML reports
+remain 211/211. Android-test lint analysis reran for the edited instrumentation code,
+and lint remains at 0 errors and 68 warnings:
+
+```bash
+./gradlew :app:testDebugUnitTest :app:lintDebug
 ```
 
 The first clean attempt completed all 82 connected tests but lint found two API-26
@@ -98,7 +125,14 @@ both provider XML variants. String inspection across every release DEX entry fou
 no `BenchmarkFixtureProvider`, `prepare_quick_capture`,
 `request_quick_capture_pin`, or benchmark-fixture authority symbols.
 
-## Artifacts
+## Recorded Build Artifact Snapshots
+
+These sizes and SHA-256 values identify the exact outputs inspected during the
+recorded Task 6 build. They are integrity snapshots, not guarantees that a later
+build from the same source will be byte-for-byte reproducible. Later Gradle
+invocations may replace files at these `build/` paths; the table records their
+capture-time contents rather than asserting the current contents of those paths.
+The evidence-correction run did not rebuild or reinspect release artifacts.
 
 | Artifact | Size | SHA-256 |
 | --- | ---: | --- |
@@ -119,9 +153,11 @@ does not expose descriptions, categories, reminder details, account data, or net
 data. The widget reads the same local Room database as the app and adds no network,
 analytics, or duplicate persistence. Screenshot fixtures contain fictional titles.
 
-Automated coverage proves localized descriptions, minimum available action targets,
-large-font layout, and non-color due labels. Physical-device TalkBack reading order
-and contrast remain pending in the accessibility matrix and are not claimed here.
+Automated direct production `RemoteViews` rendering proves localized descriptions,
+minimum available action targets, large-font layout, and non-color due labels.
+Separate compact/default-font bound-host coverage proves two instances refresh.
+Physical-device TalkBack reading order and contrast remain pending in the
+accessibility matrix and are not claimed here.
 
 Quick Capture changes no Room schema or backup format. Rollback can remove/disable
 the non-exported receiver, metadata/resources, and Glance dependency without data

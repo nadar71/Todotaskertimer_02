@@ -80,7 +80,7 @@ class QuickCaptureWidgetHostJourneyTest {
 
     @Test
     @OptIn(ExperimentalGlanceRemoteViewsApi::class)
-    fun responsiveRemoteViewsHost_coversSizesStatesLocalesThemesLargeFontAndTargets() = runBlocking {
+    fun directRemoteViewsRender_coversSizesStatesLocalesThemesLargeFontAndTargets() = runBlocking {
         val tasks = (1..9).map { ordinal ->
             QuickCaptureTask(
                 id = ordinal,

@@ -19,7 +19,7 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Accessibility
 
-- Quick Capture action descriptions, minimum 48 dp targets, large-font host rendering, and localized English/Italian semantics.
+- Quick Capture action descriptions, minimum 48 dp targets, direct large-font production `RemoteViews` rendering, and localized English/Italian semantics.
 - Explicit roles, states, labels, and minimum targets for primary workflows.
 
 ## 1.0.0

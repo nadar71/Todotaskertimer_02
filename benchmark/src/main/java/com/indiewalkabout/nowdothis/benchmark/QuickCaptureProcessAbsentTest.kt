@@ -76,7 +76,12 @@ class QuickCaptureProcessAbsentTest {
             device.shellBack()
             device.waitForTag(TASK_LIST_TAG)
 
+            stopTargetProcess()
+            assertTargetProcessAbsent()
             assertTrue(hostView.clickOpenFor(TASK_TITLE))
+            waitUntil { targetProcessId().isNotBlank() }
+            assertTrue(targetProcessId().isNotBlank())
+            assertTrue(queryQuickCaptureState().isCompletedRecurringState())
             device.waitForTag(TASK_EDITOR_TAG)
             device.waitForText(EDIT_TASK_TITLE)
             device.waitForText(TASK_TITLE)
@@ -130,6 +135,16 @@ class QuickCaptureProcessAbsentTest {
     private fun assertTargetProcessAbsent() {
         assertTrue(targetProcessId().isBlank())
     }
+
+    private fun queryQuickCaptureState(): String = device.executeShellCommand(
+        "content call --uri content://$FIXTURE_AUTHORITY --method $QUERY_METHOD"
+    )
+
+    private fun String.isCompletedRecurringState(): Boolean =
+        "original_completed=true" in this &&
+            "next_occurrence_count=1" in this &&
+            "next_due_at_advanced=true" in this &&
+            "pending_count=1" in this
 
     private fun targetProcessId(): String =
         device.executeShellCommand("pidof $TARGET_PACKAGE").trim()
