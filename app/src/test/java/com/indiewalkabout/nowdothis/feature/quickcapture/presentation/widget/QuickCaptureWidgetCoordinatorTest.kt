@@ -92,14 +92,73 @@ class QuickCaptureWidgetCoordinatorTest {
     }
 
     @Test
-    fun observer_propagatesCancellationWithoutCancellingTheApplicationSupervisor() = runTest {
+    fun observer_retriesWhenSourceConstructionFails() = runTest {
+        var observations = 0
+        var updateCount = 0
+        val source = QuickCaptureTaskSource {
+            observations++
+            if (observations == 1) {
+                throw IllegalStateException("source construction failed")
+            }
+            flow {
+                emit(TaskSections(today = listOf(task(id = 8, title = "Constructed"))))
+                awaitCancellation()
+            }
+        }
+        val scope = applicationScope()
+        val coordinator = coordinator(source, scope) { updateCount++ }
+
+        coordinator.onApplicationStart()
+        runCurrent()
+        advanceTimeBy(RETRY_DELAY_MILLIS)
+        runCurrent()
+
+        assertEquals(2, observations)
+        assertEquals(1, updateCount)
+        scope.cancel()
+    }
+
+    @Test
+    fun observer_retriesWhenUpdaterFailsAndRefreshesALaterMutation() = runTest {
+        val sections = MutableSharedFlow<TaskSections>(replay = 1)
+        sections.emit(TaskSections())
+        var updateAttempts = 0
+        val successfulUpdates = mutableListOf<Int>()
+        val scope = applicationScope()
+        val coordinator = coordinator(
+            source = QuickCaptureTaskSource { sections },
+            scope = scope,
+            onUpdate = {
+                updateAttempts++
+                if (updateAttempts == 1) throw IllegalStateException("widget host unavailable")
+                successfulUpdates += updateAttempts
+            }
+        )
+
+        coordinator.onApplicationStart()
+        runCurrent()
+        advanceTimeBy(RETRY_DELAY_MILLIS)
+        runCurrent()
+        sections.emit(TaskSections(today = listOf(task(id = 9, title = "Later mutation"))))
+        runCurrent()
+
+        assertEquals(3, updateAttempts)
+        assertEquals(listOf(2, 3), successfulUpdates)
+        scope.cancel()
+    }
+
+    @Test
+    fun observer_preservesCancellationAndCanBeStartedAgainAfterItStops() = runTest {
         var collections = 0
         var updateCount = 0
         val source = QuickCaptureTaskSource {
             flow {
                 collections++
                 emit(TaskSections())
-                throw CancellationException("stop only the observer")
+                if (collections == 1) {
+                    throw CancellationException("stop only the observer")
+                }
+                awaitCancellation()
             }
         }
         val scope = applicationScope()
@@ -109,8 +168,11 @@ class QuickCaptureWidgetCoordinatorTest {
         coordinator.onApplicationStart()
         runCurrent()
 
-        assertEquals(1, collections)
-        assertEquals(1, updateCount)
+        coordinator.onApplicationStart()
+        runCurrent()
+
+        assertEquals(2, collections)
+        assertEquals(2, updateCount)
         assertTrue(requireNotNull(scope.coroutineContext[Job]).isActive)
         assertTrue(sibling.isActive)
         scope.cancel()
@@ -139,4 +201,8 @@ class QuickCaptureWidgetCoordinatorTest {
         createdAt = 0,
         updatedAt = 0
     )
+
+    private companion object {
+        const val RETRY_DELAY_MILLIS = 1_000L
+    }
 }

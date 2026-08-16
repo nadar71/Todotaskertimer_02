@@ -36,13 +36,14 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningBac
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
 import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.RestoreBackup
 import com.indiewalkabout.nowdothis.feature.quickcapture.data.TaskSectionsQuickCaptureSource
-import com.indiewalkabout.nowdothis.feature.quickcapture.di.QuickCaptureWidgetEntryPoint
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.model.QuickCaptureSnapshot
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureTaskSource
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuickCaptureTasks
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetCoordinator
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetReceiver
+import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetState
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetUpdater
+import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.observeQuickCaptureWidgetState
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
@@ -67,9 +68,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -186,21 +190,50 @@ class QuickCaptureWidgetIntegrationTest {
     }
 
     @Test
-    fun applicationStartupRefreshesBoundWidgetAfterARoomMutation() {
+    fun productionWidgetStateFlowReadsRoomAgainAfterMutationWithoutAnUpdater() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        val repository = OfflineTaskRepository(database, database.taskDao())
+        val clock = AppClock { now }
+        val scheduler = NoOpReminderScheduler()
+        val productionSource = TaskSectionsQuickCaptureSource(
+            ObserveTaskSections(repository, FixedTaskPreferences(), clock, ZoneIdProvider { zone })
+        )
+        val productionReads = AtomicInteger()
+        val loadTasks = LoadQuickCaptureTasks(
+            QuickCaptureTaskSource {
+                productionSource.observe().onEach { productionReads.incrementAndGet() }
+            }
+        )
+        val states = Channel<QuickCaptureWidgetState>(Channel.UNLIMITED)
+        val collection = launch(Dispatchers.Default) {
+            observeQuickCaptureWidgetState(loadTasks, capacity = 8).collect(states::send)
+        }
+        val saveTask = SaveTask(repository, scheduler, ValidateTask(), clock)
+
+        try {
+            awaitWidgetState(states) { it == QuickCaptureWidgetState.Empty }
+            saveTask(task(title = "Fresh production read"))
+            val content = awaitWidgetState(states) {
+                it is QuickCaptureWidgetState.Content &&
+                    it.snapshot.tasks.singleOrNull()?.title == "Fresh production read"
+            }
+
+            assertEquals("Fresh production read", (content as QuickCaptureWidgetState.Content).snapshot.tasks.single().title)
+            assertTrue(productionReads.get() >= 2)
+        } finally {
+            collection.cancelAndJoin()
+            database.close()
+        }
+    }
+
+    @Test
+    fun actualGlanceProvideContentRendersFreshRoomStateAfterMutation() {
         withWidgetHost { hostView ->
             hostView.awaitText(context.getString(R.string.quick_capture_widget_empty))
 
             runBlocking(Dispatchers.IO) {
                 applicationDatabase.taskDao().insertTask(taskEntity("Startup-observed task"))
             }
-            val freshSnapshot = runBlocking {
-                EntryPointAccessors.fromApplication(
-                    context.applicationContext,
-                    QuickCaptureWidgetEntryPoint::class.java
-                ).loadQuickCaptureTasks()(8)
-            }
-            assertEquals(listOf("Startup-observed task"), freshSnapshot.tasks.map { it.title })
-
             hostView.awaitText("Startup-observed task")
         }
     }
@@ -246,6 +279,17 @@ class QuickCaptureWidgetIntegrationTest {
         while (true) {
             val snapshot = snapshots.receive()
             if (predicate(snapshot)) return@withTimeout snapshot
+        }
+        error("unreachable")
+    }
+
+    private suspend fun awaitWidgetState(
+        states: Channel<QuickCaptureWidgetState>,
+        predicate: (QuickCaptureWidgetState) -> Boolean
+    ): QuickCaptureWidgetState = withTimeout(WAIT_TIMEOUT_MILLIS) {
+        while (true) {
+            val state = states.receive()
+            if (predicate(state)) return@withTimeout state
         }
         error("unreachable")
     }

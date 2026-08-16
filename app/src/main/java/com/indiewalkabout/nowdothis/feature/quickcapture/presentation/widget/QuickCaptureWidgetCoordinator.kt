@@ -2,15 +2,16 @@ package com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget
 
 import com.indiewalkabout.nowdothis.core.di.ApplicationScope
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuickCaptureTasks
-import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.retryWhen
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.coroutines.coroutineContext
 
 @Singleton
 class QuickCaptureWidgetCoordinator @Inject constructor(
@@ -23,18 +24,22 @@ class QuickCaptureWidgetCoordinator @Inject constructor(
     fun onApplicationStart() {
         if (!started.compareAndSet(false, true)) return
 
-        scope.launch {
-            loadTasks.observe(MAX_WIDGET_CAPACITY)
-                .distinctUntilChanged()
-                .retryWhen { cause, _ ->
-                    if (cause is CancellationException) {
-                        false
-                    } else {
-                        delay(RETRY_DELAY_MILLIS)
-                        true
-                    }
-                }
-                .collect { updater.updateAll() }
+        scope.launch { observeUntilCancelled() }
+            .invokeOnCompletion { started.set(false) }
+    }
+
+    private suspend fun observeUntilCancelled() {
+        while (coroutineContext.isActive) {
+            try {
+                loadTasks.observe(MAX_WIDGET_CAPACITY)
+                    .distinctUntilChanged()
+                    .collect { updater.updateAll() }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+                // Room and widget-host failures are transient; rebuild the full pipeline.
+            }
+            delay(RETRY_DELAY_MILLIS)
         }
     }
 

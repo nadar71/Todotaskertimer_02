@@ -78,23 +78,6 @@ internal fun quickCaptureRetryPendingIntent(context: Context, appWidgetId: Int):
     )
 }
 
-internal suspend fun loadQuickCaptureWidgetState(
-    loadTasks: LoadQuickCaptureTasks,
-    capacity: Int,
-    inFlightTaskIds: Set<Int>
-): QuickCaptureWidgetState = try {
-    val snapshot = loadTasks(capacity)
-    if (snapshot.tasks.isEmpty()) {
-        QuickCaptureWidgetState.Empty
-    } else {
-        QuickCaptureWidgetState.Content(snapshot, inFlightTaskIds)
-    }
-} catch (exception: CancellationException) {
-    throw exception
-} catch (_: Exception) {
-    QuickCaptureWidgetState.Unavailable
-}
-
 internal fun observeQuickCaptureWidgetState(
     loadTasks: LoadQuickCaptureTasks,
     capacity: Int

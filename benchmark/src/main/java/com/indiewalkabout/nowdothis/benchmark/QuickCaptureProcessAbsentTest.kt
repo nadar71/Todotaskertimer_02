@@ -42,6 +42,8 @@ class QuickCaptureProcessAbsentTest {
             val updateCount = hostView.updateCount
             assertTrue(hostView.clickCompletionFor(TASK_TITLE))
 
+            waitUntil { targetProcessId().isNotBlank() }
+            assertTrue(targetProcessId().isNotBlank())
             waitUntil {
                 val state = device.executeShellCommand(
                     "content call --uri content://$FIXTURE_AUTHORITY --method $QUERY_METHOD"
@@ -98,8 +100,11 @@ class QuickCaptureProcessAbsentTest {
     }
 
     private fun assertTargetProcessAbsent() {
-        assertTrue(device.executeShellCommand("pidof $TARGET_PACKAGE").isBlank())
+        assertTrue(targetProcessId().isBlank())
     }
+
+    private fun targetProcessId(): String =
+        device.executeShellCommand("pidof $TARGET_PACKAGE").trim()
 
     private fun waitUntil(predicate: () -> Boolean) {
         val deadline = SystemClock.uptimeMillis() + WAIT_TIMEOUT_MILLIS

@@ -9,11 +9,6 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.glance.appwidget.AppWidgetId
 import com.indiewalkabout.nowdothis.R
-import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureTaskSource
-import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuickCaptureTasks
-import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -32,41 +27,6 @@ class QuickCaptureWidgetProviderTest {
         assertEquals(3, quickCaptureCapacityForHeight(200))
         assertEquals(5, quickCaptureCapacityForHeight(320))
         assertEquals(8, quickCaptureCapacityForHeight(464))
-    }
-
-    @Test
-    fun everyStateLoad_performsAFreshCapacityBoundRead() = runTest {
-        var reads = 0
-        val loadTasks = LoadQuickCaptureTasks(
-            QuickCaptureTaskSource {
-                flow {
-                    reads++
-                    emit(TaskSections())
-                }
-            }
-        )
-
-        val first = loadQuickCaptureWidgetState(loadTasks, capacity = 3, inFlightTaskIds = emptySet())
-        val second = loadQuickCaptureWidgetState(loadTasks, capacity = 3, inFlightTaskIds = emptySet())
-
-        assertEquals(QuickCaptureWidgetState.Empty, first)
-        assertEquals(QuickCaptureWidgetState.Empty, second)
-        assertEquals(2, reads)
-    }
-
-    @Test
-    fun stateLoad_mapsReadFailureToUnavailable() = runTest {
-        val loadTasks = LoadQuickCaptureTasks(
-            QuickCaptureTaskSource { flow { throw IllegalStateException("database unavailable") } }
-        )
-
-        val state = loadQuickCaptureWidgetState(
-            loadTasks = loadTasks,
-            capacity = 5,
-            inFlightTaskIds = setOf(7)
-        )
-
-        assertEquals(QuickCaptureWidgetState.Unavailable, state)
     }
 
     @Test
