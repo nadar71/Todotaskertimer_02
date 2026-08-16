@@ -1,5 +1,17 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
     <string name="app_name">NowDoThis</string>
+    <string name="quick_capture_widget_title">Da fare</string>
+    <string name="quick_capture_widget_loading">Caricamento attività</string>
+    <string name="quick_capture_widget_empty">Nessuna attività in sospeso.</string>
+    <string name="quick_capture_widget_unavailable">Impossibile aggiornare le attività.</string>
+    <string name="quick_capture_widget_add_description">Aggiungi attività</string>
+    <string name="quick_capture_widget_retry_description">Riprova ad aggiornare le attività</string>
+    <string name="quick_capture_widget_open_description">Apri %1$s</string>
+    <string name="quick_capture_widget_complete_description">Segna %1$s come completata</string>
+    <string name="quick_capture_widget_completing_description">Completamento di %1$s</string>
+    <string name="quick_capture_widget_due_overdue">In ritardo</string>
+    <string name="quick_capture_widget_due_today">Oggi</string>
+    <string name="quick_capture_widget_due_upcoming">In arrivo</string>
 
     <string name="to_do_logo">NowDoThis</string>
     <string name="delete_all_tasks">Rimuovere tutte le attività?</string>

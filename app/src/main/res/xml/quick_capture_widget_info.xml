@@ -1,0 +1,11 @@
+<!-- The hourly platform update is an inexact fallback and does not guarantee a midnight refresh. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/quick_capture_widget_loading"
+    android:minHeight="200dp"
+    android:minResizeHeight="200dp"
+    android:minResizeWidth="180dp"
+    android:minWidth="180dp"
+    android:previewLayout="@layout/quick_capture_widget_loading"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="3600000"
+    android:widgetCategory="home_screen" />

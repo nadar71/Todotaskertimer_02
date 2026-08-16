@@ -1,5 +1,17 @@
 <resources>
     <string name="app_name">NowDoThis</string>
+    <string name="quick_capture_widget_title">To do</string>
+    <string name="quick_capture_widget_loading">Loading tasks</string>
+    <string name="quick_capture_widget_empty">No pending tasks.</string>
+    <string name="quick_capture_widget_unavailable">Could not refresh tasks.</string>
+    <string name="quick_capture_widget_add_description">Add task</string>
+    <string name="quick_capture_widget_retry_description">Retry refreshing tasks</string>
+    <string name="quick_capture_widget_open_description">Open %1$s</string>
+    <string name="quick_capture_widget_complete_description">Mark %1$s complete</string>
+    <string name="quick_capture_widget_completing_description">Completing %1$s</string>
+    <string name="quick_capture_widget_due_overdue">Overdue</string>
+    <string name="quick_capture_widget_due_today">Today</string>
+    <string name="quick_capture_widget_due_upcoming">Upcoming</string>
 
     <string name="to_do_logo">NowDoThis</string>
     <string name="delete_all_tasks">Remove all tasks?</string>

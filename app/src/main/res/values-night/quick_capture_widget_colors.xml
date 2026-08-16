@@ -1,0 +1,9 @@
+<resources>
+    <color name="quick_capture_widget_background">#10191D</color>
+    <color name="quick_capture_widget_surface">#1B282D</color>
+    <color name="quick_capture_widget_on_surface">#E7F1F3</color>
+    <color name="quick_capture_widget_muted">#B4C3C8</color>
+    <color name="quick_capture_widget_action">#69D9E6</color>
+    <color name="quick_capture_widget_overdue">#FFB4AB</color>
+    <color name="quick_capture_widget_outline">#3D4A50</color>
+</resources>

@@ -1,0 +1,13 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/quick_capture_widget_background">
+
+    <TextView
+        android:id="@+id/quick_capture_widget_loading_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="@string/quick_capture_widget_loading"
+        android:textColor="@color/quick_capture_widget_muted" />
+</FrameLayout>
