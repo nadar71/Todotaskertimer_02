@@ -19,6 +19,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
@@ -307,6 +308,54 @@ class QuickCaptureCompletionConcurrencyTest {
         assertEquals(restoredReminderAt, scheduler.activeAlarms[successorId])
     }
 
+    @Test
+    fun secondOwnerChangeDuringFallback_cancelsAlarmForNowIneligibleOwner() = runTest {
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Recurring with reminder",
+                dueAt = 2_000L,
+                reminderAt = 1_500L,
+                recurrence = RecurrenceType.DAILY
+            )
+        )
+        val ownerAReminderAt = 25_000L
+        val coordinatedRepository = CoordinatedFallbackStatusRepository(repository)
+        val scheduler = ReconciledActiveReminderScheduler(repository, now = 1_000L)
+        val completion = async {
+            completeTask(coordinatedRepository, scheduler)(currentId)
+        }
+
+        val successorId = scheduler.awaitFirstSchedule()
+        replaceAllWithReusedTaskId(
+            taskId = successorId,
+            title = "Restored owner A",
+            reminderAt = ownerAReminderAt,
+            reminderStatus = ReminderStatus.REQUESTED,
+            seriesId = "restored-series-a",
+            updatedAt = 500L
+        )
+        scheduler.reconcile()
+        scheduler.releaseFirstSchedule()
+        coordinatedRepository.awaitFallbackStatusUpdate()
+        assertEquals(ownerAReminderAt, scheduler.activeAlarms[successorId])
+
+        replaceAllWithReusedTaskId(
+            taskId = successorId,
+            title = "Restored owner B",
+            reminderAt = null,
+            reminderStatus = ReminderStatus.NONE,
+            seriesId = "restored-series-b",
+            updatedAt = 600L
+        )
+        coordinatedRepository.releaseFallbackStatusUpdate()
+        completion.await()
+
+        val current = requireNotNull(repository.getTask(successorId))
+        assertEquals("Restored owner B", current.title)
+        assertEquals(ReminderStatus.NONE, current.reminderStatus)
+        assertTrue(successorId !in scheduler.activeAlarms)
+    }
+
     private fun completeTask(
         repository: TaskRepository,
         scheduler: ReminderScheduler
@@ -319,8 +368,11 @@ class QuickCaptureCompletionConcurrencyTest {
 
     private suspend fun replaceAllWithReusedTaskId(
         taskId: Int,
+        title: String = "Restored replacement",
         reminderAt: Long? = null,
-        reminderStatus: ReminderStatus = ReminderStatus.NONE
+        reminderStatus: ReminderStatus = ReminderStatus.NONE,
+        seriesId: String = "restored-series",
+        updatedAt: Long = 500L
     ) {
         PlanningDataSource(database).replaceAll(
             PlanningBackup(
@@ -331,7 +383,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 tasks = listOf(
                     PlanningTask(
                         id = taskId,
-                        title = "Restored replacement",
+                        title = title,
                         description = "Restored data must remain untouched",
                         priority = TaskPriority.HIGH.name,
                         categoryId = null,
@@ -342,9 +394,9 @@ class QuickCaptureCompletionConcurrencyTest {
                         reminderStatus = reminderStatus.name,
                         recurrence = RecurrenceType.NONE.name,
                         recurrenceEndAt = null,
-                        seriesId = "restored-series",
+                        seriesId = seriesId,
                         createdAt = 400L,
-                        updatedAt = 500L,
+                        updatedAt = updatedAt,
                         subtasks = emptyList()
                     )
                 )
@@ -430,6 +482,29 @@ class QuickCaptureCompletionConcurrencyTest {
         suspend fun awaitCommit(): AtomicCompletionResult.Completed = committed.await()
 
         fun release() = proceed.complete(Unit)
+    }
+
+    private class CoordinatedFallbackStatusRepository(
+        private val delegate: TaskRepository
+    ) : TaskRepository by delegate {
+        private val statusAttempts = AtomicInteger()
+        private val fallbackStatusUpdate = CompletableDeferred<Unit>()
+        private val proceed = CompletableDeferred<Unit>()
+
+        override suspend fun updateReminderStatusIfCurrent(
+            expectedVersion: TaskSnapshotVersion,
+            status: ReminderStatus
+        ): Boolean {
+            if (statusAttempts.incrementAndGet() == 2) {
+                fallbackStatusUpdate.complete(Unit)
+                proceed.await()
+            }
+            return delegate.updateReminderStatusIfCurrent(expectedVersion, status)
+        }
+
+        suspend fun awaitFallbackStatusUpdate() = fallbackStatusUpdate.await()
+
+        fun releaseFallbackStatusUpdate() = proceed.complete(Unit)
     }
 
     private class RecordingReminderScheduler : ReminderScheduler {

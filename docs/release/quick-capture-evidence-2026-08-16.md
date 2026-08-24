@@ -20,8 +20,8 @@ the original mode.
 | --- | --- | --- |
 | JVM contracts | Passed: 220/220, 0 failed/errors/skipped | `app/build/test-results/testDebugUnitTest/` |
 | Lint | Passed: 0 errors, 68 warnings | `app/build/reports/lint-results-debug.html` |
-| Full connected suite | Passed: 89/89, 0 failed/errors/skipped | `app/build/outputs/androidTest-results/connected/debug/` |
-| Atomic Room completion and persistence | Passed: 7/7 | Two completers create one successor; completion derives from canonical Save/Replace All state; stale editor Save cannot resurrect completion; successor reminder work rejects stale generations and reconciles the row currently owning a reused ID so restored reminders survive while deleted/no-reminder rows leave no orphan alarm |
+| Full connected suite | Passed: 90/90, 0 failed/errors/skipped | `app/build/outputs/androidTest-results/connected/debug/` |
+| Atomic Room completion and persistence | Passed: 8/8 | Two completers create one successor; completion derives from canonical Save/Replace All state; stale editor Save cannot resurrect completion; successor reminder work converges per task ID across repeated finite owner-generation changes so restored reminders survive while deleted/no-reminder rows leave no orphan alarm |
 | Editor conflict behavior | Passed: 16/16 ViewModel tests | Optimistic conflict preserves the draft, clears saving state, shows the retryable save message, and does not navigate; process recreation retains the draft's original snapshot version so a widget-completed row cannot be overwritten; an unavailable-reminder retry advances from the canonical saved version |
 | Completion cancellation | Passed: 12/12 use-case tests | Terminal refresh remains cancellable and cancellation removes the in-flight task ID promptly |
 | Coordinator recovery | Passed: 8/8 coordinator tests | Source and updater failures use 1 s to 60 s capped exponential backoff; a successful update resets the delay; cancellation/restart remains covered |
@@ -56,7 +56,7 @@ and R8 mapping. The final corrective JVM and lint reruns passed with 220/220 tes
 ./gradlew :app:lintDebug
 ```
 
-The final connected suite passed 89/89 on `emulator-5554`:
+The final connected suite passed 90/90 on `emulator-5554`:
 
 ```bash
 ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest

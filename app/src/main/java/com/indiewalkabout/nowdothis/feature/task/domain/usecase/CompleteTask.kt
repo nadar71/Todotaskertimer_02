@@ -64,22 +64,41 @@ class CompleteTask(
     }
 
     private suspend fun reconcileCurrentReminder(taskId: Int, now: Long) {
-        val current = repository.getTask(taskId)
-        val reminderAt = current
-            ?.takeUnless(Task::isCompleted)
-            ?.reminderAt
-            ?.takeIf { it > now }
-        if (current == null || reminderAt == null) {
-            scheduler.cancel(taskId)
-            return
-        }
+        while (true) {
+            val current = repository.getTask(taskId)
+            val expectedVersion = current?.snapshotVersion()
+            val reminderAt = current.eligibleReminderAt(now)
+            if (reminderAt == null) {
+                scheduler.cancel(taskId)
+                val verified = repository.getTask(taskId)
+                if (
+                    verified?.snapshotVersion() == expectedVersion &&
+                    verified.eligibleReminderAt(now) == null
+                ) {
+                    return
+                }
+                continue
+            }
 
-        val expectedVersion = current.snapshotVersion()
-        val status = scheduler.schedule(taskId, reminderAt).toReminderStatus()
-        if (!repository.updateReminderStatusIfCurrent(expectedVersion, status)) {
-            scheduler.reconcile()
+            val status = scheduler.schedule(taskId, reminderAt).toReminderStatus()
+            if (!repository.updateReminderStatusIfCurrent(requireNotNull(expectedVersion), status)) {
+                continue
+            }
+            val verified = repository.getTask(taskId)
+            if (
+                verified?.snapshotVersion() == expectedVersion &&
+                verified.eligibleReminderAt(now) == reminderAt &&
+                verified.reminderStatus == status
+            ) {
+                return
+            }
         }
     }
+
+    private fun Task?.eligibleReminderAt(now: Long): Long? = this
+        ?.takeUnless(Task::isCompleted)
+        ?.reminderAt
+        ?.takeIf { it > now }
 
     private fun Task.toNextOccurrence(nextDueAt: Long, now: Long): Task {
         val nextReminderAt = reminderAt?.plus(nextDueAt - requireNotNull(dueAt))
