@@ -53,7 +53,7 @@ class CompleteTask(
                 if (statusUpdated) {
                     persistedNext.copy(reminderStatus = status)
                 } else {
-                    scheduler.cancel(persistedNext.id)
+                    reconcileCurrentReminder(persistedNext.id, now)
                     persistedNext
                 }
             }
@@ -61,6 +61,24 @@ class CompleteTask(
             persistedNext
         }
         return CompleteTaskResult.Completed(result.completed, finalNext)
+    }
+
+    private suspend fun reconcileCurrentReminder(taskId: Int, now: Long) {
+        val current = repository.getTask(taskId)
+        val reminderAt = current
+            ?.takeUnless(Task::isCompleted)
+            ?.reminderAt
+            ?.takeIf { it > now }
+        if (current == null || reminderAt == null) {
+            scheduler.cancel(taskId)
+            return
+        }
+
+        val expectedVersion = current.snapshotVersion()
+        val status = scheduler.schedule(taskId, reminderAt).toReminderStatus()
+        if (!repository.updateReminderStatusIfCurrent(expectedVersion, status)) {
+            scheduler.reconcile()
+        }
     }
 
     private fun Task.toNextOccurrence(nextDueAt: Long, now: Long): Task {

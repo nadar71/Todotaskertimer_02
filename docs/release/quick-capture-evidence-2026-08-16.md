@@ -18,11 +18,11 @@ the original mode.
 
 | Boundary | Result | Evidence |
 | --- | --- | --- |
-| JVM contracts | Passed: 218/218, 0 failed/errors/skipped | `app/build/test-results/testDebugUnitTest/` |
+| JVM contracts | Passed: 220/220, 0 failed/errors/skipped | `app/build/test-results/testDebugUnitTest/` |
 | Lint | Passed: 0 errors, 68 warnings | `app/build/reports/lint-results-debug.html` |
-| Full connected suite | Passed: 88/88, 0 failed/errors/skipped | `app/build/outputs/androidTest-results/connected/debug/` |
-| Atomic Room completion and persistence | Passed: 6/6 | Two completers create one successor; completion derives from canonical Save/Replace All state; stale editor Save cannot resurrect completion; successor reminder work rejects deleted or ID-reused generations before scheduling/status persistence and cancels a newly stale alarm |
-| Editor conflict behavior | Passed: 15/15 ViewModel tests | Optimistic conflict preserves the draft, clears saving state, shows the retryable save message, and does not navigate; an unavailable-reminder retry advances from the canonical saved version |
+| Full connected suite | Passed: 89/89, 0 failed/errors/skipped | `app/build/outputs/androidTest-results/connected/debug/` |
+| Atomic Room completion and persistence | Passed: 7/7 | Two completers create one successor; completion derives from canonical Save/Replace All state; stale editor Save cannot resurrect completion; successor reminder work rejects stale generations and reconciles the row currently owning a reused ID so restored reminders survive while deleted/no-reminder rows leave no orphan alarm |
+| Editor conflict behavior | Passed: 16/16 ViewModel tests | Optimistic conflict preserves the draft, clears saving state, shows the retryable save message, and does not navigate; process recreation retains the draft's original snapshot version so a widget-completed row cannot be overwritten; an unavailable-reminder retry advances from the canonical saved version |
 | Completion cancellation | Passed: 12/12 use-case tests | Terminal refresh remains cancellable and cancellation removes the in-flight task ID promptly |
 | Coordinator recovery | Passed: 8/8 coordinator tests | Source and updater failures use 1 s to 60 s capped exponential backoff; a successful update resets the delay; cancellation/restart remains covered |
 | Production navigation | Passed: 3/3 | Cold and running add/open, reminder compatibility, recreation, back-stack return, and consumed-intent no-replay checks |
@@ -47,14 +47,16 @@ and one pending task remains.
 
 ## Commands
 
-The final clean host gate and post-review rerun passed, producing the retained 218/218 JVM report, lint
-report, debug APK, optimized release APK/AAB, and R8 mapping:
+The recorded clean host gate produced the retained debug APK, optimized release APK/AAB,
+and R8 mapping. The final corrective JVM and lint reruns passed with 220/220 tests and
+0 errors (68 warnings):
 
 ```bash
-./gradlew clean :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease
+./gradlew :app:testDebugUnitTest
+./gradlew :app:lintDebug
 ```
 
-The final connected suite passed 88/88 on `emulator-5554`:
+The final connected suite passed 89/89 on `emulator-5554`:
 
 ```bash
 ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest

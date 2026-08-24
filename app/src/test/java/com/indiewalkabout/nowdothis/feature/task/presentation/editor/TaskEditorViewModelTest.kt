@@ -337,6 +337,42 @@ class TaskEditorViewModelTest {
         }
 
     @Test
+    fun recreatedStaleDraft_keepsOriginalVersionAndConflictsAfterWidgetCompletion() =
+        runTest(dispatcher) {
+            val handle = SavedStateHandle()
+            val original = existingTask(title = "Canonical")
+            repository.emit(original)
+            val first = createViewModel(TaskEditorKey(7, null), handle)
+            advanceUntilIdle()
+            first.onEvent(TaskEditorEvent.UpdateTitle("Stale draft"))
+
+            repository.emit(
+                original.copy(
+                    isCompleted = true,
+                    completedAt = 50_000L,
+                    updatedAt = 50_000L
+                )
+            )
+            val recreated = createViewModel(TaskEditorKey(7, null), handle)
+            advanceUntilIdle()
+            val effect = async { recreated.effects.first() }
+
+            recreated.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals("Stale draft", recreated.uiState.value.title)
+            assertFalse(recreated.uiState.value.isSaving)
+            assertNull(repository.lastUpsert)
+            assertEquals(
+                TaskEditorEffect.ShowMessage(R.string.task_editor_save_failed),
+                effect.await()
+            )
+            val canonical = requireNotNull(repository.getTask(7))
+            assertEquals("Canonical", canonical.title)
+            assertTrue(canonical.isCompleted)
+        }
+
+    @Test
     fun unavailableReminder_keepsEditorOpenForRetry() = runTest(dispatcher) {
         scheduler.result = ReminderScheduleResult.FAILED
         val viewModel = validViewModel(reminderAt = 70_000L, dueAt = 80_000L)

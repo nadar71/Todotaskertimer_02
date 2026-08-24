@@ -29,13 +29,21 @@ class SaveTask(
     private val clock: AppClock,
     private val seriesIdFactory: () -> String = { UUID.randomUUID().toString() }
 ) {
-    suspend operator fun invoke(task: Task): SaveTaskResult {
+    suspend operator fun invoke(
+        task: Task,
+        expectedVersion: TaskSnapshotVersion? = task
+            .takeIf { it.id != 0 }
+            ?.snapshotVersion()
+    ): SaveTaskResult {
         val now = clock.nowMillis()
         val errors = validateTask(task, now)
         if (errors.isNotEmpty()) return SaveTaskResult.Invalid(errors)
 
         val existing = task.id.takeIf { it != 0 }?.let { repository.getTask(it) }
-        if (task.id != 0 && existing?.snapshotVersion() != task.snapshotVersion()) {
+        if (
+            task.id != 0 &&
+            (expectedVersion == null || existing?.snapshotVersion() != expectedVersion)
+        ) {
             return SaveTaskResult.Conflict
         }
         val hasFutureReminder = task.reminderAt?.let { it > now } == true
@@ -54,7 +62,7 @@ class SaveTask(
         val taskId = if (existing == null) {
             repository.upsert(saved)
         } else {
-            val updated = repository.updateIfUnchanged(saved, existing.snapshotVersion())
+            val updated = repository.updateIfUnchanged(saved, requireNotNull(expectedVersion))
             if (!updated) return SaveTaskResult.Conflict
             saved.id
         }

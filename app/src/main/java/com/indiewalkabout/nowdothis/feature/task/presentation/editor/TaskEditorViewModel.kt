@@ -11,6 +11,8 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderPermissionChecker
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.SaveTask
@@ -51,6 +53,7 @@ class TaskEditorViewModel @AssistedInject constructor(
     val effects = effectChannel.receiveAsFlow()
 
     private var loadedTask: Task? = null
+    private var draftVersion: TaskSnapshotVersion? = restoreDraftVersion()
 
     init {
         observeCategories()
@@ -151,6 +154,7 @@ class TaskEditorViewModel @AssistedInject constructor(
                 }
                 loadedTask = task
                 if (!restoredDraft) {
+                    draftVersion = task.snapshotVersion()
                     _uiState.value = task.toEditorState(_uiState.value.categories)
                     persistDraft(_uiState.value)
                 } else {
@@ -244,7 +248,7 @@ class TaskEditorViewModel @AssistedInject constructor(
         viewModelScope.launch {
             val draft = _uiState.value.toTask(loadedTask)
             try {
-                when (val result = saveTask(draft)) {
+                when (val result = saveTask(draft, draftVersion)) {
                     is SaveTaskResult.Invalid -> {
                         _uiState.update {
                             it.copy(isSaving = false, errors = result.errors.toEditorErrors())
@@ -277,6 +281,7 @@ class TaskEditorViewModel @AssistedInject constructor(
             createdAt = result.version.createdAt,
             updatedAt = result.version.updatedAt
         )
+        draftVersion = result.version
         _uiState.update {
             it.copy(
                 isSaving = false,
@@ -314,6 +319,31 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle[KEY_RECURRENCE_END_SET] = true
         savedStateHandle.set<Long?>(KEY_RECURRENCE_END_AT, state.recurrenceEndAt)
         savedStateHandle[KEY_SUBTASKS] = Json.encodeToString(state.subtasks)
+        persistDraftVersion()
+    }
+
+    private fun restoreDraftVersion(): TaskSnapshotVersion? {
+        if (savedStateHandle.get<Boolean>(KEY_VERSION_SET) != true) return null
+        return TaskSnapshotVersion(
+            id = savedStateHandle.get<Int>(KEY_VERSION_ID) ?: return null,
+            seriesId = savedStateHandle[KEY_VERSION_SERIES_ID],
+            createdAt = savedStateHandle.get<Long>(KEY_VERSION_CREATED_AT) ?: return null,
+            updatedAt = savedStateHandle.get<Long>(KEY_VERSION_UPDATED_AT) ?: return null,
+            isCompleted = savedStateHandle.get<Boolean>(KEY_VERSION_COMPLETED) ?: return null,
+            completedAt = savedStateHandle[KEY_VERSION_COMPLETED_AT]
+        )
+    }
+
+    private fun persistDraftVersion() {
+        val version = draftVersion
+        savedStateHandle[KEY_VERSION_SET] = version != null
+        if (version == null) return
+        savedStateHandle[KEY_VERSION_ID] = version.id
+        savedStateHandle.set<String?>(KEY_VERSION_SERIES_ID, version.seriesId)
+        savedStateHandle[KEY_VERSION_CREATED_AT] = version.createdAt
+        savedStateHandle[KEY_VERSION_UPDATED_AT] = version.updatedAt
+        savedStateHandle[KEY_VERSION_COMPLETED] = version.isCompleted
+        savedStateHandle.set<Long?>(KEY_VERSION_COMPLETED_AT, version.completedAt)
     }
 
     @AssistedFactory
@@ -336,6 +366,13 @@ class TaskEditorViewModel @AssistedInject constructor(
         const val KEY_RECURRENCE_END_SET = "recurrence_end_at_set"
         const val KEY_RECURRENCE_END_AT = "recurrence_end_at"
         const val KEY_SUBTASKS = "subtasks"
+        const val KEY_VERSION_SET = "draft_version_set"
+        const val KEY_VERSION_ID = "draft_version_id"
+        const val KEY_VERSION_SERIES_ID = "draft_version_series_id"
+        const val KEY_VERSION_CREATED_AT = "draft_version_created_at"
+        const val KEY_VERSION_UPDATED_AT = "draft_version_updated_at"
+        const val KEY_VERSION_COMPLETED = "draft_version_completed"
+        const val KEY_VERSION_COMPLETED_AT = "draft_version_completed_at"
     }
 }
 

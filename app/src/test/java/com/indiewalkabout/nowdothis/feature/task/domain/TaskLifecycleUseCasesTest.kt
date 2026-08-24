@@ -241,6 +241,21 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun save_editWithoutExpectedVersionDoesNotRecreateMissingTask() = runTest {
+        val events = mutableListOf<String>()
+        val repository = FakeTaskRepository(events = events)
+
+        val result = saveUseCase(repository, FakeReminderScheduler(events = events))(
+            task(id = 7),
+            expectedVersion = null
+        )
+
+        assertEquals(SaveTaskResult.Conflict, result)
+        assertTrue(repository.tasks.isEmpty())
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
     fun save_repositoryFailurePropagatesWithoutScheduling() = runTest {
         val events = mutableListOf<String>()
         val repository = FakeTaskRepository(events = events).apply {

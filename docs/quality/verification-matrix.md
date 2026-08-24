@@ -4,13 +4,13 @@ Only `Passed`, `Failed`, and `Pending` are valid statuses. Emulator and physical
 
 | Area | Status | Command or procedure | Environment | Date | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| JVM tests | Passed | Final clean Quick Capture hardening gate | Local macOS, JDK 17 | 2026-08-24 | 218 passed; 0 failed, 0 errors, 0 skipped |
-| Android lint | Passed | Final clean Quick Capture hardening gate | Local macOS | 2026-08-24 | 0 errors, 68 warnings; `app/build/reports/lint-results-debug.html` |
+| JVM tests | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-24 | 220 passed; 0 failed, 0 errors, 0 skipped |
+| Android lint | Passed | `./gradlew :app:lintDebug` | Local macOS | 2026-08-24 | 0 errors, 68 warnings; `app/build/reports/lint-results-debug.html` |
 | Debug assembly | Passed | Final clean Quick Capture hardening gate | Local macOS, API 36 SDK | 2026-08-24 | `app/build/outputs/apk/debug/app-debug.apk` |
 | Optimized release APK/AAB | Passed | Final clean Quick Capture hardening gate | Local macOS | 2026-08-24 | Unsigned APK/AAB, R8 mapping, manifest and package inspection |
 | Feature Compose tests | Passed | Feature-package `connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 39 tests passed; accessibility checklist |
-| Full connected suite | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-24 | 88 passed; 0 failed, 0 errors, 0 skipped |
-| Room migration and DAO behavior | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-24 | DAO, migration, Replace All, rollback, Quick Capture refresh, and 6 deterministic completion/save/reminder interleavings passed within 88 tests |
+| Full connected suite | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-24 | 89 passed; 0 failed, 0 errors, 0 skipped |
+| Room migration and DAO behavior | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-24 | DAO, migration, Replace All, rollback, Quick Capture refresh, and 7 deterministic completion/save/reminder interleavings passed within 89 tests |
 | Data portability JVM contracts | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-13 | 42 codec, validator, repository, use-case, and ViewModel tests passed |
 | Data portability connected journey | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 11 portability tests passed, including provider truncation and 3 export/mutate/restore and no-mutation journey proofs |
 | Localization | Passed | Full connected suite plus Italian/English screenshot smoke | Medium Phone AVD, API 36 | 2026-08-24 | Automated app/widget localization, 3 production host/theme tests, and existing operator-captured launcher screenshots |

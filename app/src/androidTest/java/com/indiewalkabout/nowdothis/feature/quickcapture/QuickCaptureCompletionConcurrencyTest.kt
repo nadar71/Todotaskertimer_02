@@ -277,6 +277,36 @@ class QuickCaptureCompletionConcurrencyTest {
         assertTrue(successorId in scheduler.cancelledTaskIds)
     }
 
+    @Test
+    fun replaceAllAfterSuccessorScheduling_preservesReconciledRestoredReminder() = runTest {
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Recurring with reminder",
+                dueAt = 2_000L,
+                reminderAt = 1_500L,
+                recurrence = RecurrenceType.DAILY
+            )
+        )
+        val restoredReminderAt = 25_000L
+        val scheduler = ReconciledActiveReminderScheduler(repository, now = 1_000L)
+        val completion = async { completeTask(repository, scheduler)(currentId) }
+
+        val successorId = scheduler.awaitFirstSchedule()
+        replaceAllWithReusedTaskId(
+            taskId = successorId,
+            reminderAt = restoredReminderAt,
+            reminderStatus = ReminderStatus.REQUESTED
+        )
+        scheduler.reconcile()
+        scheduler.releaseFirstSchedule()
+        completion.await()
+
+        val restored = requireNotNull(repository.getTask(successorId))
+        assertEquals("Restored replacement", restored.title)
+        assertEquals(ReminderStatus.SCHEDULED, restored.reminderStatus)
+        assertEquals(restoredReminderAt, scheduler.activeAlarms[successorId])
+    }
+
     private fun completeTask(
         repository: TaskRepository,
         scheduler: ReminderScheduler
@@ -287,7 +317,11 @@ class QuickCaptureCompletionConcurrencyTest {
         clock = AppClock { 1_000 }
     )
 
-    private suspend fun replaceAllWithReusedTaskId(taskId: Int) {
+    private suspend fun replaceAllWithReusedTaskId(
+        taskId: Int,
+        reminderAt: Long? = null,
+        reminderStatus: ReminderStatus = ReminderStatus.NONE
+    ) {
         PlanningDataSource(database).replaceAll(
             PlanningBackup(
                 format = "now-do-this-backup",
@@ -304,8 +338,8 @@ class QuickCaptureCompletionConcurrencyTest {
                         isCompleted = false,
                         completedAt = null,
                         dueAt = 30_000L,
-                        reminderAt = null,
-                        reminderStatus = ReminderStatus.NONE.name,
+                        reminderAt = reminderAt,
+                        reminderStatus = reminderStatus.name,
                         recurrence = RecurrenceType.NONE.name,
                         recurrenceEndAt = null,
                         seriesId = "restored-series",
@@ -439,6 +473,41 @@ class QuickCaptureCompletionConcurrencyTest {
         suspend fun awaitScheduleStart(): Int = scheduleStarted.await()
 
         fun releaseSchedule() = proceed.complete(Unit)
+    }
+
+    private class ReconciledActiveReminderScheduler(
+        private val repository: TaskRepository,
+        private val now: Long
+    ) : ReminderScheduler {
+        val activeAlarms = mutableMapOf<Int, Long>()
+        private val firstScheduleStarted = CompletableDeferred<Int>()
+        private val firstScheduleProceed = CompletableDeferred<Unit>()
+        private var coordinateNextSchedule = true
+
+        override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+            activeAlarms[taskId] = triggerAt
+            if (coordinateNextSchedule) {
+                coordinateNextSchedule = false
+                firstScheduleStarted.complete(taskId)
+                firstScheduleProceed.await()
+            }
+            return ReminderScheduleResult.EXACT
+        }
+
+        override suspend fun cancel(taskId: Int) {
+            activeAlarms.remove(taskId)
+        }
+
+        override suspend fun reconcile() {
+            repository.futureReminders(now).forEach { task ->
+                schedule(task.id, requireNotNull(task.reminderAt))
+                repository.updateReminderStatus(task.id, ReminderStatus.SCHEDULED)
+            }
+        }
+
+        suspend fun awaitFirstSchedule(): Int = firstScheduleStarted.await()
+
+        fun releaseFirstSchedule() = firstScheduleProceed.complete(Unit)
     }
 
     private companion object {
