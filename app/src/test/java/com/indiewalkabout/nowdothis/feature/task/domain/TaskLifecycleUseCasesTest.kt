@@ -12,6 +12,8 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSort
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
@@ -146,7 +148,8 @@ class TaskLifecycleUseCasesTest {
             )
         )
 
-        assertEquals(SaveTaskResult.Saved(41, ReminderStatus.SCHEDULED), result)
+        assertEquals(41, (result as SaveTaskResult.Saved).taskId)
+        assertEquals(ReminderStatus.SCHEDULED, result.reminderStatus)
         val saved = repository.tasks.getValue(41)
         assertEquals(1_000L, saved.createdAt)
         assertEquals(1_000L, saved.updatedAt)
@@ -176,18 +179,31 @@ class TaskLifecycleUseCasesTest {
             existing.copy(
                 title = "Updated",
                 reminderAt = 2_000,
-                seriesId = "replacement",
-                createdAt = 999,
-                updatedAt = 999
+                updatedAt = 30
             )
         )
 
-        assertEquals(SaveTaskResult.Saved(7, ReminderStatus.SCHEDULED), result)
+        assertEquals(7, (result as SaveTaskResult.Saved).taskId)
+        assertEquals(ReminderStatus.SCHEDULED, result.reminderStatus)
         val saved = repository.tasks.getValue(7)
         assertEquals(25L, saved.createdAt)
         assertEquals(1_000L, saved.updatedAt)
         assertEquals("existing-series", saved.seriesId)
         assertEquals(listOf("upsert:7", "schedule:7:2000", "status:7:SCHEDULED"), events)
+    }
+
+    @Test
+    fun save_updateAdvancesVersionWhenClockMatchesStoredTimestamp() = runTest {
+        val existing = task(id = 7, createdAt = 25, updatedAt = 1_000)
+        val repository = FakeTaskRepository(existing)
+
+        val result = saveUseCase(repository, FakeReminderScheduler())(
+            existing.copy(title = "Updated in the same millisecond")
+        )
+
+        assertEquals(7, (result as SaveTaskResult.Saved).taskId)
+        assertEquals(ReminderStatus.NONE, result.reminderStatus)
+        assertEquals(1_001L, repository.tasks.getValue(7).updatedAt)
     }
 
     @Test
@@ -203,7 +219,8 @@ class TaskLifecycleUseCasesTest {
             task(dueAt = 3_000, reminderAt = 2_000)
         )
 
-        assertEquals(SaveTaskResult.Saved(42, ReminderStatus.UNAVAILABLE), result)
+        assertEquals(42, (result as SaveTaskResult.Saved).taskId)
+        assertEquals(ReminderStatus.UNAVAILABLE, result.reminderStatus)
         assertEquals(ReminderStatus.UNAVAILABLE, repository.tasks.getValue(42).reminderStatus)
         assertEquals(listOf("upsert:42", "schedule:42:2000", "status:42:UNAVAILABLE"), events)
     }
@@ -217,7 +234,8 @@ class TaskLifecycleUseCasesTest {
 
         val result = saveUseCase(repository, scheduler)(existing)
 
-        assertEquals(SaveTaskResult.Saved(9, ReminderStatus.NONE), result)
+        assertEquals(9, (result as SaveTaskResult.Saved).taskId)
+        assertEquals(ReminderStatus.NONE, result.reminderStatus)
         assertEquals(ReminderStatus.NONE, repository.tasks.getValue(9).reminderStatus)
         assertEquals(listOf("upsert:9", "cancel:9"), events)
     }
@@ -669,6 +687,18 @@ class TaskLifecycleUseCasesTest {
             return id
         }
 
+        override suspend fun updateIfUnchanged(
+            task: Task,
+            expectedVersion: TaskSnapshotVersion
+        ): Boolean {
+            upsertFailure?.let { throw it }
+            val current = tasks[task.id] ?: return false
+            if (current.snapshotVersion() != expectedVersion) return false
+            tasks[task.id] = task
+            events += "upsert:${task.id}"
+            return true
+        }
+
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
@@ -733,6 +763,17 @@ class TaskLifecycleUseCasesTest {
         override suspend fun updateReminderStatus(taskId: Int, status: ReminderStatus) {
             tasks[taskId]?.let { tasks[taskId] = it.copy(reminderStatus = status) }
             events += "status:$taskId:$status"
+        }
+
+        override suspend fun updateReminderStatusIfCurrent(
+            expectedVersion: TaskSnapshotVersion,
+            status: ReminderStatus
+        ): Boolean {
+            val task = tasks[expectedVersion.id] ?: return false
+            if (task.snapshotVersion() != expectedVersion) return false
+            tasks[task.id] = task.copy(reminderStatus = status)
+            events += "status:${task.id}:$status"
+            return true
         }
 
         override suspend fun futureReminders(after: Long): List<Task> = error("Not used")

@@ -7,6 +7,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
 import kotlinx.coroutines.flow.Flow
 
 interface TaskRepository {
@@ -14,6 +15,7 @@ interface TaskRepository {
     fun observeSections(filter: TaskFilter, bounds: DayBounds): Flow<TaskSections>
     suspend fun getTask(taskId: Int): Task?
     suspend fun upsert(task: Task): Int
+    suspend fun updateIfUnchanged(task: Task, expectedVersion: TaskSnapshotVersion): Boolean
     suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
@@ -24,5 +26,9 @@ interface TaskRepository {
     suspend fun restore(snapshot: DeletedTaskSnapshot): Int
     suspend fun deleteCompleted(taskId: Int)
     suspend fun updateReminderStatus(taskId: Int, status: ReminderStatus)
+    suspend fun updateReminderStatusIfCurrent(
+        expectedVersion: TaskSnapshotVersion,
+        status: ReminderStatus
+    ): Boolean
     suspend fun futureReminders(after: Long): List<Task>
 }

@@ -9,6 +9,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderReconcileResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
@@ -267,6 +268,10 @@ internal class FakeTaskRepository(
 
     override suspend fun getTask(taskId: Int): Task? = reminders.firstOrNull { it.id == taskId }
     override suspend fun upsert(task: Task): Int = task.id
+    override suspend fun updateIfUnchanged(
+        task: Task,
+        expectedVersion: TaskSnapshotVersion
+    ): Boolean = false
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
@@ -284,6 +289,11 @@ internal class FakeTaskRepository(
         if (taskId in failingStatusTaskIds) error("database unavailable")
         statusUpdates += taskId to status
     }
+
+    override suspend fun updateReminderStatusIfCurrent(
+        expectedVersion: TaskSnapshotVersion,
+        status: ReminderStatus
+    ): Boolean = false
 
     override suspend fun futureReminders(after: Long): List<Task> {
         requestedAfter = after

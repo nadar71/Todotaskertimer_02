@@ -16,6 +16,7 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.Quick
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
@@ -24,6 +25,9 @@ import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepositor
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.CalculateNextOccurrence
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.CompleteTask
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.CompleteTaskResult
+import com.indiewalkabout.nowdothis.feature.task.domain.usecase.SaveTask
+import com.indiewalkabout.nowdothis.feature.task.domain.usecase.SaveTaskResult
+import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ValidateTask
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
@@ -32,6 +36,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -184,6 +189,94 @@ class QuickCaptureCompletionConcurrencyTest {
         assertEquals(listOf(currentId), database.taskDao().getAllTaskIds())
     }
 
+    @Test
+    fun staleSaveResumingAfterCompletion_doesNotResurrectOriginalOrOverwriteSuccessor() = runTest {
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Canonical recurring task",
+                dueAt = 2_000L,
+                reminderAt = 1_500L,
+                recurrence = RecurrenceType.DAILY
+            ).copy(reminderAt = null)
+        )
+        val staleDraft = requireNotNull(repository.getTask(currentId)).copy(
+            title = "Stale editor title"
+        )
+        val coordinatedRepository = CoordinatedSaveReadRepository(repository)
+        val save = async {
+            SaveTask(
+                repository = coordinatedRepository,
+                scheduler = RecordingReminderScheduler(),
+                validateTask = ValidateTask(),
+                clock = AppClock { 1_000L },
+                seriesIdFactory = { "unused-series" }
+            )(staleDraft)
+        }
+
+        coordinatedRepository.awaitRead()
+        completeTask(repository, RecordingReminderScheduler())(currentId)
+        coordinatedRepository.release()
+        assertEquals(SaveTaskResult.Conflict, save.await())
+
+        val tasks = database.taskDao().getAllTaskEntities()
+        val original = tasks.single { it.id == currentId }
+        assertEquals("Canonical recurring task", original.title)
+        assertEquals(true, original.isCompleted)
+        assertEquals(2, tasks.size)
+        assertEquals(1, tasks.count { !it.isCompleted })
+        assertEquals(ReminderStatus.NONE.name, tasks.single { !it.isCompleted }.reminderStatus)
+    }
+
+    @Test
+    fun replaceAllAfterCompletionCommit_doesNotScheduleDeletedOrReusedSuccessor() = runTest {
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Recurring with reminder",
+                dueAt = 2_000L,
+                reminderAt = 1_500L,
+                recurrence = RecurrenceType.DAILY
+            )
+        )
+        val coordinatedRepository = CoordinatedPostCompletionRepository(repository)
+        val scheduler = RecordingReminderScheduler()
+        val completion = async { completeTask(coordinatedRepository, scheduler)(currentId) }
+
+        val committed = coordinatedRepository.awaitCommit()
+        val successorId = requireNotNull(committed.nextOccurrence).id
+        replaceAllWithReusedTaskId(successorId)
+        coordinatedRepository.release()
+        completion.await()
+
+        val restored = requireNotNull(repository.getTask(successorId))
+        assertEquals("Restored replacement", restored.title)
+        assertEquals(ReminderStatus.NONE, restored.reminderStatus)
+        assertTrue(scheduler.scheduled.isEmpty())
+    }
+
+    @Test
+    fun replaceAllAfterSuccessorScheduling_cancelsStaleAlarmWithoutUpdatingReusedRow() = runTest {
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Recurring with reminder",
+                dueAt = 2_000L,
+                reminderAt = 1_500L,
+                recurrence = RecurrenceType.DAILY
+            )
+        )
+        val scheduler = CoordinatedScheduleReminderScheduler()
+        val completion = async { completeTask(repository, scheduler)(currentId) }
+
+        val successorId = scheduler.awaitScheduleStart()
+        replaceAllWithReusedTaskId(successorId)
+        scheduler.releaseSchedule()
+        completion.await()
+
+        val restored = requireNotNull(repository.getTask(successorId))
+        assertEquals("Restored replacement", restored.title)
+        assertEquals(ReminderStatus.NONE, restored.reminderStatus)
+        assertTrue(successorId in scheduler.cancelledTaskIds)
+    }
+
     private fun completeTask(
         repository: TaskRepository,
         scheduler: ReminderScheduler
@@ -193,6 +286,37 @@ class QuickCaptureCompletionConcurrencyTest {
         calculateNextOccurrence = CalculateNextOccurrence(ZoneIdProvider { ZoneId.of("UTC") }),
         clock = AppClock { 1_000 }
     )
+
+    private suspend fun replaceAllWithReusedTaskId(taskId: Int) {
+        PlanningDataSource(database).replaceAll(
+            PlanningBackup(
+                format = "now-do-this-backup",
+                version = 1,
+                createdAtEpochMillis = 500L,
+                categories = emptyList(),
+                tasks = listOf(
+                    PlanningTask(
+                        id = taskId,
+                        title = "Restored replacement",
+                        description = "Restored data must remain untouched",
+                        priority = TaskPriority.HIGH.name,
+                        categoryId = null,
+                        isCompleted = false,
+                        completedAt = null,
+                        dueAt = 30_000L,
+                        reminderAt = null,
+                        reminderStatus = ReminderStatus.NONE.name,
+                        recurrence = RecurrenceType.NONE.name,
+                        recurrenceEndAt = null,
+                        seriesId = "restored-series",
+                        createdAt = 400L,
+                        updatedAt = 500L,
+                        subtasks = emptyList()
+                    )
+                )
+            )
+        )
+    }
 
     private fun recurringTask(
         title: String,
@@ -234,6 +358,46 @@ class QuickCaptureCompletionConcurrencyTest {
         fun release() = proceed.complete(Unit)
     }
 
+    private class CoordinatedSaveReadRepository(
+        private val delegate: TaskRepository
+    ) : TaskRepository by delegate {
+        private val read = CompletableDeferred<Unit>()
+        private val proceed = CompletableDeferred<Unit>()
+
+        override suspend fun getTask(taskId: Int): Task? {
+            val task = delegate.getTask(taskId)
+            read.complete(Unit)
+            proceed.await()
+            return task
+        }
+
+        suspend fun awaitRead() = read.await()
+
+        fun release() = proceed.complete(Unit)
+    }
+
+    private class CoordinatedPostCompletionRepository(
+        private val delegate: TaskRepository
+    ) : TaskRepository by delegate {
+        private val committed = CompletableDeferred<AtomicCompletionResult.Completed>()
+        private val proceed = CompletableDeferred<Unit>()
+
+        override suspend fun completeAtomically(
+            taskId: Int,
+            completedAt: Long,
+            nextOccurrence: (Task) -> Task?
+        ): AtomicCompletionResult {
+            val result = delegate.completeAtomically(taskId, completedAt, nextOccurrence)
+            if (result is AtomicCompletionResult.Completed) committed.complete(result)
+            proceed.await()
+            return result
+        }
+
+        suspend fun awaitCommit(): AtomicCompletionResult.Completed = committed.await()
+
+        fun release() = proceed.complete(Unit)
+    }
+
     private class RecordingReminderScheduler : ReminderScheduler {
         val cancelledTaskIds = mutableListOf<Int>()
         val scheduled = mutableListOf<Pair<Int, Pair<Long, ReminderScheduleResult>>>()
@@ -253,6 +417,28 @@ class QuickCaptureCompletionConcurrencyTest {
         }
 
         override suspend fun reconcile() = Unit
+    }
+
+    private class CoordinatedScheduleReminderScheduler : ReminderScheduler {
+        val cancelledTaskIds = mutableListOf<Int>()
+        private val scheduleStarted = CompletableDeferred<Int>()
+        private val proceed = CompletableDeferred<Unit>()
+
+        override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+            scheduleStarted.complete(taskId)
+            proceed.await()
+            return ReminderScheduleResult.EXACT
+        }
+
+        override suspend fun cancel(taskId: Int) {
+            cancelledTaskIds += taskId
+        }
+
+        override suspend fun reconcile() = Unit
+
+        suspend fun awaitScheduleStart(): Int = scheduleStarted.await()
+
+        fun releaseSchedule() = proceed.complete(Unit)
     }
 
     private companion object {

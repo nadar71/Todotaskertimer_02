@@ -15,6 +15,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSort
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
@@ -273,6 +274,11 @@ private class FakeTaskRepository(
     override suspend fun getTask(taskId: Int): Task? = tasks[taskId]
     override suspend fun upsert(task: Task): Int = task.id
 
+    override suspend fun updateIfUnchanged(
+        task: Task,
+        expectedVersion: TaskSnapshotVersion
+    ): Boolean = false
+
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
@@ -306,6 +312,10 @@ private class FakeTaskRepository(
     }
 
     override suspend fun updateReminderStatus(taskId: Int, status: ReminderStatus) = Unit
+    override suspend fun updateReminderStatusIfCurrent(
+        expectedVersion: TaskSnapshotVersion,
+        status: ReminderStatus
+    ): Boolean = false
     override suspend fun futureReminders(after: Long): List<Task> = emptyList()
 }
 

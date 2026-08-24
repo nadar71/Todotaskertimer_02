@@ -17,6 +17,8 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderPermissionChecker
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
@@ -313,6 +315,28 @@ class TaskEditorViewModelTest {
     }
 
     @Test
+    fun optimisticConflict_preservesDraftAndEmitsRetryableMessageWithoutNavigation() =
+        runTest(dispatcher) {
+            repository.emit(existingTask(title = "Canonical"))
+            repository.rejectConditionalUpdate = true
+            val viewModel = createViewModel(TaskEditorKey(7, null))
+            advanceUntilIdle()
+            viewModel.onEvent(TaskEditorEvent.UpdateTitle("Local draft"))
+            val effect = async { viewModel.effects.first() }
+
+            viewModel.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals("Local draft", viewModel.uiState.value.title)
+            assertFalse(viewModel.uiState.value.isSaving)
+            assertNull(repository.lastUpsert)
+            assertEquals(
+                TaskEditorEffect.ShowMessage(R.string.task_editor_save_failed),
+                effect.await()
+            )
+        }
+
+    @Test
     fun unavailableReminder_keepsEditorOpenForRetry() = runTest(dispatcher) {
         scheduler.result = ReminderScheduleResult.FAILED
         val viewModel = validViewModel(reminderAt = 70_000L, dueAt = 80_000L)
@@ -328,6 +352,30 @@ class TaskEditorViewModelTest {
         )
         assertEquals("Valid", viewModel.uiState.value.title)
     }
+
+    @Test
+    fun unavailableReminder_retryUsesSavedVersionAndCanNavigateAfterSuccess() =
+        runTest(dispatcher) {
+            repository.emit(existingTask(title = "Reminder retry"))
+            scheduler.result = ReminderScheduleResult.FAILED
+            val viewModel = createViewModel(TaskEditorKey(7, null))
+            advanceUntilIdle()
+            val unavailable = async { viewModel.effects.first() }
+
+            viewModel.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+            assertEquals(
+                TaskEditorEffect.ShowMessage(R.string.task_editor_reminder_unavailable),
+                unavailable.await()
+            )
+
+            scheduler.result = ReminderScheduleResult.EXACT
+            val success = async { viewModel.effects.first() }
+            viewModel.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals(TaskEditorEffect.NavigateBack, success.await())
+        }
 
     private suspend fun validViewModel(
         reminderAt: Long? = null,
@@ -409,6 +457,7 @@ private class EditorTaskRepository : TaskRepository {
     private val observed = mutableMapOf<Int, MutableStateFlow<Task?>>()
     var lastUpsert: Task? = null
     var upsertFailure: Throwable? = null
+    var rejectConditionalUpdate = false
     private var nextId = 40
 
     fun emit(task: Task) {
@@ -425,8 +474,23 @@ private class EditorTaskRepository : TaskRepository {
 
     override suspend fun upsert(task: Task): Int {
         upsertFailure?.let { throw it }
+        val id = task.id.takeIf { it != 0 } ?: nextId++
+        val persisted = task.copy(id = id)
+        lastUpsert = persisted
+        emit(persisted)
+        return id
+    }
+
+    override suspend fun updateIfUnchanged(
+        task: Task,
+        expectedVersion: TaskSnapshotVersion
+    ): Boolean {
+        if (rejectConditionalUpdate) return false
+        val current = observed[task.id]?.value ?: return false
+        if (current.snapshotVersion() != expectedVersion) return false
         lastUpsert = task
-        return task.id.takeIf { it != 0 } ?: nextId++
+        emit(task)
+        return true
     }
 
     override suspend fun completeAtomically(
@@ -439,7 +503,13 @@ private class EditorTaskRepository : TaskRepository {
     override suspend fun deleteAll(): List<Int> = emptyList()
     override suspend fun restore(snapshot: DeletedTaskSnapshot): Int = snapshot.task.id
     override suspend fun deleteCompleted(taskId: Int) = Unit
-    override suspend fun updateReminderStatus(taskId: Int, status: ReminderStatus) = Unit
+    override suspend fun updateReminderStatus(taskId: Int, status: ReminderStatus) {
+        observed[taskId]?.value?.let { emit(it.copy(reminderStatus = status)) }
+    }
+    override suspend fun updateReminderStatusIfCurrent(
+        expectedVersion: TaskSnapshotVersion,
+        status: ReminderStatus
+    ): Boolean = false
     override suspend fun futureReminders(after: Long): List<Task> = emptyList()
 }
 

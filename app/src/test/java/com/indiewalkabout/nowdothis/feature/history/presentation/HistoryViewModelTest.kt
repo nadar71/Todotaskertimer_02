@@ -15,6 +15,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.CompletionHistoryReader
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 import java.time.LocalDate
@@ -262,6 +263,10 @@ private class FakeTaskRepository : TaskRepository {
     override fun observeSections(filter: TaskFilter, bounds: DayBounds): Flow<TaskSections> = flowOf(TaskSections())
     override suspend fun getTask(taskId: Int): Task? = null
     override suspend fun upsert(task: Task): Int = task.id
+    override suspend fun updateIfUnchanged(
+        task: Task,
+        expectedVersion: TaskSnapshotVersion
+    ): Boolean = false
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
@@ -271,6 +276,10 @@ private class FakeTaskRepository : TaskRepository {
     override suspend fun deleteAll(): List<Int> = emptyList()
     override suspend fun restore(snapshot: DeletedTaskSnapshot): Int = snapshot.task.id
     override suspend fun updateReminderStatus(taskId: Int, status: ReminderStatus) = Unit
+    override suspend fun updateReminderStatusIfCurrent(
+        expectedVersion: TaskSnapshotVersion,
+        status: ReminderStatus
+    ): Boolean = false
     override suspend fun futureReminders(after: Long): List<Task> = emptyList()
 }
 

@@ -15,6 +15,8 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
@@ -147,11 +149,24 @@ class QuickCaptureWidgetActionTest {
         }
 
         override suspend fun upsert(task: Task): Int = error("Not used")
+        override suspend fun updateIfUnchanged(
+            task: Task,
+            expectedVersion: TaskSnapshotVersion
+        ): Boolean = false
         override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot = error("Not used")
         override suspend fun deleteAll(): List<Int> = error("Not used")
         override suspend fun restore(snapshot: DeletedTaskSnapshot): Int = error("Not used")
         override suspend fun deleteCompleted(taskId: Int) = error("Not used")
         override suspend fun updateReminderStatus(taskId: Int, status: ReminderStatus) = Unit
+        override suspend fun updateReminderStatusIfCurrent(
+            expectedVersion: TaskSnapshotVersion,
+            status: ReminderStatus
+        ): Boolean {
+            val current = task ?: return false
+            if (current.snapshotVersion() != expectedVersion) return false
+            task = current.copy(reminderStatus = status)
+            return true
+        }
         override suspend fun futureReminders(after: Long): List<Task> = error("Not used")
     }
 }

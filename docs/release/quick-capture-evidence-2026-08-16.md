@@ -18,10 +18,11 @@ the original mode.
 
 | Boundary | Result | Evidence |
 | --- | --- | --- |
-| JVM contracts | Passed: 215/215, 0 failed/errors/skipped | `app/build/test-results/testDebugUnitTest/` |
+| JVM contracts | Passed: 218/218, 0 failed/errors/skipped | `app/build/test-results/testDebugUnitTest/` |
 | Lint | Passed: 0 errors, 68 warnings | `app/build/reports/lint-results-debug.html` |
-| Full connected suite | Passed: 85/85, 0 failed/errors/skipped | `app/build/outputs/androidTest-results/connected/debug/` |
-| Atomic Room completion | Passed: 3/3 | Two completers create one successor; completion interleaved with Save and Replace All derives completion/successor state from the transaction's canonical snapshot |
+| Full connected suite | Passed: 88/88, 0 failed/errors/skipped | `app/build/outputs/androidTest-results/connected/debug/` |
+| Atomic Room completion and persistence | Passed: 6/6 | Two completers create one successor; completion derives from canonical Save/Replace All state; stale editor Save cannot resurrect completion; successor reminder work rejects deleted or ID-reused generations before scheduling/status persistence and cancels a newly stale alarm |
+| Editor conflict behavior | Passed: 15/15 ViewModel tests | Optimistic conflict preserves the draft, clears saving state, shows the retryable save message, and does not navigate; an unavailable-reminder retry advances from the canonical saved version |
 | Completion cancellation | Passed: 12/12 use-case tests | Terminal refresh remains cancellable and cancellation removes the in-flight task ID promptly |
 | Coordinator recovery | Passed: 8/8 coordinator tests | Source and updater failures use 1 s to 60 s capped exponential backoff; a successful update resets the delay; cancellation/restart remains covered |
 | Production navigation | Passed: 3/3 | Cold and running add/open, reminder compatibility, recreation, back-stack return, and consumed-intent no-replay checks |
@@ -46,23 +47,17 @@ and one pending task remains.
 
 ## Commands
 
-The initial aggregate run rebuilt all host and release outputs. Its connected phase
-recorded 84/85 because an unrelated Espresso keyboard-close step temporarily lacked
-window focus. The failed journey passed 1/1 immediately after the emulator was
-woken/unlocked, and the complete connected suite then passed 85/85 with a clean
-retained report:
+The final clean host gate and post-review rerun passed, producing the retained 218/218 JVM report, lint
+report, debug APK, optimized release APK/AAB, and R8 mapping:
 
 ```bash
-ANDROID_SERIAL=emulator-5554 ./gradlew clean :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:connectedDebugAndroidTest :app:assembleRelease :app:bundleRelease
-ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.CoreTaskJourneyTest
-ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
+./gradlew clean :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease
 ```
 
-The host-side gates and release outputs were rerun separately after the connected
-rerun and passed:
+The final connected suite passed 88/88 on `emulator-5554`:
 
 ```bash
-./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease
+ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest
 ```
 
 The final process-absent journey was run separately and passed 1/1:
@@ -115,7 +110,7 @@ Rendered-action tests inspect production `RemoteViews` and prove add/open intent
 are explicit, distinct, and immutable. Retry uses an explicit receiver broadcast
 with `FLAG_IMMUTABLE | FLAG_UPDATE_CURRENT` and a per-widget URI/request code.
 
-The AAB contains `baseline.prof` (8,067 bytes), `baseline.profm` (600 bytes), three
+The AAB contains `baseline.prof` (9,921 bytes), `baseline.profm` (599 bytes), three
 DEX entries, `base/resources.pb`, the binary manifest, widget layouts/drawables, and
 both provider XML variants. String inspection across every release DEX entry found
 no `BenchmarkFixtureProvider`, `prepare_quick_capture`,
@@ -131,10 +126,10 @@ capture-time contents rather than asserting future contents at those paths.
 
 | Artifact | Size | SHA-256 |
 | --- | ---: | --- |
-| `app/build/outputs/apk/debug/app-debug.apk` | 16,965,393 bytes | `99caa5344fcd4ed77ca68c7996345dc104bd440ffaea090b3c373912e73de170` |
-| `app/build/outputs/apk/release/app-release-unsigned.apk` | 3,668,710 bytes | `12d533339c58b7aef8ea2b6a4659f515016e01830f1be7ea39d3c0fb4ab86304` |
-| `app/build/outputs/bundle/release/app-release.aab` | 6,829,687 bytes | `cc32f83ac0656b5088935f2810f6f04d29a59ac8b8dcc40711b76e7b8c9c465e` |
-| `app/build/outputs/mapping/release/mapping.txt` | 44,956,247 bytes | `384ad814fc0ed355c7e74f333182266e1e8337f8f1353b6a1d9e236961a2b01b` |
+| `app/build/outputs/apk/debug/app-debug.apk` | 17,259,895 bytes | `f54ae0e10e5c0fd3987ab309a391b19e83342b74e167c8e85bfe93cf861b7f32` |
+| `app/build/outputs/apk/release/app-release-unsigned.apk` | 3,668,710 bytes | `259df0c02e25408986c979471190fd1b1366b28a3ca2ad44781f589f934ebdbe` |
+| `app/build/outputs/bundle/release/app-release.aab` | 6,835,251 bytes | `a360519c5f1cf8f80402efe7ee45e353a38b8e05aba729f4d12e4b459755cb5b` |
+| `app/build/outputs/mapping/release/mapping.txt` | 44,983,968 bytes | `f2edcdaa5572bedd1e9496c44120af2737d78df268a8b1f40b470bedd5de194b` |
 
 `apksigner verify` reported that the APK does not verify, and `jarsigner -verify`
 reported the AAB unsigned, matching the documented no-credentials build behavior.

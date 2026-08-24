@@ -4,6 +4,7 @@ import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 
@@ -39,12 +40,23 @@ class CompleteTask(
         scheduler.cancel(result.completed.id)
         val persistedNext = result.nextOccurrence
         val finalNext = if (persistedNext?.reminderAt?.let { it > now } == true) {
-            val status = scheduler.schedule(
-                persistedNext.id,
-                requireNotNull(persistedNext.reminderAt)
-            ).toReminderStatus()
-            repository.updateReminderStatus(persistedNext.id, status)
-            persistedNext.copy(reminderStatus = status)
+            val expectedVersion = persistedNext.snapshotVersion()
+            val isCurrent = repository.getTask(persistedNext.id)?.snapshotVersion() == expectedVersion
+            if (!isCurrent) {
+                persistedNext
+            } else {
+                val status = scheduler.schedule(
+                    persistedNext.id,
+                    requireNotNull(persistedNext.reminderAt)
+                ).toReminderStatus()
+                val statusUpdated = repository.updateReminderStatusIfCurrent(expectedVersion, status)
+                if (statusUpdated) {
+                    persistedNext.copy(reminderStatus = status)
+                } else {
+                    scheduler.cancel(persistedNext.id)
+                    persistedNext
+                }
+            }
         } else {
             persistedNext
         }

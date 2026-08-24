@@ -12,6 +12,8 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.CompletionHistoryReader
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskScheduleReader
@@ -50,6 +52,17 @@ class OfflineTaskRepository @Inject constructor(
 
     override suspend fun upsert(task: Task): Int = database.withTransaction {
         upsertInTransaction(task)
+    }
+
+    override suspend fun updateIfUnchanged(
+        task: Task,
+        expectedVersion: TaskSnapshotVersion
+    ): Boolean = database.withTransaction {
+        val current = taskDao.getTask(task.id)?.let(TaskEntityMapper::toDomain)
+            ?: return@withTransaction false
+        if (current.snapshotVersion() != expectedVersion) return@withTransaction false
+        upsertInTransaction(task)
+        true
     }
 
     override suspend fun completeAtomically(
@@ -149,6 +162,18 @@ class OfflineTaskRepository @Inject constructor(
             val task = taskDao.getTask(taskId)?.task ?: return@withTransaction
             taskDao.updateTask(task.copy(reminderStatus = status.name))
         }
+
+    override suspend fun updateReminderStatusIfCurrent(
+        expectedVersion: TaskSnapshotVersion,
+        status: ReminderStatus
+    ): Boolean = database.withTransaction {
+        val task = taskDao.getTask(expectedVersion.id) ?: return@withTransaction false
+        if (TaskEntityMapper.toDomain(task).snapshotVersion() != expectedVersion) {
+            return@withTransaction false
+        }
+        taskDao.updateTask(task.task.copy(reminderStatus = status.name))
+        true
+    }
 
     override suspend fun futureReminders(after: Long): List<Task> = database.withTransaction {
         taskDao.observeAllTaskEntities().first()

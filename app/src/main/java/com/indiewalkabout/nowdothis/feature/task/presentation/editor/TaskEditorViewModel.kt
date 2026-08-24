@@ -250,6 +250,12 @@ class TaskEditorViewModel @AssistedInject constructor(
                             it.copy(isSaving = false, errors = result.errors.toEditorErrors())
                         }
                     }
+                    SaveTaskResult.Conflict -> {
+                        _uiState.update { it.copy(isSaving = false) }
+                        effectChannel.send(
+                            TaskEditorEffect.ShowMessage(R.string.task_editor_save_failed)
+                        )
+                    }
                     is SaveTaskResult.Saved -> handleSaved(draft, result)
                 }
             } catch (cancelled: CancellationException) {
@@ -262,7 +268,15 @@ class TaskEditorViewModel @AssistedInject constructor(
     }
 
     private suspend fun handleSaved(task: Task, result: SaveTaskResult.Saved) {
-        loadedTask = task.copy(id = result.taskId, reminderStatus = result.reminderStatus)
+        loadedTask = task.copy(
+            id = result.taskId,
+            isCompleted = result.version.isCompleted,
+            completedAt = result.version.completedAt,
+            reminderStatus = result.reminderStatus,
+            seriesId = result.version.seriesId,
+            createdAt = result.version.createdAt,
+            updatedAt = result.version.updatedAt
+        )
         _uiState.update {
             it.copy(
                 isSaving = false,
