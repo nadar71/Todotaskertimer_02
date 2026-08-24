@@ -262,7 +262,11 @@ private class FakeTaskRepository : TaskRepository {
     override fun observeSections(filter: TaskFilter, bounds: DayBounds): Flow<TaskSections> = flowOf(TaskSections())
     override suspend fun getTask(taskId: Int): Task? = null
     override suspend fun upsert(task: Task): Int = task.id
-    override suspend fun completeAtomically(taskId: Int, completedAt: Long, next: Task?): AtomicCompletionResult? = null
+    override suspend fun completeAtomically(
+        taskId: Int,
+        completedAt: Long,
+        nextOccurrence: (Task) -> Task?
+    ): AtomicCompletionResult = AtomicCompletionResult.NotFound
     override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot = error("unused")
     override suspend fun deleteAll(): List<Int> = emptyList()
     override suspend fun restore(snapshot: DeletedTaskSnapshot): Int = snapshot.task.id

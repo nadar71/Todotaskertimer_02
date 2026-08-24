@@ -17,6 +17,7 @@ import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryMutati
 import com.indiewalkabout.nowdothis.feature.task.data.repository.DataStoreTaskPreferencesRepository
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
 import com.indiewalkabout.nowdothis.feature.task.data.repository.dataStore
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
@@ -163,7 +164,8 @@ class OfflineRepositoriesTest {
             )
         )
 
-        val result = tasks.completeAtomically(10, completedAt = 1_500, next = next)!!
+        val result = tasks.completeAtomically(10, completedAt = 1_500) { next }
+            as AtomicCompletionResult.Completed
 
         assertEquals(1_500L, result.completed.completedAt)
         assertTrue(result.completed.subtasks.all(Subtask::isCompleted))
@@ -193,7 +195,7 @@ class OfflineRepositoriesTest {
         tasks.upsert(current)
         val copiedNext = current.copy(dueAt = 2_000)
 
-        tasks.completeAtomically(12, completedAt = 1_500, next = copiedNext)
+        tasks.completeAtomically(12, completedAt = 1_500) { copiedNext }
 
         val completed = tasks.getTask(12)!!
         val next = tasks.observeDay(2_000, 2_001).first().single()
@@ -219,9 +221,8 @@ class OfflineRepositoriesTest {
         try {
             tasks.completeAtomically(
                 taskId = 11,
-                completedAt = 1_500,
-                next = task(id = 0, title = "Invalid next").copy(categoryId = 999)
-            )
+                completedAt = 1_500
+            ) { task(id = 0, title = "Invalid next").copy(categoryId = 999) }
         } catch (_: Exception) {
             failed = true
         }

@@ -1,6 +1,7 @@
 package com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget
 
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureTaskSource
+import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuickCaptureTasks
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
@@ -145,6 +146,114 @@ class QuickCaptureWidgetCoordinatorTest {
         assertEquals(3, updateAttempts)
         assertEquals(listOf(2, 3), successfulUpdates)
         scope.cancel()
+    }
+
+    @Test
+    fun persistentSourceFailures_useCappedExponentialBackoff() = runTest {
+        var observations = 0
+        val scope = applicationScope()
+        val coordinator = coordinator(
+            source = QuickCaptureTaskSource {
+                observations++
+                throw IllegalStateException("persistent source failure")
+            },
+            scope = scope,
+            onUpdate = {}
+        )
+
+        try {
+            coordinator.onApplicationStart()
+            runCurrent()
+            assertEquals(1, observations)
+
+            listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 32_000L, 60_000L, 60_000L)
+                .forEachIndexed { index, delayMillis ->
+                    advanceTimeBy(delayMillis - 1)
+                    runCurrent()
+                    assertEquals(index + 1, observations)
+
+                    advanceTimeBy(1)
+                    runCurrent()
+                    assertEquals(index + 2, observations)
+                }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun persistentUpdaterFailures_useExponentialBackoff() = runTest {
+        var updateAttempts = 0
+        val scope = applicationScope()
+        val coordinator = coordinator(
+            source = QuickCaptureTaskSource { flow { emit(TaskSections()) } },
+            scope = scope,
+            onUpdate = {
+                updateAttempts++
+                throw IllegalStateException("persistent widget host failure")
+            }
+        )
+
+        try {
+            coordinator.onApplicationStart()
+            runCurrent()
+            assertEquals(1, updateAttempts)
+
+            listOf(1_000L, 2_000L, 4_000L).forEachIndexed { index, delayMillis ->
+                advanceTimeBy(delayMillis - 1)
+                runCurrent()
+                assertEquals(index + 1, updateAttempts)
+
+                advanceTimeBy(1)
+                runCurrent()
+                assertEquals(index + 2, updateAttempts)
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun successfulUpdate_resetsBackoffToInitialDelay() = runTest {
+        var observations = 0
+        var updateCount = 0
+        val scope = applicationScope()
+        val coordinator = coordinator(
+            source = QuickCaptureTaskSource {
+                observations++
+                when (observations) {
+                    1, 2 -> throw IllegalStateException("transient source failure")
+                    else -> flow {
+                        emit(TaskSections(today = listOf(task(observations, "Recovered"))))
+                        throw IllegalStateException("fail after successful update")
+                    }
+                }
+            },
+            scope = scope,
+            onUpdate = { updateCount++ }
+        )
+
+        try {
+            coordinator.onApplicationStart()
+            runCurrent()
+            advanceTimeBy(1_000L)
+            runCurrent()
+            advanceTimeBy(2_000L)
+            runCurrent()
+            assertEquals(3, observations)
+            assertEquals(1, updateCount)
+
+            advanceTimeBy(999L)
+            runCurrent()
+            assertEquals(3, observations)
+            advanceTimeBy(1L)
+            runCurrent()
+
+            assertEquals(4, observations)
+            assertEquals(2, updateCount)
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test

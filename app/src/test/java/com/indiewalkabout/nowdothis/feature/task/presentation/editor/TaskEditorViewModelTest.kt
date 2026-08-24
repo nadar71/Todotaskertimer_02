@@ -432,8 +432,8 @@ private class EditorTaskRepository : TaskRepository {
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        next: Task?
-    ): AtomicCompletionResult? = null
+        nextOccurrence: (Task) -> Task?
+    ): AtomicCompletionResult = AtomicCompletionResult.NotFound
 
     override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot = error("unused")
     override suspend fun deleteAll(): List<Int> = emptyList()

@@ -22,7 +22,7 @@ Treat the following as explicit platform or framework boundaries:
 | Notifications | receivers, `NotificationPublisher`, permission checker, and Hilt module in `core.notifications` | Reminder contracts, task identifiers, and route-level permission effects |
 | Locale selection | Android resource locale configuration and Compose locale lookup at the UI edge | Localized resources and locale-aware presentation values; no locale-specific domain persistence |
 | Navigation 3 | `AppNavigation`, `AppNavigator`, and serializable feature navigation keys | Presentation effects and route callbacks expressed with domain identifiers |
-| AppWidget / Glance | `feature.quickcapture.presentation.widget` receiver, responsive composition, callbacks, and explicit intents | Existing task-domain load/completion use cases and application entry point |
+| AppWidget / Glance | `feature.quickcapture.presentation.widget` receiver, responsive composition, callbacks, refresh signal, adapter, and explicit intents | Domain-owned `QuickCaptureWidgetUpdater`, existing task-domain load/completion use cases, and application entry point |
 
 Keep Room entities, DataStore keys, AlarmManager and notification objects, locale
 framework objects, and Navigation 3 back-stack operations in their listed owners.
@@ -45,6 +45,9 @@ it when it already belongs entirely to a platform-owned UI or composition bounda
   fixed 3/5/8 capacities, reads current Room state after process reconstruction, and
   relies on Glance's internal session machinery rather than an app-owned widget
   worker or duplicate persistence layer.
+- Application configuration callbacks request widget invalidation through the
+  domain-owned updater contract. The Glance adapter advances presentation refresh
+  state so live compositions re-resolve qualified resources without restricted APIs.
 - Platform upgrades can require focused adapter and integration-test changes even
   when domain contracts remain stable.
 

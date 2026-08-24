@@ -55,10 +55,12 @@ class OfflineTaskRepository @Inject constructor(
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        next: Task?
-    ): AtomicCompletionResult? = database.withTransaction {
-        val current = taskDao.getTask(taskId) ?: return@withTransaction null
-        if (current.task.isCompleted) return@withTransaction null
+        nextOccurrence: (Task) -> Task?
+    ): AtomicCompletionResult = database.withTransaction {
+        val current = taskDao.getTask(taskId) ?: return@withTransaction AtomicCompletionResult.NotFound
+        if (current.task.isCompleted) return@withTransaction AtomicCompletionResult.AlreadyCompleted
+        val currentTask = TaskEntityMapper.toDomain(current)
+        val next = nextOccurrence(currentTask)
         val completedTask = current.task.copy(
             isCompleted = true,
             completedAt = completedAt,
@@ -82,7 +84,7 @@ class OfflineTaskRepository @Inject constructor(
             )
             TaskEntityMapper.toDomain(requireNotNull(taskDao.getTask(nextId)))
         }
-        AtomicCompletionResult(
+        AtomicCompletionResult.Completed(
             completed = TaskEntityMapper.toDomain(
                 TaskWithSubtasks(completedTask, completedSubtasks)
             ),

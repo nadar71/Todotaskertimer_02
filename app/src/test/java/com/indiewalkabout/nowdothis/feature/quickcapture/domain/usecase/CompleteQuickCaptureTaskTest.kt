@@ -3,7 +3,7 @@ package com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase
 import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.core.time.DayBounds
 import com.indiewalkabout.nowdothis.core.time.ZoneIdProvider
-import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetUpdater
+import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
@@ -192,6 +192,38 @@ class CompleteQuickCaptureTaskTest {
     }
 
     @Test
+    fun cancellationWhileTerminalRefreshSuspends_completesPromptlyWithoutLeakingInFlightState() =
+        runTest {
+            val repository = FakeTaskRepository(task(18))
+            val terminalRefreshStarted = CompletableDeferred<Unit>()
+            val releaseTerminalRefresh = CompletableDeferred<Unit>()
+            var updates = 0
+            lateinit var complete: CompleteQuickCaptureTask
+            val updater = QuickCaptureWidgetUpdater {
+                updates++
+                if (updates == 2) {
+                    terminalRefreshStarted.complete(Unit)
+                    releaseTerminalRefresh.await()
+                }
+            }
+            complete = useCase(repository, updater)
+            val action = async { complete(18) }
+            terminalRefreshStarted.await()
+
+            try {
+                action.cancel()
+                runCurrent()
+
+                assertTrue(action.isCompleted)
+                assertTrue(action.isCancelled)
+                assertFalse(18 in complete.inFlightTaskIds.value)
+            } finally {
+                releaseTerminalRefresh.complete(Unit)
+                runCurrent()
+            }
+        }
+
+    @Test
     fun duplicateConcurrentTap_invokesCompleteTaskOnceAndReportsInFlightState() = runTest {
         val repository = FakeTaskRepository(task(11)).apply {
             completionGate = CompletableDeferred()
@@ -207,16 +239,16 @@ class CompleteQuickCaptureTaskTest {
         runCurrent()
 
         assertEquals(CompleteQuickCaptureResult.Ignored, duplicate.await())
-        assertEquals(1, repository.getTaskCalls)
+        assertEquals(1, repository.completeAtomicallyCalls)
         repository.completionGate?.complete(Unit)
         assertEquals(CompleteQuickCaptureResult.Completed, first.await())
-        assertEquals(1, repository.getTaskCalls)
+        assertEquals(1, repository.completeAtomicallyCalls)
         assertEquals(3, updater.updateCount)
     }
 
     @Test
     fun cancellation_propagatesRemovesInFlightStateAndRefreshesWidgets() = runTest {
-        val repository = FakeTaskRepository(task(12)).apply { suspendGetTask = true }
+        val repository = FakeTaskRepository(task(12)).apply { suspendCompletion = true }
         val updater = RecordingUpdater()
         val complete = useCase(repository, updater)
 
@@ -279,8 +311,9 @@ class CompleteQuickCaptureTaskTest {
         val completedIds = mutableListOf<Int>()
         var completionFailure: RuntimeException? = null
         var completionGate: CompletableDeferred<Unit>? = null
-        var suspendGetTask = false
+        var suspendCompletion = false
         var getTaskCalls = 0
+        var completeAtomicallyCalls = 0
         var createdOccurrences = 0
 
         init {
@@ -294,7 +327,6 @@ class CompleteQuickCaptureTaskTest {
 
         override suspend fun getTask(taskId: Int): Task? {
             getTaskCalls++
-            if (suspendGetTask) awaitCancellation()
             return tasks[taskId]
         }
 
@@ -303,17 +335,21 @@ class CompleteQuickCaptureTaskTest {
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
-            next: Task?
-        ): AtomicCompletionResult? {
+            nextOccurrence: (Task) -> Task?
+        ): AtomicCompletionResult {
+            completeAtomicallyCalls++
+            if (suspendCompletion) awaitCancellation()
             completionFailure?.let { throw it }
             completionGate?.await()
-            val current = tasks[taskId] ?: return null
+            val current = tasks[taskId] ?: return AtomicCompletionResult.NotFound
+            if (current.isCompleted) return AtomicCompletionResult.AlreadyCompleted
+            val next = nextOccurrence(current)
             completedIds += taskId
             val completed = current.copy(isCompleted = true, completedAt = completedAt)
             tasks[taskId] = completed
             val occurrence = next?.copy(id = 100 + createdOccurrences++)
             occurrence?.let { tasks[it.id] = it }
-            return AtomicCompletionResult(completed, occurrence)
+            return AtomicCompletionResult.Completed(completed, occurrence)
         }
 
         override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot = error("Not used")

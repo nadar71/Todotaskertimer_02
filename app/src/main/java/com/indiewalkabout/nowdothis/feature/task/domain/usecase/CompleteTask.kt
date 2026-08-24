@@ -1,6 +1,7 @@
 package com.indiewalkabout.nowdothis.feature.task.domain.usecase
 
 import com.indiewalkabout.nowdothis.core.time.AppClock
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
@@ -23,15 +24,17 @@ class CompleteTask(
     private val clock: AppClock
 ) {
     suspend operator fun invoke(taskId: Int): CompleteTaskResult {
-        val current = repository.getTask(taskId) ?: return CompleteTaskResult.NotFound
-        if (current.isCompleted) return CompleteTaskResult.AlreadyCompleted
-
         val now = clock.nowMillis()
-        val next = calculateNextOccurrence(current)?.let { nextDueAt ->
-            current.toNextOccurrence(nextDueAt, now)
+        val result = repository.completeAtomically(taskId, now) { current ->
+            calculateNextOccurrence(current)?.let { nextDueAt ->
+                current.toNextOccurrence(nextDueAt, now)
+            }
         }
-        val result = repository.completeAtomically(taskId, now, next)
-            ?: return CompleteTaskResult.NotFound
+        when (result) {
+            AtomicCompletionResult.NotFound -> return CompleteTaskResult.NotFound
+            AtomicCompletionResult.AlreadyCompleted -> return CompleteTaskResult.AlreadyCompleted
+            is AtomicCompletionResult.Completed -> Unit
+        }
 
         scheduler.cancel(result.completed.id)
         val persistedNext = result.nextOccurrence

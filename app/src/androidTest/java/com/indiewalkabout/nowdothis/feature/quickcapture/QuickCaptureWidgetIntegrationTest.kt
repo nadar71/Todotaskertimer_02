@@ -38,11 +38,11 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.RestoreBa
 import com.indiewalkabout.nowdothis.feature.quickcapture.data.TaskSectionsQuickCaptureSource
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.model.QuickCaptureSnapshot
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureTaskSource
+import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuickCaptureTasks
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetCoordinator
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetReceiver
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetState
-import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.observeQuickCaptureWidgetState
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository

@@ -5,6 +5,7 @@ import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.core.time.DayBounds
 import com.indiewalkabout.nowdothis.core.time.ZoneIdProvider
 import com.indiewalkabout.nowdothis.feature.quickcapture.di.QuickCaptureWidgetEntryPoint
+import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.CompleteQuickCaptureTask
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuickCaptureTasks
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
@@ -98,9 +99,12 @@ class QuickCaptureWidgetActionTest {
         private val complete: CompleteQuickCaptureTask,
         private val updater: QuickCaptureWidgetUpdater
     ) : QuickCaptureWidgetEntryPoint {
+        private val refreshSignal = QuickCaptureWidgetRefreshSignal()
+
         override fun loadQuickCaptureTasks(): LoadQuickCaptureTasks = error("Not used")
         override fun completeQuickCaptureTask() = complete
         override fun quickCaptureWidgetUpdater() = updater
+        override fun quickCaptureWidgetRefreshSignal() = refreshSignal
     }
 
     private class RecordingUpdater : QuickCaptureWidgetUpdater {
@@ -132,11 +136,14 @@ class QuickCaptureWidgetActionTest {
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
-            next: Task?
-        ): AtomicCompletionResult? {
-            val completed = task?.copy(isCompleted = true, completedAt = completedAt) ?: return null
+            nextOccurrence: (Task) -> Task?
+        ): AtomicCompletionResult {
+            requestedTaskIds += taskId
+            val current = task?.takeIf { it.id == taskId } ?: return AtomicCompletionResult.NotFound
+            if (current.isCompleted) return AtomicCompletionResult.AlreadyCompleted
+            val completed = current.copy(isCompleted = true, completedAt = completedAt)
             task = completed
-            return AtomicCompletionResult(completed, null)
+            return AtomicCompletionResult.Completed(completed, nextOccurrence(current))
         }
 
         override suspend fun upsert(task: Task): Int = error("Not used")

@@ -7,10 +7,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.core.time.ZoneIdProvider
+import com.indiewalkabout.nowdothis.feature.portability.data.local.PlanningDataSource
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningBackup
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.CompleteQuickCaptureResult
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.CompleteQuickCaptureTask
-import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetUpdater
+import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
@@ -67,7 +71,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 updatedAt = 0
             )
         )
-        val barrierRepository = CoordinatedTaskRepository(repository)
+        val barrierRepository = CoordinatedCompletionRepository(repository, expectedArrivals = 2)
         val scheduler = RecordingReminderScheduler()
         val normalCompleteTask = completeTask(barrierRepository, scheduler)
         val widgetCompleteTask = CompleteQuickCaptureTask(
@@ -91,6 +95,95 @@ class QuickCaptureCompletionConcurrencyTest {
         assertEquals(nextDueAt - 500 to ReminderScheduleResult.EXACT, scheduler.scheduled.single().second)
     }
 
+    @Test
+    fun completionInterleavedWithSave_usesSavedTaskForCompletionAndSuccessor() = runTest {
+        val originalDueAt = 2_000L
+        val savedDueAt = 20_000L
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Original daily task",
+                dueAt = originalDueAt,
+                reminderAt = 1_500L,
+                recurrence = RecurrenceType.DAILY
+            )
+        )
+        val coordinatedRepository = CoordinatedCompletionRepository(repository)
+        val scheduler = RecordingReminderScheduler()
+        val completion = async { completeTask(coordinatedRepository, scheduler)(currentId) }
+
+        coordinatedRepository.awaitArrivals()
+        repository.upsert(
+            requireNotNull(repository.getTask(currentId)).copy(
+                title = "Saved weekly task",
+                dueAt = savedDueAt,
+                reminderAt = 19_000L,
+                recurrence = RecurrenceType.WEEKLY,
+                updatedAt = 500L
+            )
+        )
+        coordinatedRepository.release()
+
+        val result = completion.await() as CompleteTaskResult.Completed
+        val expectedNextDueAt = savedDueAt + ONE_WEEK_MILLIS
+        assertEquals("Saved weekly task", result.completed.title)
+        assertEquals("Saved weekly task", requireNotNull(result.nextOccurrence).title)
+        assertEquals(expectedNextDueAt, result.nextOccurrence.dueAt)
+        assertEquals(expectedNextDueAt - 1_000L, result.nextOccurrence.reminderAt)
+        assertEquals(RecurrenceType.WEEKLY, result.nextOccurrence.recurrence)
+    }
+
+    @Test
+    fun completionInterleavedWithReplaceAll_usesRestoredNonRecurringTaskSnapshot() = runTest {
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Original recurring task",
+                dueAt = 2_000L,
+                reminderAt = 1_500L,
+                recurrence = RecurrenceType.DAILY
+            )
+        )
+        val coordinatedRepository = CoordinatedCompletionRepository(repository)
+        val completion = async {
+            completeTask(coordinatedRepository, RecordingReminderScheduler())(currentId)
+        }
+
+        coordinatedRepository.awaitArrivals()
+        PlanningDataSource(database).replaceAll(
+            PlanningBackup(
+                format = "now-do-this-backup",
+                version = 1,
+                createdAtEpochMillis = 500L,
+                categories = emptyList(),
+                tasks = listOf(
+                    PlanningTask(
+                        id = currentId,
+                        title = "Restored one-off task",
+                        description = "Restored description",
+                        priority = TaskPriority.HIGH.name,
+                        categoryId = null,
+                        isCompleted = false,
+                        completedAt = null,
+                        dueAt = 30_000L,
+                        reminderAt = null,
+                        reminderStatus = "NONE",
+                        recurrence = RecurrenceType.NONE.name,
+                        recurrenceEndAt = null,
+                        seriesId = null,
+                        createdAt = 100L,
+                        updatedAt = 500L,
+                        subtasks = emptyList()
+                    )
+                )
+            )
+        )
+        coordinatedRepository.release()
+
+        val result = completion.await() as CompleteTaskResult.Completed
+        assertEquals("Restored one-off task", result.completed.title)
+        assertEquals(null, result.nextOccurrence)
+        assertEquals(listOf(currentId), database.taskDao().getAllTaskIds())
+    }
+
     private fun completeTask(
         repository: TaskRepository,
         scheduler: ReminderScheduler
@@ -101,18 +194,44 @@ class QuickCaptureCompletionConcurrencyTest {
         clock = AppClock { 1_000 }
     )
 
-    private class CoordinatedTaskRepository(
-        private val delegate: TaskRepository
+    private fun recurringTask(
+        title: String,
+        dueAt: Long,
+        reminderAt: Long,
+        recurrence: RecurrenceType
+    ) = Task(
+        title = title,
+        description = "Description",
+        priority = TaskPriority.MEDIUM,
+        dueAt = dueAt,
+        reminderAt = reminderAt,
+        recurrence = recurrence,
+        createdAt = 0,
+        updatedAt = 0
+    )
+
+    private class CoordinatedCompletionRepository(
+        private val delegate: TaskRepository,
+        private val expectedArrivals: Int = 1
     ) : TaskRepository by delegate {
         private val arrivals = AtomicInteger()
-        private val bothCallersRead = CompletableDeferred<Unit>()
+        private val allArrived = CompletableDeferred<Unit>()
+        private val proceed = CompletableDeferred<Unit>()
 
-        override suspend fun getTask(taskId: Int): Task? {
-            val task = delegate.getTask(taskId)
-            if (arrivals.incrementAndGet() == 2) bothCallersRead.complete(Unit)
-            bothCallersRead.await()
-            return task
+        override suspend fun completeAtomically(
+            taskId: Int,
+            completedAt: Long,
+            nextOccurrence: (Task) -> Task?
+        ): AtomicCompletionResult {
+            if (arrivals.incrementAndGet() == expectedArrivals) allArrived.complete(Unit)
+            allArrived.await()
+            if (expectedArrivals == 1) proceed.await()
+            return delegate.completeAtomically(taskId, completedAt, nextOccurrence)
         }
+
+        suspend fun awaitArrivals() = allArrived.await()
+
+        fun release() = proceed.complete(Unit)
     }
 
     private class RecordingReminderScheduler : ReminderScheduler {
@@ -138,5 +257,6 @@ class QuickCaptureCompletionConcurrencyTest {
 
     private companion object {
         const val ONE_DAY_MILLIS = 86_400_000L
+        const val ONE_WEEK_MILLIS = 7 * ONE_DAY_MILLIS
     }
 }

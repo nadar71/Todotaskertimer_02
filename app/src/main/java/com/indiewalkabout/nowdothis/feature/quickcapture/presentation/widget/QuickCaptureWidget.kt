@@ -8,6 +8,7 @@ import android.net.Uri
 import android.widget.RemoteViews
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.glance.GlanceId
 import androidx.glance.LocalSize
@@ -30,6 +31,7 @@ class QuickCaptureWidget : GlanceAppWidget(
         val entryPoint = quickCaptureWidgetEntryPoint(context)
         val loadTasks = entryPoint.loadQuickCaptureTasks()
         val inFlightTaskIds = entryPoint.completeQuickCaptureTask().inFlightTaskIds
+        val refreshVersion = entryPoint.quickCaptureWidgetRefreshSignal().version
 
         provideContent {
             val capacity = capacityFor(LocalSize.current)
@@ -38,12 +40,15 @@ class QuickCaptureWidget : GlanceAppWidget(
             }
             val state by states.collectAsState(QuickCaptureWidgetState.Loading)
             val inFlight by inFlightTaskIds.collectAsState()
+            val refresh by refreshVersion.collectAsState()
             val renderedState = if (state is QuickCaptureWidgetState.Content) {
                 (state as QuickCaptureWidgetState.Content).copy(inFlightTaskIds = inFlight)
             } else {
                 state
             }
-            QuickCaptureWidgetContent(renderedState)
+            key(refresh) {
+                QuickCaptureWidgetContent(renderedState)
+            }
         }
     }
 

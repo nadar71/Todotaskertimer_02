@@ -276,10 +276,14 @@ private class FakeTaskRepository(
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        next: Task?
-    ): AtomicCompletionResult? {
-        val task = tasks[taskId] ?: return null
-        return AtomicCompletionResult(task.copy(isCompleted = true, completedAt = completedAt), next)
+        nextOccurrence: (Task) -> Task?
+    ): AtomicCompletionResult {
+        val task = tasks[taskId] ?: return AtomicCompletionResult.NotFound
+        if (task.isCompleted) return AtomicCompletionResult.AlreadyCompleted
+        return AtomicCompletionResult.Completed(
+            task.copy(isCompleted = true, completedAt = completedAt),
+            nextOccurrence(task)
+        )
     }
 
     override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot =

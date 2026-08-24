@@ -17,8 +17,8 @@ interface TaskRepository {
     suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        next: Task?
-    ): AtomicCompletionResult?
+        nextOccurrence: (Task) -> Task?
+    ): AtomicCompletionResult
     suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot
     suspend fun deleteAll(): List<Int>
     suspend fun restore(snapshot: DeletedTaskSnapshot): Int

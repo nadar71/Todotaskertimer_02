@@ -20,6 +20,7 @@ import android.widget.FrameLayout
 import android.widget.RemoteViews
 import android.widget.TextView
 import androidx.compose.ui.unit.DpSize
+import androidx.core.content.ContextCompat
 import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
 import androidx.glance.appwidget.GlanceRemoteViews
 import androidx.glance.appwidget.updateAll
@@ -41,6 +42,7 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.Qui
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetState
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 import dagger.hilt.android.EntryPointAccessors
+import java.io.FileInputStream
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
@@ -182,6 +184,42 @@ class QuickCaptureWidgetHostJourneyTest {
         }
     }
 
+    @Test
+    fun boundHost_liveSystemNightModeChangeRefreshesQualifiedColors() {
+        val originalNightMode = context.resources.configuration.isNightMode()
+        try {
+            setSystemNightMode(enabled = false)
+            seedTasks(1)
+
+            withWidgetHost(instanceCount = 1) { hostViews ->
+                val hostView = hostViews.single()
+                hostView.resize(CompactWidgetSize)
+                hostView.awaitText("Bound task 1")
+                val beforeLightRefresh = hostView.updateCount
+                runBlocking { QuickCaptureWidget().updateAll(context) }
+                hostView.awaitUpdateAfter(beforeLightRefresh)
+                val lightTextColor = ContextCompat.getColor(
+                    context,
+                    R.color.quick_capture_widget_on_surface
+                )
+                hostView.awaitTextColor("Bound task 1", lightTextColor)
+                val beforeThemeChange = hostView.updateCount
+
+                setSystemNightMode(enabled = true)
+
+                hostView.awaitUpdateAfter(beforeThemeChange)
+                val darkTextColor = ContextCompat.getColor(
+                    context,
+                    R.color.quick_capture_widget_on_surface
+                )
+                assertNotEquals(lightTextColor, darkTextColor)
+                hostView.awaitTextColor("Bound task 1", darkTextColor)
+            }
+        } finally {
+            setSystemNightMode(originalNightMode)
+        }
+    }
+
     @OptIn(ExperimentalGlanceRemoteViewsApi::class)
     private suspend fun render(
         state: QuickCaptureWidgetState,
@@ -297,6 +335,14 @@ class QuickCaptureWidgetHostJourneyTest {
         throw AssertionError("Condition was not met within $WAIT_TIMEOUT_MILLIS ms")
     }
 
+    private fun setSystemNightMode(enabled: Boolean) {
+        val value = if (enabled) "yes" else "no"
+        instrumentation.uiAutomation.executeShellCommand("cmd uimode night $value").use { descriptor ->
+            FileInputStream(descriptor.fileDescriptor).use { it.readBytes() }
+        }
+        waitUntil { context.resources.configuration.isNightMode() == enabled }
+    }
+
     private fun <T> android.app.Instrumentation.runOnMainSyncWithResult(block: () -> T): T {
         var result: Any? = null
         runOnMainSync { result = block() }
@@ -400,6 +446,16 @@ class QuickCaptureWidgetHostJourneyTest {
 
         fun awaitUpdateAfter(previousCount: Int) = waitUntil { updateCount > previousCount }
 
+        fun awaitTextColor(text: String, expectedColor: Int) = waitUntil {
+            textColorOrNull(text) == expectedColor
+        }
+
+        private fun textColorOrNull(text: String): Int? = instrumentation.runOnMainSyncWithResult {
+            descendants().filterIsInstance<TextView>()
+                .firstOrNull { it.text.toString() == text }
+                ?.currentTextColor
+        }
+
         fun texts(): List<String> = instrumentation.runOnMainSyncWithResult {
             descendants().filterIsInstance<TextView>().map { it.text.toString() }
         }
@@ -421,5 +477,8 @@ class QuickCaptureWidgetHostJourneyTest {
             }
             addRecursively(this@descendants)
         }
+
+        fun Configuration.isNightMode(): Boolean =
+            uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
     }
 }

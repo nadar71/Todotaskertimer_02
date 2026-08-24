@@ -1,6 +1,7 @@
 package com.indiewalkabout.nowdothis.app
 
 import android.app.Application
+import android.content.res.Configuration
 import com.indiewalkabout.nowdothis.core.notifications.ReminderStartupCoordinator
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetCoordinator
 import dagger.hilt.android.HiltAndroidApp
@@ -18,5 +19,10 @@ class ToDoApplication : Application() {
         super.onCreate()
         reminderStartupCoordinator.onApplicationStart()
         quickCaptureWidgetCoordinator.onApplicationStart()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        quickCaptureWidgetCoordinator.onConfigurationChanged()
     }
 }

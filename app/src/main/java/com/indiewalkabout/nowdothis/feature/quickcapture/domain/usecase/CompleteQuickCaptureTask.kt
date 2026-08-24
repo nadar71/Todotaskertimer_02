@@ -1,6 +1,6 @@
 package com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase
 
-import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetUpdater
+import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.CompleteTask
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.CompleteTaskResult
 import kotlinx.coroutines.CancellationException
@@ -70,14 +70,14 @@ class CompleteQuickCaptureTask(
                 mutex.withLock {
                     mutableInFlightTaskIds.value -= taskId
                 }
-                try {
-                    updater.updateAll()
-                } catch (exception: CancellationException) {
-                    cancellation = cancellation ?: exception
-                    refreshFailed = true
-                } catch (_: Exception) {
-                    refreshFailed = true
-                }
+            }
+            try {
+                updater.updateAll()
+            } catch (exception: CancellationException) {
+                cancellation = cancellation ?: exception
+                refreshFailed = true
+            } catch (_: Exception) {
+                refreshFailed = true
             }
         }
         cancellation?.let { throw it }

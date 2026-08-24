@@ -101,6 +101,9 @@ flowchart LR
     Receiver --> EntryPoint["Hilt application entry point"]
     EntryPoint --> Load["LoadQuickCaptureTasks"]
     EntryPoint --> Complete["CompleteTask"]
+    Config["Application configuration change"] --> Updater["QuickCaptureWidgetUpdater port"]
+    Updater --> Adapter["Glance updater + refresh signal"]
+    Adapter --> Widget
     Load --> Room["Room task source of truth"]
     Complete --> Room
     Room -->|Flow| Widget["Responsive Glance composition (3 / 5 / 8)"]
@@ -114,4 +117,8 @@ start a previously absent application process and rebuild current state without 
 widget-only cache. Add and open actions use explicit immutable activity intents;
 completion uses a Glance callback and the shared recurring-aware completion use
 case. Glance may use its own internal worker for session execution, but the app does
-not schedule widget work through an application-owned `WorkManager` pipeline.
+not schedule widget work through an application-owned `WorkManager` pipeline. The
+framework-free updater contract is owned by the feature domain; its Glance adapter
+invalidates a presentation refresh generation before `updateAll()`. This lets an
+already-bound widget recompose against current light/dark qualified resources when
+the application receives a system configuration change.

@@ -672,9 +672,11 @@ class TaskLifecycleUseCasesTest {
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
-            next: Task?
-        ): AtomicCompletionResult? {
-            val current = tasks[taskId] ?: return null
+            nextOccurrence: (Task) -> Task?
+        ): AtomicCompletionResult {
+            val current = tasks[taskId] ?: return AtomicCompletionResult.NotFound
+            if (current.isCompleted) return AtomicCompletionResult.AlreadyCompleted
+            val next = nextOccurrence(current)
             suppliedNext = next
             events += "complete:$taskId"
             val completed = current.copy(
@@ -701,7 +703,7 @@ class TaskLifecycleUseCasesTest {
                 tasks[id] = persisted
                 persisted
             }
-            return AtomicCompletionResult(completed, persistedNext)
+            return AtomicCompletionResult.Completed(completed, persistedNext)
         }
 
         override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot {

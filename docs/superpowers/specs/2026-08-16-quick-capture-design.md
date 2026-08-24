@@ -50,13 +50,14 @@ Quick Capture is a feature-first vertical slice:
 feature/quickcapture/
 ├── domain/
 │   ├── model/QuickCaptureSnapshot
+│   ├── repository/QuickCaptureWidgetUpdater
 │   └── usecase/LoadQuickCaptureTasks
 ├── presentation/widget/
 │   ├── QuickCaptureWidget
 │   ├── QuickCaptureWidgetReceiver
 │   ├── QuickCaptureWidgetAction
 │   ├── QuickCaptureWidgetCoordinator
-│   └── QuickCaptureWidgetUpdater
+│   └── GlanceQuickCaptureWidgetUpdater
 └── di/
     └── QuickCaptureModule
 ```
@@ -65,6 +66,7 @@ Names may be split into smaller focused files during planning, but the ownership
 
 - Domain selection and ordering are framework-free.
 - Glance rendering, widget size handling, intents, receivers, and callbacks remain in the widget presentation/platform boundary.
+- The widget invalidation port is domain-owned; its Glance implementation and composition refresh signal remain in the presentation/platform boundary.
 - Android and Glance types do not enter task domain models or repositories.
 - Hilt entry points provide dependencies to receivers and Glance callbacks instantiated by Android.
 - Room remains the only persisted source of truth; the widget does not maintain a second task cache.

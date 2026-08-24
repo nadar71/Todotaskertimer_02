@@ -1,7 +1,7 @@
 # Architecture
 
 This directory records the architecture that is implemented in Now Do This as of
-2026-08-16. The app deliberately remains a single Android application module with
+2026-08-24. The app deliberately remains a single Android application module with
 feature-first packages, Clean MVVM boundaries, and unidirectional data flow.
 ViewModels may consume domain repository contracts directly for screen-specific
 reads, mutations, and coordination. Use cases own reusable business rules, operations
@@ -26,7 +26,10 @@ observes the capacity selected from its host-provided size, while add/open inten
 enter the production `MainActivity` Navigation 3 host and completion invokes the
 shared task-completion use case. The receiver and Glance callback can reconstruct
 dependencies from the application entry point when no app activity or process is
-running; no widget cache or app-authored `WorkManager` pipeline is introduced.
+running. A domain-owned invalidation port is implemented by the Glance adapter, and
+application configuration changes advance a presentation refresh signal before
+updating bound widgets so qualified resources are resolved live. No widget cache or
+app-authored `WorkManager` pipeline is introduced.
 
 ## Documents
 
