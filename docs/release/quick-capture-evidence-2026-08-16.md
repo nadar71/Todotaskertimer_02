@@ -18,7 +18,7 @@ the original mode.
 
 | Boundary | Result | Evidence |
 | --- | --- | --- |
-| JVM contracts | Passed: 220/220, 0 failed/errors/skipped | `app/build/test-results/testDebugUnitTest/` |
+| JVM contracts | Passed: 221/221, 0 failed/errors/skipped | `app/build/test-results/testDebugUnitTest/` |
 | Lint | Passed: 0 errors, 68 warnings | `app/build/reports/lint-results-debug.html` |
 | Full connected suite | Passed: 90/90, 0 failed/errors/skipped | `app/build/outputs/androidTest-results/connected/debug/` |
 | Atomic Room completion and persistence | Passed: 8/8 | Two completers create one successor; completion derives from canonical Save/Replace All state; stale editor Save cannot resurrect completion; successor reminder work converges per task ID across repeated finite owner-generation changes so restored reminders survive while deleted/no-reminder rows leave no orphan alarm |
@@ -48,7 +48,7 @@ and one pending task remains.
 ## Commands
 
 The recorded clean host gate produced the retained debug APK, optimized release APK/AAB,
-and R8 mapping. The final corrective JVM and lint reruns passed with 220/220 tests and
+and R8 mapping. The final corrective JVM and lint reruns passed with 221/221 tests and
 0 errors (68 warnings):
 
 ```bash

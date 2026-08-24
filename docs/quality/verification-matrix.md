@@ -4,7 +4,7 @@ Only `Passed`, `Failed`, and `Pending` are valid statuses. Emulator and physical
 
 | Area | Status | Command or procedure | Environment | Date | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| JVM tests | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-24 | 220 passed; 0 failed, 0 errors, 0 skipped |
+| JVM tests | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-24 | 221 passed; 0 failed, 0 errors, 0 skipped |
 | Android lint | Passed | `./gradlew :app:lintDebug` | Local macOS | 2026-08-24 | 0 errors, 68 warnings; `app/build/reports/lint-results-debug.html` |
 | Debug assembly | Passed | Final clean Quick Capture hardening gate | Local macOS, API 36 SDK | 2026-08-24 | `app/build/outputs/apk/debug/app-debug.apk` |
 | Optimized release APK/AAB | Passed | Final clean Quick Capture hardening gate | Local macOS | 2026-08-24 | Unsigned APK/AAB, R8 mapping, manifest and package inspection |

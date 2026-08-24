@@ -467,6 +467,28 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun complete_perpetualReminderGenerationChurnStopsAtBoundAndReconciles() = runTest {
+        val events = mutableListOf<String>()
+        val current = task(
+            id = 4,
+            dueAt = 10_000L,
+            reminderAt = 9_000L,
+            recurrence = RecurrenceType.DAILY,
+            seriesId = "series-4"
+        )
+        val delegate = FakeTaskRepository(current, nextId = 77, events = events)
+        val repository = ChurningReminderRepository(delegate)
+        val scheduler = FakeReminderScheduler(events = events)
+
+        val result = completeUseCase(repository, scheduler)(4) as CompleteTaskResult.Completed
+
+        val successorId = requireNotNull(result.nextOccurrence).id
+        assertEquals(9, repository.statusAttempts)
+        assertEquals(9, scheduler.scheduled.count { it.first == successorId })
+        assertEquals(listOf("cancel:$successorId", "reconcile"), events.takeLast(2))
+    }
+
+    @Test
     fun delete_returnsCompleteSnapshotBeforeCancellingStableAlarm() = runTest {
         val events = mutableListOf<String>()
         val current = task(id = 4, reminderAt = 2_000).copy(
@@ -660,7 +682,31 @@ class TaskLifecycleUseCasesTest {
             cancelledIds += taskId
         }
 
-        override suspend fun reconcile() = Unit
+        override suspend fun reconcile() {
+            events += "reconcile"
+        }
+    }
+
+    private class ChurningReminderRepository(
+        private val delegate: FakeTaskRepository
+    ) : TaskRepository by delegate {
+        var statusAttempts = 0
+            private set
+
+        override suspend fun updateReminderStatusIfCurrent(
+            expectedVersion: TaskSnapshotVersion,
+            status: ReminderStatus
+        ): Boolean {
+            statusAttempts += 1
+            check(statusAttempts <= 9) { "Reminder reconciliation exceeded its retry bound" }
+            delegate.tasks[expectedVersion.id]?.let { current ->
+                delegate.tasks[expectedVersion.id] = current.copy(
+                    seriesId = "churn-$statusAttempts",
+                    updatedAt = current.updatedAt + 1
+                )
+            }
+            return false
+        }
     }
 
     private class FakeTaskRepository(
