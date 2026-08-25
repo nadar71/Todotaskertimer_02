@@ -87,4 +87,14 @@ class TextNormalizerTest {
             TextNormalizer.matchingKey("  PRoGétti   Càsa ")
         )
     }
+
+    @Test
+    fun matchingKey_removesCombiningSpacingMarks() {
+        assertEquals("a", TextNormalizer.matchingKey("a\u0903"))
+    }
+
+    @Test
+    fun matchingKey_removesEnclosingMarks() {
+        assertEquals("a", TextNormalizer.matchingKey("a\u20dd"))
+    }
 }

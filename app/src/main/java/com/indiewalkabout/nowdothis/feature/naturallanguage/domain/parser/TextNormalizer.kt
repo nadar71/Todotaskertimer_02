@@ -12,9 +12,8 @@ object TextNormalizer {
         .joinToString(" ")
 
     fun matchingKey(raw: String): String = Normalizer
-        .normalize(normalizeWhitespace(raw), Normalizer.Form.NFD)
-        .filterNot { character -> Character.getType(character) == Character.NON_SPACING_MARK.toInt() }
-        .lowercase(Locale.ROOT)
+        .normalize(normalizeWhitespace(raw).lowercase(Locale.ROOT), Normalizer.Form.NFD)
+        .withoutUnicodeMarks()
 
     fun categoryMarkerValue(marker: String): String? = when {
         marker.startsWith("#\"") && marker.endsWith('"') && marker.length > 3 -> {
@@ -54,5 +53,21 @@ object TextNormalizer {
             require(current.endExclusive <= next.start) { "Consumed ranges must not overlap." }
         }
         return sorted
+    }
+
+    private fun String.withoutUnicodeMarks(): String = buildString(length) {
+        var index = 0
+        while (index < this@withoutUnicodeMarks.length) {
+            val codePoint = Character.codePointAt(this@withoutUnicodeMarks, index)
+            if (!isUnicodeMark(codePoint)) appendCodePoint(codePoint)
+            index += Character.charCount(codePoint)
+        }
+    }
+
+    private fun isUnicodeMark(codePoint: Int): Boolean = when (Character.getType(codePoint)) {
+        Character.NON_SPACING_MARK.toInt(),
+        Character.COMBINING_SPACING_MARK.toInt(),
+        Character.ENCLOSING_MARK.toInt() -> true
+        else -> false
     }
 }

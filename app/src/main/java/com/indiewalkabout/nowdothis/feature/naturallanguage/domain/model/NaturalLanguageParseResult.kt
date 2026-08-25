@@ -33,12 +33,39 @@ sealed interface ParseIssue {
     data object RelativeReminderWithoutDueDate : ParseIssue
 }
 
-data class NaturalLanguageParseResult(
+@ConsistentCopyVisibility
+data class NaturalLanguageParseResult private constructor(
     val draft: ParsedTaskDraft,
-    val recognized: Set<RecognizedField>,
-    val issues: List<ParseIssue>,
+    private val recognizedSnapshot: Set<RecognizedField>,
+    private val issueSnapshot: List<ParseIssue>,
+    private val consumedSnapshot: List<SourceMatch>
+) {
+    val recognized: Set<RecognizedField>
+        get() = recognizedSnapshot
+
+    val issues: List<ParseIssue>
+        get() = issueSnapshot
+
     val consumed: List<SourceMatch>
-)
+        get() = consumedSnapshot
+
+    override fun toString(): String = "NaturalLanguageParseResult(" +
+        "draft=$draft, recognized=$recognized, issues=$issues, consumed=$consumed)"
+
+    companion object {
+        operator fun invoke(
+            draft: ParsedTaskDraft,
+            recognized: Set<RecognizedField>,
+            issues: List<ParseIssue>,
+            consumed: List<SourceMatch>
+        ): NaturalLanguageParseResult = NaturalLanguageParseResult(
+            draft = draft,
+            recognizedSnapshot = immutableSetSnapshot(recognized),
+            issueSnapshot = immutableListSnapshot(issues),
+            consumedSnapshot = immutableListSnapshot(consumed)
+        )
+    }
+}
 
 data class SourceMatch(
     val start: Int,
