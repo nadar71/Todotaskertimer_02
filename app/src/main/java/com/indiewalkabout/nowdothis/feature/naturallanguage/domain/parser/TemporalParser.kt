@@ -188,7 +188,7 @@ class TemporalParser {
         val ITALIAN_RELATIVE_DATE_PATTERN = wordPattern("oggi|domani")
         val ENGLISH_RELATIVE_DATE_PATTERN = wordPattern("today|tomorrow")
         val numericDatePattern = Regex(
-            "(?<![\\p{L}\\p{N}_/])(\\d{1,2})/(\\d{1,2})(?:/(\\d{4}))?(?![\\p{L}\\p{N}_/])"
+            "(?<![\\p{L}\\p{N}_/])(\\d{1,2})/(\\d{1,2})(?:/(\\d{4}))?(?![\\p{L}\\p{N}_/]|[.:](?=\\d))"
         )
         val italianTimePattern = Regex(
             "(?<![\\p{L}\\p{N}_])alle\\s+(\\d{1,2})(?::(\\d{2}))?(?![\\p{L}\\p{N}_:])",

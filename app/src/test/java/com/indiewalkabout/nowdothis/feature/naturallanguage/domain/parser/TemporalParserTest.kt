@@ -252,6 +252,54 @@ class TemporalParserTest(
                 now = regularNow,
                 dueAt = null,
                 matches = emptyList()
+            ),
+            case(
+                raw = "Piano 1/2.3",
+                language = ParserLanguage.ITALIAN,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = null,
+                matches = emptyList()
+            ),
+            case(
+                raw = "Piano 1/2:3",
+                language = ParserLanguage.ITALIAN,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = null,
+                matches = emptyList()
+            ),
+            case(
+                raw = "Piano 1/2/2026.0",
+                language = ParserLanguage.ITALIAN,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = null,
+                matches = emptyList()
+            ),
+            case(
+                raw = "Visita 13/05.",
+                language = ParserLanguage.ITALIAN,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = epoch("2026-05-13T09:00:00+02:00"),
+                matches = listOf(match(7, 12))
+            ),
+            case(
+                raw = "Visita (13/05),",
+                language = ParserLanguage.ITALIAN,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = epoch("2026-05-13T09:00:00+02:00"),
+                matches = listOf(match(8, 13))
+            ),
+            case(
+                raw = "Visita 13/05!",
+                language = ParserLanguage.ITALIAN,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = epoch("2026-05-13T09:00:00+02:00"),
+                matches = listOf(match(7, 12))
             )
         )
 
