@@ -49,7 +49,7 @@ class TemporalParser {
         val times = parseTimes(input.rawText, input.language)
         val selectedDate = dates.lastOrNull()
         val selectedTime = times.lastOrNull()
-        val matches = listOfNotNull(selectedDate?.match, selectedTime?.match)
+        val matches = (dates.map(DateCandidate::match) + times.map(TimeCandidate::match))
             .sortedBy(SourceMatch::start)
         val issues = if (dates.size > 1 || times.size > 1) {
             listOf(ParseIssue.DuplicateField(RecognizedField.DUE_DATE))
@@ -187,7 +187,9 @@ class TemporalParser {
         val DEFAULT_TIME: LocalTime = LocalTime.of(9, 0)
         val ITALIAN_RELATIVE_DATE_PATTERN = wordPattern("oggi|domani")
         val ENGLISH_RELATIVE_DATE_PATTERN = wordPattern("today|tomorrow")
-        val numericDatePattern = Regex("(?<!\\d)(\\d{1,2})/(\\d{1,2})(?:/(\\d{4}))?(?!\\d)")
+        val numericDatePattern = Regex(
+            "(?<![\\p{L}\\p{N}_/])(\\d{1,2})/(\\d{1,2})(?:/(\\d{4}))?(?![\\p{L}\\p{N}_/])"
+        )
         val italianTimePattern = Regex(
             "(?<![\\p{L}\\p{N}_])alle\\s+(\\d{1,2})(?::(\\d{2}))?(?![\\p{L}\\p{N}_:])",
             RegexOption.IGNORE_CASE
