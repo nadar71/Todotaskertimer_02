@@ -369,10 +369,37 @@ class TaskEditorViewModelTest {
             listOf(CategoryCandidate(1, "Work"), CategoryCandidate(2, "Studio")),
             english.categories
         )
-        assertEquals(listOf(DefaultCategoryKey.WORK, DefaultCategoryKey.WORK), resolvedKeys)
-
         context.languageTags = "fr-FR"
-        assertEquals(ParserLanguage.ENGLISH, environment.snapshot(emptyList()).language)
+        resolvedDefaultName = "Lavoro"
+        val unsupported = environment.snapshot(sourceCategories)
+
+        assertEquals(ParserLanguage.ITALIAN, unsupported.language)
+        assertEquals(
+            listOf(CategoryCandidate(1, "Lavoro"), CategoryCandidate(2, "Studio")),
+            unsupported.categories
+        )
+        assertEquals(
+            listOf(DefaultCategoryKey.WORK, DefaultCategoryKey.WORK, DefaultCategoryKey.WORK),
+            resolvedKeys
+        )
+    }
+
+    @Test
+    fun androidEnvironment_emptyLocaleTagsUseItalianParserAndCategoryNames() {
+        val context = EditorEmptyLocaleContext(RuntimeEnvironment.getApplication())
+        val environment = AndroidNaturalLanguageEnvironment(
+            context = context,
+            clock = AppClock { 10L },
+            zoneIdProvider = ZoneIdProvider { ROME },
+            defaultCategoryNameResolver = DefaultCategoryNameResolver { "Lavoro" }
+        )
+
+        val snapshot = environment.snapshot(
+            listOf(category(1, customName = null, defaultKey = DefaultCategoryKey.WORK))
+        )
+
+        assertEquals(ParserLanguage.ITALIAN, snapshot.language)
+        assertEquals(listOf(CategoryCandidate(1, "Lavoro")), snapshot.categories)
     }
 
     @Test
@@ -702,6 +729,65 @@ class TaskEditorViewModelTest {
             assertEquals(TaskEditorEffect.NavigateBack, success.await())
         }
 
+    @Test
+    fun savedCreateWithUnavailableReminder_recreatesAndRetriesExistingTask() =
+        runTest(dispatcher) {
+            scheduler.result = ReminderScheduleResult.FAILED
+            val originalHandle = SavedStateHandle()
+            val first = createViewModel(TaskEditorKey(null, null), originalHandle)
+            advanceUntilIdle()
+            first.onEvent(TaskEditorEvent.UpdateTitle("Created task"))
+            first.onEvent(TaskEditorEvent.UpdateDescription("Created description"))
+            first.onEvent(TaskEditorEvent.UpdateDueAt(80_000L))
+            first.onEvent(TaskEditorEvent.UpdateReminderAt(70_000L))
+            val unavailable = async { first.effects.first() }
+
+            first.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals(
+                TaskEditorEffect.ShowMessage(R.string.task_editor_reminder_unavailable),
+                unavailable.await()
+            )
+            assertEquals(40, first.uiState.value.taskId)
+            val immediatelySavedState = first.uiState.value
+            naturalLanguageEnvironment.failure = AssertionError("saved create must not parse")
+            first.onEvent(TaskEditorEvent.UpdateQuickEntry("must be ignored"))
+            first.onEvent(TaskEditorEvent.ParseQuickEntry)
+            assertEquals(immediatelySavedState, first.uiState.value)
+            assertEquals(0, naturalLanguageEnvironment.snapshotCalls)
+
+            val recreatedEnvironment = EditorNaturalLanguageEnvironment().apply {
+                failure = AssertionError("recreated saved task must not parse")
+            }
+            val recreated = createViewModel(
+                key = TaskEditorKey(null, null),
+                handle = originalHandle.freshProcessSnapshot(),
+                environment = recreatedEnvironment
+            )
+            advanceUntilIdle()
+
+            assertEquals(40, recreated.uiState.value.taskId)
+            val restoredState = recreated.uiState.value
+            recreated.onEvent(TaskEditorEvent.UpdateQuickEntry("still ignored"))
+            recreated.onEvent(TaskEditorEvent.ParseQuickEntry)
+            assertEquals(restoredState, recreated.uiState.value)
+            assertEquals(0, recreatedEnvironment.snapshotCalls)
+
+            scheduler.result = ReminderScheduleResult.EXACT
+            recreated.onEvent(TaskEditorEvent.UpdateTitle("Retried existing task"))
+            val success = async { recreated.effects.first() }
+            recreated.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals(TaskEditorEffect.NavigateBack, success.await())
+            assertEquals(1, repository.upsertCalls)
+            assertEquals(1, repository.conditionalUpdateCalls)
+            assertEquals(40, repository.lastExpectedVersion?.id)
+            assertEquals(40, repository.lastUpsert?.id)
+            assertEquals("Retried existing task", repository.lastUpsert?.title)
+        }
+
     private suspend fun validViewModel(
         reminderAt: Long? = null,
         dueAt: Long? = null
@@ -756,6 +842,10 @@ class TaskEditorViewModelTest {
     }
 }
 
+private fun SavedStateHandle.freshProcessSnapshot(): SavedStateHandle = SavedStateHandle(
+    keys().associateWith { key -> get<Any?>(key) }
+)
+
 private class EditorNaturalLanguageEnvironment : NaturalLanguageEnvironment {
     var parserEnvironment = ParserEnvironment(
         language = ParserLanguage.ENGLISH,
@@ -785,6 +875,23 @@ private class EditorLocaleContext(
         }
         return baseContext.createConfigurationContext(configuration).resources
     }
+}
+
+private class EditorEmptyLocaleContext(base: Context) : ContextWrapper(base) {
+    private val emptyConfiguration = Configuration(base.resources.configuration).apply {
+        setLocales(LocaleList.getEmptyLocaleList())
+    }
+
+    @Suppress("DEPRECATION")
+    private val emptyLocaleResources = object : Resources(
+        base.assets,
+        base.resources.displayMetrics,
+        emptyConfiguration
+    ) {
+        override fun getConfiguration(): Configuration = emptyConfiguration
+    }
+
+    override fun getResources(): Resources = emptyLocaleResources
 }
 
 private class EditorPermissionChecker : ReminderPermissionChecker {
@@ -826,6 +933,9 @@ private class EditorTaskRepository : TaskRepository {
     var lastUpsert: Task? = null
     var upsertFailure: Throwable? = null
     var rejectConditionalUpdate = false
+    var upsertCalls = 0
+    var conditionalUpdateCalls = 0
+    var lastExpectedVersion: TaskSnapshotVersion? = null
     private var nextId = 40
 
     fun emit(task: Task) {
@@ -841,6 +951,7 @@ private class EditorTaskRepository : TaskRepository {
     override suspend fun getTask(taskId: Int): Task? = observed[taskId]?.value
 
     override suspend fun upsert(task: Task): Int {
+        upsertCalls += 1
         upsertFailure?.let { throw it }
         val id = task.id.takeIf { it != 0 } ?: nextId++
         val persisted = task.copy(id = id)
@@ -853,6 +964,8 @@ private class EditorTaskRepository : TaskRepository {
         task: Task,
         expectedVersion: TaskSnapshotVersion
     ): Boolean {
+        conditionalUpdateCalls += 1
+        lastExpectedVersion = expectedVersion
         if (rejectConditionalUpdate) return false
         val current = observed[task.id]?.value ?: return false
         if (current.snapshotVersion() != expectedVersion) return false

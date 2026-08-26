@@ -61,23 +61,26 @@ class TaskEditorViewModel @AssistedInject constructor(
     val effects = effectChannel.receiveAsFlow()
 
     private var loadedTask: Task? = null
-    private var draftVersion: TaskSnapshotVersion? = restoreDraftVersion()
+    private var draftVersion: TaskSnapshotVersion? = restoreDraftVersion()?.takeIf { version ->
+        version.id == _uiState.value.taskId
+    }
 
     init {
         observeCategories()
-        if (key.taskId == null) {
+        val taskId = _uiState.value.taskId
+        if (taskId == null) {
             _uiState.update { it.copy(isLoading = false) }
             persistDraft(_uiState.value)
             refreshReminderAccessState()
         } else {
-            loadExistingTask(key.taskId)
+            loadExistingTask(taskId)
         }
     }
 
     fun onEvent(event: TaskEditorEvent) {
         when (event) {
             is TaskEditorEvent.UpdateQuickEntry -> {
-                if (key.taskId == null) {
+                if (_uiState.value.taskId == null) {
                     updateDraft { it.copy(quickEntryInput = event.value) }
                 }
             }
@@ -144,8 +147,8 @@ class TaskEditorViewModel @AssistedInject constructor(
     }
 
     private fun parseQuickEntry() {
-        if (key.taskId != null) return
         val state = _uiState.value
+        if (state.taskId != null) return
         val result = try {
             val environment = naturalLanguageEnvironment.snapshot(state.categories)
             parseNaturalLanguageTask(
@@ -355,6 +358,8 @@ class TaskEditorViewModel @AssistedInject constructor(
 
     private fun persistDraft(state: TaskEditorUiState) {
         savedStateHandle[KEY_INITIALIZED] = true
+        savedStateHandle[KEY_TASK_ID_SET] = true
+        savedStateHandle.set<Int?>(KEY_TASK_ID, state.taskId)
         savedStateHandle[KEY_TITLE] = state.title
         savedStateHandle[KEY_DESCRIPTION] = state.description
         savedStateHandle[KEY_PRIORITY] = state.priority.name
@@ -405,6 +410,8 @@ class TaskEditorViewModel @AssistedInject constructor(
 
     private companion object {
         const val KEY_INITIALIZED = "draft_initialized"
+        const val KEY_TASK_ID_SET = "task_id_set"
+        const val KEY_TASK_ID = "task_id"
         const val KEY_TITLE = "title"
         const val KEY_DESCRIPTION = "description"
         const val KEY_PRIORITY = "priority"
@@ -442,7 +449,7 @@ private fun SavedStateHandle.restoreState(
         return TaskEditorUiState(taskId = key.taskId, dueAt = key.initialDueAt)
     }
     return TaskEditorUiState(
-        taskId = key.taskId,
+        taskId = if (get<Boolean>("task_id_set") == true) get("task_id") else key.taskId,
         title = get<String>("title").orEmpty(),
         description = get<String>("description").orEmpty(),
         priority = enumValueOrDefault(get("priority"), TaskPriority.LOW),

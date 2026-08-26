@@ -49,14 +49,19 @@ class AndroidNaturalLanguageEnvironment @Inject constructor(
             .get(0)
             ?.toLanguageTag()
             .orEmpty()
-        return if (languageTag.startsWith(ITALIAN_LANGUAGE_TAG, ignoreCase = true)) {
-            ParserLanguage.ITALIAN
-        } else {
-            ParserLanguage.ENGLISH
+        return when {
+            languageTag.startsWith(ITALIAN_LANGUAGE_TAG, ignoreCase = true) -> {
+                ParserLanguage.ITALIAN
+            }
+            languageTag.startsWith(ENGLISH_LANGUAGE_TAG, ignoreCase = true) -> {
+                ParserLanguage.ENGLISH
+            }
+            else -> ParserLanguage.ITALIAN
         }
     }
 
     private companion object {
         const val ITALIAN_LANGUAGE_TAG = "it"
+        const val ENGLISH_LANGUAGE_TAG = "en"
     }
 }
