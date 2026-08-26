@@ -5,6 +5,7 @@ import android.os.LocaleList
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -12,6 +13,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.test.assertIsDisplayed
@@ -44,15 +49,23 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
+import org.junit.runner.Description
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.model.Statement
 
 @RunWith(AndroidJUnit4::class)
 class TaskEditorScreenTest {
+    private val composeRule = createAndroidComposeRule<TaskEditorTestActivity>()
+    private val applicationLocaleRule = ApplicationLocaleRule(::quickEntryLocaleFor)
+
     @get:Rule
-    val composeRule = createAndroidComposeRule<TaskEditorTestActivity>()
+    val rules: TestRule = RuleChain.outerRule(applicationLocaleRule).around(composeRule)
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
@@ -115,13 +128,14 @@ class TaskEditorScreenTest {
     }
 
     @Test
-    fun quickEntry_rendersItalianAndEnglishInProductionCompose() {
-        withApplicationLocale("it") {
-            assertLocalizedQuickEntry()
-        }
-        withApplicationLocale("en") {
-            assertLocalizedQuickEntry()
-        }
+    fun quickEntry_rendersItalianInProductionCompose() {
+        assertLocaleExpectationsDiffer()
+        assertLocalizedQuickEntry(ITALIAN_QUICK_ENTRY)
+    }
+
+    @Test
+    fun quickEntry_rendersEnglishInProductionCompose() {
+        assertLocalizedQuickEntry(ENGLISH_QUICK_ENTRY)
     }
 
     @Test
@@ -172,24 +186,35 @@ class TaskEditorScreenTest {
 
     @Test
     fun quickEntry_largeTextFitsWithinOneSurfaceWithoutOverlapOrClipping() {
-        withApplicationLocale("it") {
-            setQuickEntrySectionSurface(fontScale = 2f)
+        assertActiveApplicationLocale(ITALIAN_QUICK_ENTRY)
+        setQuickEntrySectionSurface(fontScale = 2f)
 
-            val root = bounds("quick-entry-layout-root")
-            val section = bounds("quick-entry-section")
-            val input = bounds("quick-entry-input")
-            val parse = bounds("quick-entry-parse")
-            val summary = bounds("quick-entry-summary")
-            val issues = bounds("quick-entry-issues")
+        val root = nodeBounds("quick-entry-layout-root")
+        val section = nodeBounds("quick-entry-section")
+        val input = nodeBounds("quick-entry-input")
+        val parse = nodeBounds("quick-entry-parse")
+        val summary = nodeBounds("quick-entry-summary")
+        val issues = nodeBounds("quick-entry-issues")
 
-            assertContains(root, section)
-            listOf(input, parse, summary, issues).forEach { child ->
-                assertContains(section, child)
-            }
-            assertOrdered(input, parse)
-            assertOrdered(parse, summary)
-            assertOrdered(summary, issues)
+        listOf(root, section, input, parse, summary, issues).forEach(::assertNotClipped)
+        assertContains(root.unclipped, section.unclipped)
+        listOf(input, parse, summary, issues).forEach { child ->
+            assertContains(section.unclipped, child.unclipped)
         }
+        assertOrdered(input.unclipped, parse.unclipped)
+        assertOrdered(parse.unclipped, summary.unclipped)
+        assertOrdered(summary.unclipped, issues.unclipped)
+    }
+
+    @Test
+    fun quickEntry_clippingDetectorDetectsConstrainedSurface() {
+        assertActiveApplicationLocale(ITALIAN_QUICK_ENTRY)
+        setQuickEntrySectionSurface(fontScale = 2f, height = 300.dp)
+
+        val issues = nodeBounds("quick-entry-issues")
+
+        assertNotEquals(issues.unclipped, issues.clipped)
+        assertTrue(isClipped(issues))
     }
 
     @Test
@@ -385,36 +410,28 @@ class TaskEditorScreenTest {
         composeRule.waitForIdle()
     }
 
-    private fun assertLocalizedQuickEntry() {
-        val activity = composeRule.activity
-        val label = activity.getString(R.string.quick_entry_label)
-        val hint = activity.getString(R.string.quick_entry_hint)
-        val parse = activity.getString(R.string.quick_entry_parse)
-        val summary = activity.getString(
-            R.string.quick_entry_summary,
-            QuickEntrySummaryField.entries.joinToString { field ->
-                activity.getString(field.stringRes())
-            }
-        )
-        val issue = activity.getString(R.string.quick_entry_issue_duplicate_field)
+    private fun assertLocalizedQuickEntry(expected: QuickEntryLocaleExpectation) {
+        assertActiveApplicationLocale(expected)
         setQuickEntrySectionSurface(fontScale = 1f)
         composeRule.onNodeWithTag("quick-entry-input").performClick()
 
-        val root = bounds("quick-entry-layout-root")
-        val labels = composeRule.onAllNodesWithText(label).fetchSemanticsNodes()
+        val root = nodeBounds("quick-entry-layout-root").unclipped
+        val labels = composeRule.onAllNodesWithText(expected.label).fetchSemanticsNodes()
         assertEquals(2, labels.size)
-        labels.forEach { labelNode -> assertContains(root, labelNode.boundsInRoot) }
-        composeRule.onNodeWithText(hint).assertIsDisplayed()
-        composeRule.onNodeWithText(parse).assertIsDisplayed()
+        labels.forEach { labelNode ->
+            assertContains(root, labelNode.unclippedBoundsInRoot())
+        }
+        composeRule.onNodeWithText(expected.hint).assertIsDisplayed()
+        composeRule.onNodeWithText(expected.parse).assertIsDisplayed()
         composeRule.onNodeWithTag("quick-entry-summary")
-            .assertTextEquals(summary)
+            .assertTextEquals(expected.summary)
             .assertIsDisplayed()
         composeRule.onNodeWithTag("quick-entry-issues")
-            .assertTextEquals(issue)
+            .assertTextEquals(expected.issue)
             .assertIsDisplayed()
     }
 
-    private fun setQuickEntrySectionSurface(fontScale: Float) {
+    private fun setQuickEntrySectionSurface(fontScale: Float, height: androidx.compose.ui.unit.Dp? = null) {
         composeRule.runOnUiThread {
             TaskEditorTestContent.content = {
                 val density = LocalDensity.current
@@ -422,9 +439,14 @@ class TaskEditorScreenTest {
                     LocalDensity provides Density(density.density, fontScale)
                 ) {
                     MaterialTheme {
+                        val rootModifier = if (height == null) {
+                            Modifier.fillMaxSize()
+                        } else {
+                            Modifier.fillMaxWidth().height(height)
+                        }
                         Box(
-                            modifier = Modifier
-                                .fillMaxSize()
+                            modifier = rootModifier
+                                .clipToBounds()
                                 .padding(16.dp)
                                 .testTag("quick-entry-layout-root")
                         ) {
@@ -443,39 +465,46 @@ class TaskEditorScreenTest {
         composeRule.waitForIdle()
     }
 
-    private fun withApplicationLocale(languageTags: String, block: () -> Unit) {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val localeManager = instrumentation.targetContext.applicationContext
-            .getSystemService(LocaleManager::class.java)
-        val previousLocales = localeManager.applicationLocales
-        try {
-            localeManager.applicationLocales = LocaleList.forLanguageTags(languageTags)
-            instrumentation.waitForIdleSync()
-            composeRule.activityRule.scenario.recreate()
-            composeRule.waitForIdle()
-            block()
-        } finally {
-            localeManager.applicationLocales = previousLocales
-            instrumentation.waitForIdleSync()
-            composeRule.activityRule.scenario.recreate()
-            composeRule.waitForIdle()
-        }
+    private fun assertActiveApplicationLocale(expected: QuickEntryLocaleExpectation) {
+        val localeManager = context.applicationContext.getSystemService(LocaleManager::class.java)
+        assertEquals(expected.primaryLanguage, localeManager.applicationLocales[0].language)
+        assertEquals(
+            expected.primaryLanguage,
+            composeRule.activity.resources.configuration.locales[0].language
+        )
     }
 
-    private fun bounds(tag: String) = composeRule.onAllNodesWithTag(tag)
+    private fun nodeBounds(tag: String): NodeBounds {
+        val node = composeRule.onAllNodesWithTag(tag, useUnmergedTree = true)
         .fetchSemanticsNodes()
         .single()
-        .boundsInRoot
+        return NodeBounds(
+            clipped = node.boundsInRoot,
+            unclipped = node.unclippedBoundsInRoot()
+        )
+    }
 
     private fun assertContains(
         parent: androidx.compose.ui.geometry.Rect,
         child: androidx.compose.ui.geometry.Rect
     ) {
-        assertTrue(child.left >= parent.left)
-        assertTrue(child.top >= parent.top)
-        assertTrue(child.right <= parent.right)
-        assertTrue(child.bottom <= parent.bottom)
+        assertTrue(contains(parent, child))
     }
+
+    private fun assertNotClipped(bounds: NodeBounds) {
+        assertTrue(!isClipped(bounds))
+    }
+
+    private fun isClipped(bounds: NodeBounds): Boolean = !contains(bounds.clipped, bounds.unclipped)
+
+    private fun contains(
+        parent: androidx.compose.ui.geometry.Rect,
+        child: androidx.compose.ui.geometry.Rect
+    ): Boolean =
+        child.left >= parent.left &&
+            child.top >= parent.top &&
+            child.right <= parent.right &&
+            child.bottom <= parent.bottom
 
     private fun assertOrdered(
         upper: androidx.compose.ui.geometry.Rect,
@@ -485,13 +514,83 @@ class TaskEditorScreenTest {
     }
 }
 
-private fun QuickEntrySummaryField.stringRes(): Int = when (this) {
-    QuickEntrySummaryField.TITLE -> R.string.quick_entry_field_title
-    QuickEntrySummaryField.DUE_DATE -> R.string.quick_entry_field_due_date
-    QuickEntrySummaryField.REMINDER -> R.string.quick_entry_field_reminder
-    QuickEntrySummaryField.PRIORITY -> R.string.quick_entry_field_priority
-    QuickEntrySummaryField.CATEGORY -> R.string.quick_entry_field_category
-    QuickEntrySummaryField.RECURRENCE -> R.string.quick_entry_field_recurrence
+private data class NodeBounds(val clipped: Rect, val unclipped: Rect)
+
+private fun androidx.compose.ui.semantics.SemanticsNode.unclippedBoundsInRoot(): Rect {
+    val coordinates = layoutInfo.coordinates
+    val position = coordinates.positionInRoot()
+    return Rect(
+        offset = position,
+        size = Size(coordinates.size.width.toFloat(), coordinates.size.height.toFloat())
+    )
+}
+
+private data class QuickEntryLocaleExpectation(
+    val languageTag: String,
+    val primaryLanguage: String,
+    val label: String,
+    val hint: String,
+    val parse: String,
+    val summary: String,
+    val issue: String
+)
+
+private val ITALIAN_QUICK_ENTRY = QuickEntryLocaleExpectation(
+    languageTag = "it",
+    primaryLanguage = "it",
+    label = "Inserimento rapido",
+    hint = "Compra latte domani alle 18",
+    parse = "Analizza",
+    summary = "Riconosciuti: Titolo, Scadenza, Promemoria, Priorità, Categoria, Ripetizione",
+    issue = "Valori ripetuti: è stato usato l’ultimo valido."
+)
+
+private val ENGLISH_QUICK_ENTRY = QuickEntryLocaleExpectation(
+    languageTag = "en",
+    primaryLanguage = "en",
+    label = "Quick entry",
+    hint = "Buy milk tomorrow at 6 pm",
+    parse = "Parse",
+    summary = "Recognized: Title, Due date, Reminder, Priority, Category, Repeat",
+    issue = "Repeated values: the last valid value was used."
+)
+
+private fun quickEntryLocaleFor(testMethod: String): QuickEntryLocaleExpectation? = when (testMethod) {
+    "quickEntry_rendersItalianInProductionCompose",
+    "quickEntry_largeTextFitsWithinOneSurfaceWithoutOverlapOrClipping",
+    "quickEntry_clippingDetectorDetectsConstrainedSurface" -> ITALIAN_QUICK_ENTRY
+    "quickEntry_rendersEnglishInProductionCompose" -> ENGLISH_QUICK_ENTRY
+    else -> null
+}
+
+private class ApplicationLocaleRule(
+    private val localeForTest: (String) -> QuickEntryLocaleExpectation?
+) : TestRule {
+    override fun apply(base: Statement, description: Description): Statement = object : Statement() {
+        override fun evaluate() {
+            val expected = localeForTest(description.methodName) ?: return base.evaluate()
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val localeManager = instrumentation.targetContext.applicationContext
+                .getSystemService(LocaleManager::class.java)
+            val previousLocales = localeManager.applicationLocales
+            try {
+                localeManager.applicationLocales = LocaleList.forLanguageTags(expected.languageTag)
+                instrumentation.waitForIdleSync()
+                base.evaluate()
+            } finally {
+                localeManager.applicationLocales = previousLocales
+                instrumentation.waitForIdleSync()
+            }
+        }
+    }
+}
+
+private fun TaskEditorScreenTest.assertLocaleExpectationsDiffer() {
+    assertNotEquals(ITALIAN_QUICK_ENTRY.label, ENGLISH_QUICK_ENTRY.label)
+    assertNotEquals(ITALIAN_QUICK_ENTRY.hint, ENGLISH_QUICK_ENTRY.hint)
+    assertNotEquals(ITALIAN_QUICK_ENTRY.parse, ENGLISH_QUICK_ENTRY.parse)
+    assertNotEquals(ITALIAN_QUICK_ENTRY.summary, ENGLISH_QUICK_ENTRY.summary)
+    assertNotEquals(ITALIAN_QUICK_ENTRY.issue, ENGLISH_QUICK_ENTRY.issue)
 }
 
 private fun category(id: Int, name: String) = Category(
