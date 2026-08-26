@@ -27,10 +27,10 @@ class CalculateNextOccurrence(
         completedAt: Long,
         referenceAt: Long,
     ): NextOccurrenceResult {
+        if (task.recurrenceRule is RecurrenceRule.None) return NextOccurrenceResult.Ended
         val dueAt = task.dueAt ?: return NextOccurrenceResult.Invalid(
             NextOccurrenceResult.Reason.MISSING_DUE_DATE
         )
-        if (task.recurrenceRule is RecurrenceRule.None) return NextOccurrenceResult.Ended
 
         return try {
             val zone = zoneIdProvider.zoneId()
@@ -144,7 +144,7 @@ class CalculateNextOccurrence(
         }
         val threshold = maxOf(base.toInstant(), reference.toInstant()).atZone(zone)
         val dueTime = dueDateTime.toLocalTime()
-        return (0L..DAYS_IN_WEEK).asSequence()
+        return (0L..LAST_WEEKDAY_SEARCH_OFFSET).asSequence()
             .map { offset -> threshold.toLocalDate().plusDays(offset).atTime(dueTime).atZone(zone) }
             .first { candidate -> candidate > threshold && candidate.dayOfWeek in rule.weekdays }
     }
@@ -214,6 +214,6 @@ class CalculateNextOccurrence(
     private fun Long.asDateTime(zone: ZoneId): ZonedDateTime = Instant.ofEpochMilli(this).atZone(zone)
 
     private companion object {
-        const val DAYS_IN_WEEK = 6L
+        const val LAST_WEEKDAY_SEARCH_OFFSET = 7L
     }
 }

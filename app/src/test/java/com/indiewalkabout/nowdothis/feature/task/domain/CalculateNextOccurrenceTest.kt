@@ -33,6 +33,14 @@ class CalculateNextOccurrenceTest {
     }
 
     @Test
+    fun unscheduledNoneRecurrence_endsSeries() {
+        assertEquals(
+            NextOccurrenceResult.Ended,
+            calculator(task(dueAt = null), 0, 0)
+        )
+    }
+
+    @Test
     fun recurringTaskWithoutDueTime_isInvalid() {
         assertEquals(
             NextOccurrenceResult.Invalid(NextOccurrenceResult.Reason.MISSING_DUE_DATE),
@@ -102,6 +110,36 @@ class CalculateNextOccurrenceTest {
         assertEquals(
             next(2026, 8, 14, 9),
             calculator(task, completedAt = instant(2026, 8, 12, 18), referenceAt = instant(2026, 8, 12, 18))
+        )
+    }
+
+    @Test
+    fun scheduledMondayOnly_afterMondayDueTime_rollsToNextWeek() {
+        assertEquals(
+            next(2026, 8, 10, 9),
+            calculator(
+                task(
+                    dueAt = instant(2026, 8, 3, 9),
+                    rule = RecurrenceRule.SelectedWeekdays(setOf(MONDAY), SCHEDULED_DATE)
+                ),
+                instant(2026, 8, 3, 18),
+                instant(2026, 8, 3, 18)
+            )
+        )
+    }
+
+    @Test
+    fun completionMondayOnly_afterMondayDueTime_rollsToNextWeek() {
+        assertEquals(
+            next(2026, 8, 10, 9),
+            calculator(
+                task(
+                    dueAt = instant(2026, 8, 3, 9),
+                    rule = RecurrenceRule.SelectedWeekdays(setOf(MONDAY), COMPLETION_DATE)
+                ),
+                instant(2026, 8, 3, 18),
+                instant(2026, 8, 3, 18)
+            )
         )
     }
 
