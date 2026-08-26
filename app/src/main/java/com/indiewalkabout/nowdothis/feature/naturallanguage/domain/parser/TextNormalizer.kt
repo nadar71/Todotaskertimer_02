@@ -5,15 +5,25 @@ import java.text.Normalizer
 import java.util.Locale
 
 object TextNormalizer {
-    fun normalizeWhitespace(raw: String): String = raw
-        .trim()
-        .split(Regex("\\s+"))
-        .filter(String::isNotEmpty)
-        .joinToString(" ")
+    fun normalizeWhitespace(raw: String): String = buildString(raw.length) {
+        var pendingSpace = false
+        var index = 0
+        while (index < raw.length) {
+            val codePoint = Character.codePointAt(raw, index)
+            if (codePoint.isUnicodeSpace()) {
+                pendingSpace = isNotEmpty()
+            } else {
+                if (pendingSpace) append(' ')
+                appendCodePoint(codePoint)
+                pendingSpace = false
+            }
+            index += Character.charCount(codePoint)
+        }
+    }
 
     fun matchingKey(raw: String): String = Normalizer
         .normalize(normalizeWhitespace(raw).lowercase(Locale.ROOT), Normalizer.Form.NFD)
-        .withoutUnicodeMarks()
+        .withoutFoldableLatinAccents()
 
     fun categoryMarkerValue(marker: String): String? = when {
         marker.startsWith("#\"") && marker.endsWith('"') && marker.length > 3 -> {
@@ -55,19 +65,42 @@ object TextNormalizer {
         return sorted
     }
 
-    private fun String.withoutUnicodeMarks(): String = buildString(length) {
+    private fun String.withoutFoldableLatinAccents(): String = buildString(length) {
+        var previousBase: Int? = null
         var index = 0
-        while (index < this@withoutUnicodeMarks.length) {
-            val codePoint = Character.codePointAt(this@withoutUnicodeMarks, index)
-            if (!isUnicodeMark(codePoint)) appendCodePoint(codePoint)
+        while (index < this@withoutFoldableLatinAccents.length) {
+            val codePoint = Character.codePointAt(this@withoutFoldableLatinAccents, index)
+            val type = Character.getType(codePoint)
+            val fold = type == Character.NON_SPACING_MARK.toInt() &&
+                previousBase?.let { base -> isCanonicalLatinAccent(base, codePoint) } == true
+            if (!fold) appendCodePoint(codePoint)
+            previousBase = when (type) {
+                Character.NON_SPACING_MARK.toInt() -> previousBase.takeIf { fold }
+                Character.COMBINING_SPACING_MARK.toInt(),
+                Character.ENCLOSING_MARK.toInt() -> null
+                else -> codePoint.takeIf { it.isLatinLetter() }
+            }
             index += Character.charCount(codePoint)
         }
     }
 
-    private fun isUnicodeMark(codePoint: Int): Boolean = when (Character.getType(codePoint)) {
-        Character.NON_SPACING_MARK.toInt(),
-        Character.COMBINING_SPACING_MARK.toInt(),
-        Character.ENCLOSING_MARK.toInt() -> true
-        else -> false
+    private fun isCanonicalLatinAccent(base: Int, mark: Int): Boolean {
+        val composed = Normalizer.normalize(
+            buildString {
+                appendCodePoint(base)
+                appendCodePoint(mark)
+            },
+            Normalizer.Form.NFC
+        )
+        return composed.codePointCount(0, composed.length) == 1 &&
+            composed.codePointAt(0).isLatinLetter()
     }
+
+    private fun Int.isLatinLetter(): Boolean = Character.isLetter(this) &&
+        (this in 0x0041..0x024F || this in 0x1E00..0x1EFF)
+
+    private fun Int.isUnicodeSpace(): Boolean = Character.isWhitespace(this) ||
+        Character.getType(this) == Character.SPACE_SEPARATOR.toInt() ||
+        Character.getType(this) == Character.LINE_SEPARATOR.toInt() ||
+        Character.getType(this) == Character.PARAGRAPH_SEPARATOR.toInt()
 }

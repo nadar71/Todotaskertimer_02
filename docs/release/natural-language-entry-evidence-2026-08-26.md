@@ -3,7 +3,7 @@
 ## Scope And Environment
 
 - Date: 2026-08-26
-- Base revision: `9930301f46a1ba9ffb75b4b0233a39a0afa2d258`
+- Acceptance-fix base revision: `2b969af5586578450dac15731d89320eeeab0143`
 - Device: `emulator-5554`, Medium Phone AVD (`sdk_gphone64_arm64`)
 - OS: Android 16 / API 36, build fingerprint
   `google/sdk_gphone64_arm64/emu64a:16/BP22.250325.006/13344233:user/release-keys`
@@ -22,15 +22,16 @@ description, and invokes the existing `SaveTask`/Room/AlarmManager path.
 
 ## Product Journeys
 
-The three product journey methods in `NaturalLanguageEntryJourneyTest` launch
+The five product journey methods in `NaturalLanguageEntryJourneyTest` launch
 production `MainActivity`, follow the Navigation 3 add path, render the production
-`TaskEditorRoute`, parse through the injected production parser, and save through the
-production ViewModel and use case. They do not use a test parser, in-memory task
-repository, direct task insert, or test-only persistence path. A separate fixture
-failure regression seeds test-only sentinel rows and alarms solely to verify cleanup;
-it is not a product journey or persistence substitute.
+`TaskEditorRoute`, and parse through the injected production parser. The two save
+journeys continue through the production ViewModel, use case, Room, and AlarmManager.
+They do not use a test parser, in-memory task repository, direct task insert, or
+test-only persistence path. A separate fixture failure regression seeds test-only
+sentinel rows and alarms solely to verify cleanup; it is not a product journey or
+persistence substitute.
 
-The retained Italian and English journeys independently prove:
+The retained Italian and English save journeys independently prove:
 
 1. a hybrid phrase populates title, due time, reminder, high priority, current custom
    category, and weekly recurrence in visible editor controls;
@@ -43,8 +44,17 @@ The retained Italian and English journeys independently prove:
    status;
 6. Save returns to the task list, proven by the list-only `task-search` and `task-add`
    tags, absence of the editor and Quick entry tags, and then the persisted title; and
-7. the device AlarmManager registry contains exactly one `RTC_WAKEUP` alarm whose
+7. Save opens the real exact-alarm access screen when capability is unavailable,
+   returns to the editor callback, and preserves the visible inexact-timing state; and
+8. the device AlarmManager registry contains exactly one `RTC_WAKEUP` alarm whose
    package, receiver, request code, and trigger correspond to the persisted reminder.
+
+Two additional production-UI journeys set `fr-CH,en-US` and `fr-CH,de-DE` application
+locale lists before activity launch. They prove that parser grammar selects the first
+supported `en`/`it` primary subtag in list order, defaults to Italian when no supported
+entry exists, and matches default category candidates to the resource name Android
+actually renders. The English-secondary journey also exercises strict `at 18`
+24-hour parsing.
 
 The alarm assertion reads `dumpsys alarm` and `dumpsys activity intents` through
 `UiAutomation`, correlates their `PendingIntentRecord` token, and compares the
@@ -62,15 +72,18 @@ second wall-clock snapshot at midnight; the injected-clock JVM matrix separately
 proves the tomorrow calculation.
 
 Each test snapshots the pre-test Room categories/tasks/subtasks, the exact nullable
-`sqlite_sequence` rows for all three tables, and actual live AlarmManager registry
-records for those tasks before any mutation. Fixture preparation and the journey body
+`sqlite_sequence` rows for all three tables, and every live AlarmManager registry
+record owned by this package and `ReminderReceiver`, including request codes with no
+Room task. Fixture preparation and the journey body
 both run inside restoration `try/finally` ownership. Cleanup restores all table rows
 and each sequence's prior absence or value. For each previously live alarm, it requires
 either exact or fallback inexact scheduling to succeed, then queries dumpsys again and
 asserts type, package, receiver component, request code, and trigger within 1,000 ms.
-Tasks with no prior live alarm are cancelled and asserted absent. The locale rule
-snapshots the exact per-app `LocaleList`, applies `it` or `en` before activity launch,
-and restores it in `finally`.
+The complete prior alarm key set is asserted after restoration, so fixture alarms and
+other extras cannot survive. The setup-failure case includes an orphan request code
+and proves its restoration. The locale rule snapshots the exact per-app `LocaleList`,
+applies single- or multi-locale fixtures before activity launch, and restores it in
+`finally`.
 
 ## TDD Evidence
 
@@ -132,18 +145,40 @@ tests executed. After those test-only helpers were added, the focused class pass
 rows and nullable sequence values, restores the prior live alarm, removes the stray
 alarm, does not run the journey body, and rethrows the expected setup exception.
 
+### Final Acceptance Fix Round
+
+The final whole-branch review produced nine additional RED contracts before their
+minimal production changes. The parser RED runs exposed four Unicode-normalization
+failures, three temporal failures, five end-to-end parse failures, and the overlapping
+`alle 1/2` exception. The editor RED run executed 33 tests with five reminder/save-race
+failures; category readiness initially failed compilation on the missing state/retry
+contracts. Connected RED runs failed on the missing category-loading resource and on
+the orphan alarm being absent from the fixture snapshot. The cancellation test began
+green because production already rethrew `CancellationException`; deleting that
+rethrow made the focused mutation run fail 1/1, proving the new regression is
+sensitive.
+
+The resulting coverage includes strict English 24-hour forms, recoverable
+cross-grammar overlap, script-safe category keys and Unicode separators, ordered
+multi-locale selection, category loading/error/retry states, a frozen saving draft,
+common Save-boundary notification/exact access for parser and manual reminders,
+fresh API 36 notification deny/grant checks, real exact-settings return with inexact
+fallback, and exact restoration of package/component alarms including orphans.
+
 ## Automated Gates
 
 | Gate | Exact command | Result |
 | --- | --- | --- |
-| Alarm registry evidence parser | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.AlarmRegistryEvidenceTest` | 3 tests; 0 failures, 0 errors, 0 skipped |
-| Focused journey and fixture cleanup | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.NaturalLanguageEntryJourneyTest` | 4 tests; 0 failures, 0 errors, 0 skipped |
-| Focused core journey | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.CoreTaskJourneyTest` | 1 test; 0 failures, 0 errors, 0 skipped |
-| Full JVM | `./gradlew --no-daemon :app:testDebugUnitTest` | 301 tests across 33 XML suites; 0 failures, 0 errors, 0 skipped |
-| Full connected | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest` | 105 tests; 0 failures, 0 errors, 0 skipped; XML time 146.077 s |
+| Focused parser and editor JVM | `./gradlew --no-daemon :app:testDebugUnitTest --tests '*TextNormalizerTest' --tests '*TemporalParserTest' --tests '*ParseNaturalLanguageTaskTest' --tests '*TaskEditorViewModelTest' --rerun-tasks` | 111 tests across 4 XML suites; 0 failures, 0 errors, 0 skipped |
+| Focused editor Compose UI | `./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.task.presentation.editor.TaskEditorScreenTest` | 16 tests; 0 failures, 0 errors, 0 skipped |
+| Focused journey, fallback, locales, and fixture cleanup | `./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.NaturalLanguageEntryJourneyTest` | 6 tests; 0 failures, 0 errors, 0 skipped |
+| API 33+ notification access | `./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.core.notifications.Api33ReminderPermissionConnectedTest` | 1 test; fresh denial and platform grant passed on API 36 |
+| Active locale-list adapter | `./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.AndroidNaturalLanguageEnvironmentConnectedTest` | 1 test; `fr-CH,en-US` and unsupported-only passed on API 36 |
+| Full JVM | `./gradlew --no-daemon :app:testDebugUnitTest --rerun-tasks` | 320 tests across 33 XML suites; 0 failures, 0 errors, 0 skipped |
+| Full connected | `./gradlew --no-daemon :app:connectedDebugAndroidTest` | 111 tests; 0 failures, 0 errors, 0 skipped; XML time 161.987 s |
 | Lint | `./gradlew --no-daemon :app:lintDebug` | Passed; 0 errors and 68 warnings |
-| Prior Task 6 artifacts | `./gradlew --no-daemon :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease` | Fix round 1 result retained; no production or packaging input changed in fix round 2 |
-| Explicit R8 full mode | `./gradlew --no-daemon :app:assembleRelease -Pandroid.enableR8.fullMode=true` | Passed; R8 and release packaging were up to date from the preceding optimized build |
+| APK and AAB packaging | `./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:bundleRelease` | Passed; debug APK, optimized unsigned release APK, and unsigned release AAB produced |
+| Explicit R8 full mode | `./gradlew --no-daemon :app:assembleRelease -Pandroid.enableR8.fullMode=true --rerun-tasks` | Passed; all 55 tasks executed, including `minifyReleaseWithR8` |
 | Diff whitespace | `git diff --check` | Passed with no output |
 
 The authoritative test XML locations were
@@ -173,13 +208,13 @@ machine-readable report is `app/build/reports/lint-results-debug.xml`.
   `android:localeConfig="@xml/_generated_res_locale_config"`.
 - The generated release locale config has default locale `it` and exactly two locale
   entries: `it` and `en`.
-- `values/strings.xml` and `values-en/strings.xml` each contain 215 unique `<string>`
-  resources, including 16 `quick_entry_*` resources in each set.
+- `values/strings.xml` and `values-en/strings.xml` each contain 216 unique `<string>`
+  resources, including 17 `quick_entry_*` resources in each set.
 - Resource-name parity is exact: 0 default-only names and 0 English-only names.
 - The release AAB contains three DEX files, `base/resources.pb`, the binary manifest,
   generated locale config, and packaged `baseline.prof`/`baseline.profm`.
-- R8 outputs are present and nonempty: `mapping.txt` has 367,356 lines, `seeds.txt`
-  1,735, `usage.txt` 70,912, and `resources.txt` 14,442.
+- R8 outputs are present and nonempty: `mapping.txt` has 368,258 lines, `seeds.txt`
+  1,737, `usage.txt` 70,918, and `resources.txt` 14,448.
 
 ## Recorded Artifact Snapshots
 
@@ -188,10 +223,10 @@ capture-time integrity records; a later build may replace the files.
 
 | Artifact | Size | SHA-256 |
 | --- | ---: | --- |
-| `app/build/outputs/apk/debug/app-debug.apk` | 18,084,634 bytes | `90fd749802088195fe7875d7bac7df6765c668d0a0f1de3130e61d9913245720` |
-| `app/build/outputs/apk/release/app-release-unsigned.apk` | 3,692,734 bytes | `ca507afb273d83088f0ab8c0b0c3b6efc25d1d0aa6537692622f22347c40f271` |
-| `app/build/outputs/bundle/release/app-release.aab` | 6,884,139 bytes | `1848b3023303036fe2b64836996d9ccfada565ca56d14ad52debf045018f0256` |
-| `app/build/outputs/mapping/release/mapping.txt` | 45,529,101 bytes | `611f03a3940fb5da7ee5e1491a35664e8b95db71da986ed3d4a017984956017c` |
+| `app/build/outputs/apk/debug/app-debug.apk` | 17,993,646 bytes | `11e941c1ae4077ceeb988fbfd4d8dac915afee0311477439c5918696a1ed77c4` |
+| `app/build/outputs/apk/release/app-release-unsigned.apk` | 3,709,574 bytes | `1f95a4781aa92c4d9c10c405dca558ab1c734b0ee800a8c6fe95d96e7012036a` |
+| `app/build/outputs/bundle/release/app-release.aab` | 6,898,905 bytes | `9bdcb032315b525bc6c460c5f40947a086cf323ff9fd15f196bdb498b0adac09` |
+| `app/build/outputs/mapping/release/mapping.txt` | 45,662,545 bytes | `76799520af6bdec4028e3828c4231c9271ebe56bf722c5f09278f35d1f4f4dfa` |
 
 `apksigner verify --verbose` confirmed the debug APK uses v1 and v2 signatures.
 The unsigned release APK did not verify, and `jarsigner -verify` reported the AAB
@@ -202,14 +237,14 @@ signature check.
 ## Limits And Manual Follow-Up
 
 The connected suite includes production Compose semantics, localized Italian/English
-rendering, minimum Parse target size, and a programmatic 200% font-scale clipping and
-overlap oracle. This Task 6 run did not perform physical-device TalkBack reading-order,
-switch-access, contrast, notification permission, exact-alarm grant/fallback, reboot
-reconciliation, or API 23 smoke testing. Those rows remain pending in the quality and
-accessibility matrices. No physical-device accessibility validation is claimed.
-The registry assertion proves the alarm scheduled during each save journey; it does
-not prove that exact-alarm capability was granted, that the alarm was delivered, or
-that a notification was posted.
+rendering, minimum Parse target size, a programmatic 200% font-scale clipping and
+overlap oracle, fresh API 36 notification denial/grant state, and real
+exact-alarm-settings return with inexact fallback. It does not click through the
+platform notification permission dialog, deliver an alarm, post a notification,
+grant exact-alarm capability, reboot the device, or cover API 23. Physical-device
+TalkBack reading order, switch access, contrast, reminder delivery, exact-alarm grant,
+and reboot reconciliation remain pending. No physical-device accessibility or
+notification-delivery validation is claimed.
 
 Natural-Language Entry v1 intentionally accepts only the documented bilingual dates,
 times, priorities, current category markers, daily/weekly/monthly recurrence, and one

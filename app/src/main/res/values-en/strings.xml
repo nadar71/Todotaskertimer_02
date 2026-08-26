@@ -138,6 +138,7 @@
     <string name="quick_entry_label">Quick entry</string>
     <string name="quick_entry_hint">Buy milk tomorrow at 6 pm</string>
     <string name="quick_entry_parse">Parse</string>
+    <string name="quick_entry_categories_loading">Loading categories</string>
     <string name="quick_entry_summary">Recognized: %1$s</string>
     <string name="quick_entry_field_title">Title</string>
     <string name="quick_entry_field_due_date">Due date</string>
@@ -179,7 +180,7 @@
     <string name="task_editor_error_end_before_due">The repeat end cannot be before the first due time.</string>
     <string name="task_editor_reminder_not_active">The reminder is not active.</string>
     <string name="task_editor_exact_alarm_settings_failed">Could not open exact reminder settings.</string>
-    <string name="task_editor_notification_denied">Notifications are off. The reminder remains saved and can be enabled from settings.</string>
+    <string name="task_editor_notification_denied">Notifications are off. Grant access or remove the reminder before saving.</string>
     <string name="task_editor_inexact_notice">Exact alarm access is unavailable, so reminder timing may vary.</string>
     <string name="task_recurrence_none">None</string>
     <string name="task_recurrence_daily">Daily</string>

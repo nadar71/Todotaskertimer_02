@@ -17,6 +17,16 @@ class TextNormalizerTest {
     }
 
     @Test
+    fun normalizeWhitespace_collapsesUnicodeSpaceSeparatorsIncludingNbsp() {
+        assertEquals(
+            "Progetti Casa Domani",
+            TextNormalizer.normalizeWhitespace(
+                "\u00a0Progetti\u2007\u202fCasa\u2003Domani\u00a0"
+            )
+        )
+    }
+
+    @Test
     fun remainingTitle_removesOnlySuccessfulRanges() {
         val raw = "  Compra latte, domani alle 18  #Sconosciuta "
         val consumed = listOf(SourceMatch(16, 23, RecognizedField.DUE_DATE))
@@ -89,12 +99,19 @@ class TextNormalizerTest {
     }
 
     @Test
-    fun matchingKey_removesCombiningSpacingMarks() {
-        assertEquals("a", TextNormalizer.matchingKey("a\u0903"))
+    fun matchingKey_preservesCombiningSpacingMarks() {
+        assertEquals("a\u0903", TextNormalizer.matchingKey("a\u0903"))
     }
 
     @Test
-    fun matchingKey_removesEnclosingMarks() {
-        assertEquals("a", TextNormalizer.matchingKey("a\u20dd"))
+    fun matchingKey_preservesEnclosingMarks() {
+        assertEquals("a\u20dd", TextNormalizer.matchingKey("a\u20dd"))
+    }
+
+    @Test
+    fun matchingKey_foldsLatinAccentsButPreservesNonLatinNonspacingMarks() {
+        assertEquals("caffe", TextNormalizer.matchingKey("Caffè"))
+        assertEquals("क़", TextNormalizer.matchingKey("क़"))
+        assertEquals("a̸", TextNormalizer.matchingKey("a̸"))
     }
 }

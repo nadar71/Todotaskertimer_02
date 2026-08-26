@@ -62,6 +62,7 @@ fun TaskEditorRoute(
                         )
                         runCatching { exactAlarmAccess.launch(intent) }
                             .onFailure {
+                                viewModel.onEvent(TaskEditorEvent.RefreshExactAlarmAccess)
                                 snackbarHostState.showSnackbar(
                                     resources.getString(
                                         R.string.task_editor_exact_alarm_settings_failed

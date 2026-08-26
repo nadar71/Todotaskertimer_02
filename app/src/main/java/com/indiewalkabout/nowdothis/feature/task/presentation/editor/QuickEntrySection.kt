@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,9 +33,12 @@ fun QuickEntrySection(
     summary: List<QuickEntrySummaryField>,
     issues: List<QuickEntryIssue>,
     onEvent: (TaskEditorEvent) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    categoryReadiness: CategoryReadiness = CategoryReadiness.READY,
+    enabled: Boolean = true
 ) {
     val parseLabel = stringResource(R.string.quick_entry_parse)
+    val retryLabel = stringResource(R.string.category_retry)
     Column(
         modifier = modifier.testTag("quick-entry-section"),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -50,11 +56,50 @@ fun QuickEntrySection(
             label = { Text(stringResource(R.string.quick_entry_label)) },
             placeholder = { Text(stringResource(R.string.quick_entry_hint)) },
             minLines = 3,
-            maxLines = 5
+            maxLines = 5,
+            enabled = enabled
         )
+        when (categoryReadiness) {
+            CategoryReadiness.LOADING -> {
+                val loadingDescription = stringResource(R.string.quick_entry_categories_loading)
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("quick-entry-categories-loading")
+                        .semantics { contentDescription = loadingDescription }
+                )
+            }
+            CategoryReadiness.ERROR -> {
+                Text(
+                    text = stringResource(R.string.category_load_failed),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("quick-entry-categories-error")
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                OutlinedButton(
+                    onClick = { onEvent(TaskEditorEvent.RetryCategoryLoad) },
+                    enabled = enabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("quick-entry-categories-retry")
+                        .semantics { contentDescription = retryLabel }
+                ) {
+                    Icon(Icons.Filled.Refresh, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(retryLabel)
+                }
+            }
+            CategoryReadiness.READY -> Unit
+        }
         Button(
             onClick = { onEvent(TaskEditorEvent.ParseQuickEntry) },
-            enabled = input.isNotBlank(),
+            enabled = enabled &&
+                categoryReadiness == CategoryReadiness.READY &&
+                input.isNotBlank(),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)

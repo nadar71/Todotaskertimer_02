@@ -163,7 +163,9 @@ private fun EditorForm(
                     input = state.quickEntryInput,
                     summary = state.quickEntrySummary,
                     issues = state.quickEntryIssues,
-                    onEvent = onEvent
+                    onEvent = onEvent,
+                    categoryReadiness = state.categoryReadiness,
+                    enabled = !state.isSaving
                 )
             }
         }

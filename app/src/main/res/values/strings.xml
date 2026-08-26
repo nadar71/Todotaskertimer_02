@@ -138,6 +138,7 @@
     <string name="quick_entry_label">Inserimento rapido</string>
     <string name="quick_entry_hint">Compra latte domani alle 18</string>
     <string name="quick_entry_parse">Analizza</string>
+    <string name="quick_entry_categories_loading">Caricamento categorie</string>
     <string name="quick_entry_summary">Riconosciuti: %1$s</string>
     <string name="quick_entry_field_title">Titolo</string>
     <string name="quick_entry_field_due_date">Scadenza</string>
@@ -179,7 +180,7 @@
     <string name="task_editor_error_end_before_due">La fine della ripetizione non può precedere la prima scadenza.</string>
     <string name="task_editor_reminder_not_active">Il promemoria non è attivo.</string>
     <string name="task_editor_exact_alarm_settings_failed">Impossibile aprire le impostazioni dei promemoria esatti.</string>
-    <string name="task_editor_notification_denied">Le notifiche sono disattivate. Il promemoria resta salvato e potrà essere riattivato dalle impostazioni.</string>
+    <string name="task_editor_notification_denied">Le notifiche sono disattivate. Concedi l’accesso o rimuovi il promemoria prima di salvare.</string>
     <string name="task_editor_inexact_notice">L’accesso agli allarmi esatti non è disponibile: l’orario del promemoria può variare.</string>
     <string name="task_recurrence_none">Nessuna</string>
     <string name="task_recurrence_daily">Ogni giorno</string>

@@ -132,6 +132,14 @@ class TemporalParserTest(
                 matches = listOf(match(5, 12))
             ),
             case(
+                raw = "Call at 18:45",
+                language = ParserLanguage.ENGLISH,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = epoch("2026-08-26T18:45:00+02:00"),
+                matches = listOf(match(5, 13))
+            ),
+            case(
                 raw = "Compra latte domani alle 18",
                 language = ParserLanguage.ITALIAN,
                 zoneId = rome,
@@ -212,6 +220,23 @@ class TemporalParserTest(
                 dueAt = epoch("2026-08-26T18:00:00+02:00"),
                 matches = listOf(match(7, 14), match(15, 22)),
                 issues = listOf(ParseIssue.DuplicateField(RecognizedField.DUE_DATE))
+            ),
+            case(
+                raw = "Call at 6 pm at 18",
+                language = ParserLanguage.ENGLISH,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = epoch("2026-08-26T18:00:00+02:00"),
+                matches = listOf(match(5, 12), match(13, 18)),
+                issues = listOf(ParseIssue.DuplicateField(RecognizedField.DUE_DATE))
+            ),
+            case(
+                raw = "Task alle 1/2",
+                language = ParserLanguage.ITALIAN,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = null,
+                matches = emptyList()
             ),
             case(
                 raw = "Piano 1/2/3",

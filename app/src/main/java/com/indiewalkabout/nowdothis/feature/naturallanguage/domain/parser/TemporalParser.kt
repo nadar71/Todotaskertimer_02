@@ -45,8 +45,14 @@ class TemporalParser {
         val currentDate = Instant.ofEpochMilli(input.nowEpochMillis)
             .atZone(input.zoneId)
             .toLocalDate()
-        val dates = parseDates(input.rawText, input.language, currentDate)
-        val times = parseTimes(input.rawText, input.language)
+        val parsedDates = parseDates(input.rawText, input.language, currentDate)
+        val parsedTimes = parseTimes(input.rawText, input.language)
+        val dates = parsedDates.filterNot { date ->
+            parsedTimes.any { time -> date.match.intersects(time.match) }
+        }
+        val times = parsedTimes.filterNot { time ->
+            parsedDates.any { date -> time.match.intersects(date.match) }
+        }
         val selectedDate = dates.lastOrNull()
         val selectedTime = times.lastOrNull()
         val matches = (dates.map(DateCandidate::match) + times.map(TimeCandidate::match))
@@ -98,11 +104,18 @@ class TemporalParser {
             }
             .toList()
 
-        ParserLanguage.ENGLISH -> englishTimePattern.findAll(raw)
-            .mapNotNull { match ->
-                parseEnglishTime(match)?.let { time -> TimeCandidate(time, match.toSourceMatch()) }
+        ParserLanguage.ENGLISH -> buildList {
+            englishTwelveHourTimePattern.findAll(raw).forEach { match ->
+                parseEnglishTwelveHourTime(match)?.let { time ->
+                    add(TimeCandidate(time, match.toSourceMatch()))
+                }
             }
-            .toList()
+            englishTwentyFourHourTimePattern.findAll(raw).forEach { match ->
+                parseEnglishTwentyFourHourTime(match)?.let { time ->
+                    add(TimeCandidate(time, match.toSourceMatch()))
+                }
+            }
+        }.sortedBy { candidate -> candidate.match.start }
     }
 
     private fun parseNumericDate(
@@ -132,7 +145,7 @@ class TemporalParser {
         return localTimeOrNull(hour, minute)
     }
 
-    private fun parseEnglishTime(match: MatchResult): LocalTime? {
+    private fun parseEnglishTwelveHourTime(match: MatchResult): LocalTime? {
         val hour = match.groupValues[1].toInt()
         val minute = match.groupValues[2].takeIf(String::isNotEmpty)?.toInt() ?: 0
         if (hour !in 1..12 || minute !in 0..59) return null
@@ -145,6 +158,12 @@ class TemporalParser {
             else -> hour
         }
         return LocalTime.of(hour24, minute)
+    }
+
+    private fun parseEnglishTwentyFourHourTime(match: MatchResult): LocalTime? {
+        val hour = match.groupValues[1].toInt()
+        val minute = match.groupValues[2].takeIf(String::isNotEmpty)?.toInt() ?: 0
+        return localTimeOrNull(hour, minute)
     }
 
     private fun localTimeOrNull(hour: Int, minute: Int): LocalTime? = try {
@@ -179,6 +198,9 @@ class TemporalParser {
         field = RecognizedField.DUE_DATE
     )
 
+    private fun SourceMatch.intersects(other: SourceMatch): Boolean =
+        start < other.endExclusive && other.start < endExclusive
+
     private data class DateCandidate(val date: LocalDate, val match: SourceMatch)
 
     private data class TimeCandidate(val time: LocalTime, val match: SourceMatch)
@@ -194,8 +216,13 @@ class TemporalParser {
             "(?<![\\p{L}\\p{N}_])alle\\s+(\\d{1,2})(?::(\\d{2}))?(?![\\p{L}\\p{N}_:])",
             RegexOption.IGNORE_CASE
         )
-        val englishTimePattern = Regex(
+        val englishTwelveHourTimePattern = Regex(
             "(?<![\\p{L}\\p{N}_])at\\s+(\\d{1,2})(?::(\\d{2}))?\\s+([ap])\\.?m\\.?(?![\\p{L}\\p{N}_])",
+            RegexOption.IGNORE_CASE
+        )
+        val englishTwentyFourHourTimePattern = Regex(
+            "(?<![\\p{L}\\p{N}_])at\\s+(\\d{1,2})(?::(\\d{2}))?" +
+                "(?![\\p{L}\\p{N}_:/]|\\.(?=\\d)|\\s+[ap]\\.?m\\.?(?![\\p{L}\\p{N}_]))",
             RegexOption.IGNORE_CASE
         )
 

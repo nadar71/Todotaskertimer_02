@@ -30,25 +30,40 @@ class ParseNaturalLanguageTask(
             addAll(temporal.matches.rejectIntersecting(temporalExclusions))
             addAll(reminder.matches.rejectIntersecting(markerRanges))
             addAll(attributes.matches)
-        }.validatedConsumedRanges(input.rawText)
+        }.disjointConsumedRanges(input.rawText)
+        val dueAt = temporal.dueAt.takeIf {
+            consumed.any { match -> match.field == RecognizedField.DUE_DATE }
+        }
+        val reminderAt = reminder.reminderAt.takeIf {
+            consumed.any { match -> match.field == RecognizedField.REMINDER }
+        }
+        val priority = attributes.priority.takeIf {
+            consumed.any { match -> match.field == RecognizedField.PRIORITY }
+        }
+        val categoryId = attributes.categoryId.takeIf {
+            consumed.any { match -> match.field == RecognizedField.CATEGORY }
+        }
+        val recurrence = attributes.recurrence.takeIf {
+            consumed.any { match -> match.field == RecognizedField.RECURRENCE }
+        }
         val title = TextNormalizer.remainingTitle(input.rawText, consumed).takeIf(String::isNotBlank)
         val recognized = buildSet {
             if (title != null) add(RecognizedField.TITLE)
-            if (temporal.dueAt != null) add(RecognizedField.DUE_DATE)
-            if (reminder.reminderAt != null) add(RecognizedField.REMINDER)
-            if (attributes.priority != null) add(RecognizedField.PRIORITY)
-            if (attributes.categoryId != null) add(RecognizedField.CATEGORY)
-            if (attributes.recurrence != null) add(RecognizedField.RECURRENCE)
+            if (dueAt != null) add(RecognizedField.DUE_DATE)
+            if (reminderAt != null) add(RecognizedField.REMINDER)
+            if (priority != null) add(RecognizedField.PRIORITY)
+            if (categoryId != null) add(RecognizedField.CATEGORY)
+            if (recurrence != null) add(RecognizedField.RECURRENCE)
         }
 
         return NaturalLanguageParseResult(
             draft = ParsedTaskDraft(
                 title = title,
-                dueAt = temporal.dueAt,
-                reminderAt = reminder.reminderAt,
-                priority = attributes.priority,
-                categoryId = attributes.categoryId,
-                recurrence = attributes.recurrence
+                dueAt = dueAt,
+                reminderAt = reminderAt,
+                priority = priority,
+                categoryId = categoryId,
+                recurrence = recurrence
             ),
             recognized = recognized,
             issues = temporal.issues + reminder.issues + attributes.issues,
@@ -76,17 +91,16 @@ class ParseNaturalLanguageTask(
         excludedRanges.any { excluded -> candidate.intersects(excluded) }
     }
 
-    private fun List<SourceMatch>.validatedConsumedRanges(raw: String): List<SourceMatch> =
-        sortedBy(SourceMatch::start).also { sorted ->
-            sorted.forEach { match ->
-                require(match.start >= 0 && match.endExclusive <= raw.length && match.start < match.endExclusive) {
-                    "Consumed range must be non-empty and within the raw input."
-                }
-            }
-            sorted.zipWithNext().forEach { (current, next) ->
-                require(!current.intersects(next)) { "Consumed ranges must be pairwise disjoint." }
-            }
+    private fun List<SourceMatch>.disjointConsumedRanges(raw: String): List<SourceMatch> {
+        val valid = filter { match ->
+            match.start >= 0 && match.endExclusive <= raw.length && match.start < match.endExclusive
         }
+        return valid.filterIndexed { index, candidate ->
+            valid.withIndex().none { (otherIndex, other) ->
+                index != otherIndex && candidate.intersects(other)
+            }
+        }.sortedBy(SourceMatch::start)
+    }
 
     private fun SourceMatch.intersects(other: SourceMatch): Boolean =
         start < other.endExclusive && other.start < endExclusive

@@ -1,8 +1,12 @@
 package com.indiewalkabout.nowdothis.feature.naturallanguage
 
+import android.Manifest
+import android.app.AlarmManager
 import android.app.LocaleManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.LocaleList
 import android.text.format.DateUtils
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -29,6 +33,9 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.app.MainActivity
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
@@ -63,11 +70,13 @@ import org.junit.runners.model.Statement
 class NaturalLanguageEntryJourneyTest {
     private val composeRule = createAndroidComposeRule<MainActivity>()
     private val localeRule = ApplicationLocaleRule(::journeyFixtureFor)
+    private val notificationPermissionRule = NotificationPermissionRule()
     private val appStateRule = AppStateRule(::journeyFixtureFor)
 
     @get:Rule
     val rules: TestRule = RuleChain
         .outerRule(localeRule)
+        .around(notificationPermissionRule)
         .around(appStateRule)
         .around(composeRule)
 
@@ -84,7 +93,7 @@ class NaturalLanguageEntryJourneyTest {
         assertInferredControls(fixture)
 
         correctPriorityAndDescribe(fixture.description)
-        composeRule.onNodeWithTag("task-editor-save").performClick()
+        saveThroughExactAlarmFallback()
 
         val task = waitForPersistedTask(fixture.expectedTitle)
         assertPersistedJourney(task, fixture)
@@ -101,11 +110,41 @@ class NaturalLanguageEntryJourneyTest {
         assertInferredControls(fixture)
 
         correctPriorityAndDescribe(fixture.description)
-        composeRule.onNodeWithTag("task-editor-save").performClick()
+        assertExactAlarmUnavailable()
+        saveThroughExactAlarmFallback()
 
         val task = waitForPersistedTask(fixture.expectedTitle)
         assertPersistedJourney(task, fixture)
         assertReturnedToTaskList(fixture.expectedTitle)
+    }
+
+    @Test
+    fun supportedEnglishSecondaryLocale_matchesRenderedResourcesAndParser() {
+        val fixture = ENGLISH_SECONDARY_LOCALE
+
+        assertActiveLocale(fixture)
+        assertEquals("Quick entry", text(R.string.quick_entry_label))
+        val renderedCategoryName = text(R.string.category_work)
+        openNewTask()
+        enterAndParse(
+            "Plan project tomorrow at 18 #\"$renderedCategoryName\" !high every week " +
+                "remind 1h before"
+        )
+        assertNonTemporalPreview(fixture.copy(categoryName = renderedCategoryName))
+    }
+
+    @Test
+    fun unsupportedOnlyLocales_useItalianResourcesCategoriesAndParser() {
+        val fixture = UNSUPPORTED_ONLY_LOCALES
+
+        assertActiveLocale(fixture)
+        val renderedCategoryName = text(R.string.category_work)
+        openNewTask()
+        enterAndParse(
+            "Pianifica lavoro domani alle 18 #\"$renderedCategoryName\" " +
+                "!alta ogni settimana promemoria 1h prima"
+        )
+        assertNonTemporalPreview(fixture.copy(categoryName = renderedCategoryName))
     }
 
     @Test
@@ -137,14 +176,26 @@ class NaturalLanguageEntryJourneyTest {
     fun setupFailure_afterMutation_restoresRowsSequencesAndLiveAlarm() {
         appStateRule.insertTaskWithRegisteredAlarm(SETUP_FAILURE_TASK)
         appStateRule.insertTaskWithoutRegisteredAlarm(SETUP_FAILURE_NO_ALARM_TASK)
+        appStateRule.registerAlarmForTest(
+            SETUP_FAILURE_ORPHAN_REQUEST_CODE,
+            SETUP_FAILURE_ORPHAN_TRIGGER_AT
+        )
         val before = appStateRule.captureState()
         val beforeAlarm = requireNotNull(before.registeredAlarms[SETUP_FAILURE_TASK.id])
+        val beforeOrphan = requireNotNull(
+            before.registeredAlarms[SETUP_FAILURE_ORPHAN_REQUEST_CODE]
+        )
         assertEquals(SETUP_FAILURE_TRIGGER_AT, beforeAlarm.triggerAt)
+        assertEquals(SETUP_FAILURE_ORPHAN_TRIGGER_AT, beforeOrphan.triggerAt)
         assertFalse(before.registeredAlarms.containsKey(SETUP_FAILURE_NO_ALARM_TASK.id))
         var journeyBodyRan = false
         val failingRule = AppStateRule(
             fixtureForTest = { ITALIAN_SAVE },
             afterFixtureMutation = {
+                assertTrue(
+                    "Fixture preparation left package reminder alarms registered",
+                    appStateRule.registeredReminders().isEmpty()
+                )
                 appStateRule.registerAlarmForTest(
                     SETUP_FAILURE_NO_ALARM_TASK.id,
                     SETUP_FAILURE_UNEXPECTED_TRIGGER_AT
@@ -176,6 +227,9 @@ class NaturalLanguageEntryJourneyTest {
         assertEquals(before.sequences, after.sequences)
         assertEquals(before.registeredAlarms.keys, after.registeredAlarms.keys)
         val afterAlarm = requireNotNull(after.registeredAlarms[SETUP_FAILURE_TASK.id])
+        val afterOrphan = requireNotNull(
+            after.registeredAlarms[SETUP_FAILURE_ORPHAN_REQUEST_CODE]
+        )
         assertFalse(after.registeredAlarms.containsKey(SETUP_FAILURE_NO_ALARM_TASK.id))
         assertEquals(beforeAlarm.type, afterAlarm.type)
         assertEquals(beforeAlarm.packageName, afterAlarm.packageName)
@@ -185,6 +239,16 @@ class NaturalLanguageEntryJourneyTest {
             "Restored alarm trigger ${afterAlarm.triggerAt} differed from " +
                 "${beforeAlarm.triggerAt}",
             abs(afterAlarm.triggerAt - beforeAlarm.triggerAt) <= ALARM_TRIGGER_TOLERANCE_MILLIS
+        )
+        assertEquals(beforeOrphan.type, afterOrphan.type)
+        assertEquals(beforeOrphan.packageName, afterOrphan.packageName)
+        assertEquals(beforeOrphan.receiverComponent, afterOrphan.receiverComponent)
+        assertEquals(beforeOrphan.requestCode, afterOrphan.requestCode)
+        assertTrue(
+            "Restored orphan trigger ${afterOrphan.triggerAt} differed from " +
+                "${beforeOrphan.triggerAt}",
+            abs(afterOrphan.triggerAt - beforeOrphan.triggerAt) <=
+                ALARM_TRIGGER_TOLERANCE_MILLIS
         )
     }
 
@@ -260,6 +324,29 @@ class NaturalLanguageEntryJourneyTest {
         composeRule.onNodeWithTag("task-description").performTextReplacement(description)
         closeSoftKeyboard()
         assertEditableText("task-description", description)
+    }
+
+    private fun saveThroughExactAlarmFallback() {
+        composeRule.onNodeWithTag("task-editor-save").performClick()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
+        assertTrue(
+            "Save did not open exact-alarm access settings",
+            device.wait(
+                Until.hasObject(By.pkg(SETTINGS_PACKAGE)),
+                PLATFORM_UI_TIMEOUT_MILLIS
+            )
+        )
+        assertExactAlarmUnavailable()
+        assertTrue("Could not return from exact-alarm settings", device.pressBack())
+        instrumentation.waitForIdleSync()
+    }
+
+    private fun assertExactAlarmUnavailable() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val alarmManager = InstrumentationRegistry.getInstrumentation().targetContext
+            .getSystemService(AlarmManager::class.java)
+        assertFalse("Fixture unexpectedly had exact-alarm access", alarmManager.canScheduleExactAlarms())
     }
 
     private fun assertDateTimeControl(tag: String, value: Long) {
@@ -345,11 +432,7 @@ class NaturalLanguageEntryJourneyTest {
     private fun assertActiveLocale(fixture: JourneyFixture) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val localeManager = context.applicationContext.getSystemService(LocaleManager::class.java)
-        assertEquals(fixture.languageTag, localeManager.applicationLocales[0].language)
-        assertEquals(
-            fixture.languageTag,
-            composeRule.activity.resources.configuration.locales[0].language
-        )
+        assertEquals(fixture.primaryLanguage, localeManager.applicationLocales[0].language)
     }
 
     private fun summaryText(): String = text(
@@ -386,16 +469,21 @@ class NaturalLanguageEntryJourneyTest {
 }
 
 private data class JourneyFixture(
-    val languageTag: String,
+    val languageTags: String,
     val phrase: String,
     val changedWithoutParse: String = "",
     val expectedTitle: String,
     val description: String,
     val categoryId: Int,
     val categoryName: String,
+    val categoryCustomName: String? = categoryName,
+    val categoryDefaultKey: String? = null,
     val dueDate: LocalDate? = null,
     val dueTime: LocalTime = LocalTime.of(18, 0)
 ) {
+    val primaryLanguage: String
+        get() = LocaleList.forLanguageTags(languageTags)[0].language
+
     fun expectedDueAt(zoneId: ZoneId = ZoneId.systemDefault()): Long = requireNotNull(dueDate)
         .atTime(dueTime)
         .atZone(zoneId)
@@ -409,7 +497,7 @@ private data class ScheduleControlSnapshot(
 )
 
 private val ITALIAN_SAVE = JourneyFixture(
-    languageTag = "it",
+    languageTags = "it",
     phrase = "Compra latte 31/12/2037 alle 18 #Casa !alta ogni settimana promemoria 1h prima",
     expectedTitle = "Compra latte",
     description = "Scorta per la colazione",
@@ -419,7 +507,7 @@ private val ITALIAN_SAVE = JourneyFixture(
 )
 
 private val ENGLISH_SAVE = JourneyFixture(
-    languageTag = "en",
+    languageTags = "en",
     phrase = "Buy milk 12/30/2037 at 6 pm #Home !high every week remind 1h before",
     expectedTitle = "Buy milk",
     description = "Breakfast supplies",
@@ -429,7 +517,7 @@ private val ENGLISH_SAVE = JourneyFixture(
 )
 
 private val ITALIAN_RECREATION = JourneyFixture(
-    languageTag = "it",
+    languageTags = "it",
     phrase = "Paga bollette domani alle 18 #Casa !alta ogni settimana promemoria 1h prima",
     changedWithoutParse = "Paga bollette oggi alle 07 #Casa !bassa ogni mese promemoria 30m prima",
     expectedTitle = "Paga bollette",
@@ -438,9 +526,38 @@ private val ITALIAN_RECREATION = JourneyFixture(
     categoryName = "Casa"
 )
 
+private val ENGLISH_SECONDARY_LOCALE = JourneyFixture(
+    languageTags = "fr-CH,en-US",
+    phrase = "Plan project tomorrow at 18 #Work !high every week remind 1h before",
+    expectedTitle = "Plan project",
+    description = "",
+    categoryId = 104,
+    categoryName = "Work",
+    categoryCustomName = null,
+    categoryDefaultKey = "WORK"
+)
+
+private val UNSUPPORTED_ONLY_LOCALES = JourneyFixture(
+    languageTags = "fr-CH,de-DE",
+    phrase = "Pianifica lavoro domani alle 18 #Lavoro !alta ogni settimana " +
+        "promemoria 1h prima",
+    expectedTitle = "Pianifica lavoro",
+    description = "",
+    categoryId = 105,
+    categoryName = "Lavoro",
+    categoryCustomName = null,
+    categoryDefaultKey = "WORK"
+)
+
 private fun journeyFixtureFor(testMethod: String): JourneyFixture = when (testMethod) {
     "italianJourney_parseCorrectDescribeSave_persistsTaskAndReminder" -> ITALIAN_SAVE
     "englishJourney_parseCorrectDescribeSave_persistsTaskAndReminder" -> ENGLISH_SAVE
+    "supportedEnglishSecondaryLocale_matchesRenderedResourcesAndParser" -> {
+        ENGLISH_SECONDARY_LOCALE
+    }
+    "unsupportedOnlyLocales_useItalianResourcesCategoriesAndParser" -> {
+        UNSUPPORTED_ONLY_LOCALES
+    }
     "recreation_restoresRelativeDatePreview_withoutReparsingChangedInput" -> {
         ITALIAN_RECREATION
     }
@@ -459,13 +576,34 @@ private class ApplicationLocaleRule(
             val previousLocales = localeManager.applicationLocales
             try {
                 val fixture = fixtureForTest(description.methodName)
-                localeManager.applicationLocales = LocaleList.forLanguageTags(fixture.languageTag)
+                localeManager.applicationLocales = LocaleList.forLanguageTags(fixture.languageTags)
                 instrumentation.waitForIdleSync()
                 base.evaluate()
             } finally {
                 localeManager.applicationLocales = previousLocales
                 instrumentation.waitForIdleSync()
             }
+        }
+    }
+}
+
+private class NotificationPermissionRule : TestRule {
+    override fun apply(base: Statement, description: Description): Statement = object : Statement() {
+        override fun evaluate() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val instrumentation = InstrumentationRegistry.getInstrumentation()
+                val context = instrumentation.targetContext.applicationContext
+                if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    instrumentation.uiAutomation.grantRuntimePermission(
+                        context.packageName,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    )
+                    instrumentation.waitForIdleSync()
+                }
+            }
+            base.evaluate()
         }
     }
 }
@@ -494,11 +632,18 @@ private class AppStateRule(
         }
     }
 
-    fun registeredReminders(): List<RegisteredAlarm> = AlarmRegistryEvidence.parse(
-        alarmDump = shell("dumpsys alarm"),
-        pendingIntentDump = shell("dumpsys activity intents"),
-        packageName = context.packageName
-    )
+    fun registeredReminders(): List<RegisteredAlarm> {
+        val receiver = ComponentName(context, ReminderReceiver::class.java)
+        val receiverNames = setOf(receiver.flattenToString(), receiver.flattenToShortString())
+        return AlarmRegistryEvidence.parse(
+            alarmDump = shell("dumpsys alarm"),
+            pendingIntentDump = shell("dumpsys activity intents"),
+            packageName = context.packageName
+        ).filter { alarm ->
+            alarm.packageName == context.packageName &&
+                alarm.receiverComponent in receiverNames
+        }
+    }
 
     fun captureState(): AppStateSnapshot = snapshotState()
 
@@ -511,7 +656,7 @@ private class AppStateRule(
     fun insertTaskWithoutRegisteredAlarm(task: TaskEntity) {
         insertTask(task)
         alarmGateway().cancel(task.id)
-        check(registeredAlarmsFor(listOf(task)).isEmpty()) {
+        check(registeredAlarmMap()[task.id] == null) {
             "Setup-failure absence sentinel unexpectedly had a registered alarm"
         }
     }
@@ -533,7 +678,7 @@ private class AppStateRule(
                 database.taskDao().getAllSubtaskEntities()
             )
         }
-        val registeredAlarms = registeredAlarmsFor(tasks)
+        val registeredAlarms = registeredAlarmMap()
         return AppStateSnapshot(
             categories = categories,
             tasks = tasks,
@@ -544,10 +689,7 @@ private class AppStateRule(
     }
 
     private fun prepareFixture(fixture: JourneyFixture) {
-        val existingTasks = runBlocking(Dispatchers.IO) {
-            database.taskDao().getAllTaskEntities()
-        }
-        existingTasks.forEach { alarmGateway().cancel(it.id) }
+        registeredReminders().forEach { alarm -> alarmGateway().cancel(alarm.requestCode) }
         runBlocking {
             withContext(Dispatchers.IO) {
                 database.clearAllTables()
@@ -556,7 +698,8 @@ private class AppStateRule(
                 database.categoryDao().insert(
                     CategoryEntity(
                         id = fixture.categoryId,
-                        customName = fixture.categoryName,
+                        customName = fixture.categoryCustomName,
+                        defaultKey = fixture.categoryDefaultKey,
                         colorToken = "GREEN",
                         position = 0,
                         createdAt = FIXTURE_CREATED_AT
@@ -567,10 +710,7 @@ private class AppStateRule(
     }
 
     private fun restoreState(snapshot: AppStateSnapshot) {
-        val testTasks = runBlocking(Dispatchers.IO) {
-            database.taskDao().getAllTaskEntities()
-        }
-        testTasks.forEach { alarmGateway().cancel(it.id) }
+        registeredReminders().forEach { alarm -> alarmGateway().cancel(alarm.requestCode) }
         runBlocking {
             withContext(Dispatchers.IO) {
                 database.clearAllTables()
@@ -586,14 +726,9 @@ private class AppStateRule(
                 replaceSequences(snapshot.sequences)
             }
         }
-        snapshot.tasks.forEach { task ->
-            val alarm = snapshot.registeredAlarms[task.id]
-            if (alarm == null) {
-                alarmGateway().cancel(task.id)
-            } else {
-                check(scheduleReminder(task.id, alarm.triggerAt)) {
-                    "Could not restore registered alarm for task ${task.id}"
-                }
+        snapshot.registeredAlarms.values.forEach { alarm ->
+            check(scheduleReminder(alarm.requestCode, alarm.triggerAt)) {
+                "Could not restore registered alarm for request ${alarm.requestCode}"
             }
         }
         assertEquals(snapshot.categories, runBlocking(Dispatchers.IO) {
@@ -610,7 +745,7 @@ private class AppStateRule(
     }
 
     private fun assertRestoredAlarms(snapshot: AppStateSnapshot) {
-        val actual = registeredAlarmsFor(snapshot.tasks)
+        val actual = registeredAlarmMap()
         assertEquals(snapshot.registeredAlarms.keys, actual.keys)
         snapshot.registeredAlarms.forEach { (taskId, expected) ->
             val restored = requireNotNull(actual[taskId])
@@ -627,13 +762,10 @@ private class AppStateRule(
         }
     }
 
-    private fun registeredAlarmsFor(tasks: List<TaskEntity>): Map<Int, RegisteredAlarm> {
-        val taskIds = tasks.mapTo(mutableSetOf(), TaskEntity::id)
-        val grouped = registeredReminders()
-            .filter { alarm -> alarm.requestCode in taskIds }
-            .groupBy(RegisteredAlarm::requestCode)
+    private fun registeredAlarmMap(): Map<Int, RegisteredAlarm> {
+        val grouped = registeredReminders().groupBy(RegisteredAlarm::requestCode)
         check(grouped.values.none { alarms -> alarms.size > 1 }) {
-            "Multiple registered alarms found for one restored task: $grouped"
+            "Multiple package reminder alarms found for one request code: $grouped"
         }
         return grouped.mapValues { (_, alarms) -> alarms.single() }
     }
@@ -734,8 +866,12 @@ private val SETUP_FAILURE_NO_ALARM_TASK = TaskEntity(
 private const val REMINDER_LEAD_MILLIS = 60 * 60 * 1_000L
 private const val ALARM_TRIGGER_TOLERANCE_MILLIS = 1_000L
 private const val WAIT_TIMEOUT_MILLIS = 10_000L
+private const val PLATFORM_UI_TIMEOUT_MILLIS = 5_000L
+private const val SETTINGS_PACKAGE = "com.android.settings"
 private const val FIXTURE_CREATED_AT = 1_788_044_400_000L
 private const val SETUP_FAILURE_TRIGGER_AT = 2_145_990_600_000L
 private const val SETUP_FAILURE_UNEXPECTED_TRIGGER_AT = 2_145_994_200_000L
+private const val SETUP_FAILURE_ORPHAN_REQUEST_CODE = 703
+private const val SETUP_FAILURE_ORPHAN_TRIGGER_AT = 2_145_997_800_000L
 private const val EXPECTED_SETUP_FAILURE_MESSAGE = "Expected failure after fixture mutation"
 private val SEQUENCE_TABLES = listOf("categories", "tasks", "subtasks")

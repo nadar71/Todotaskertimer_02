@@ -15,6 +15,7 @@ import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryColor
 import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryMutationResult
 import com.indiewalkabout.nowdothis.feature.category.domain.model.DefaultCategoryKey
 import com.indiewalkabout.nowdothis.feature.category.domain.repository.CategoryRepository
+import com.indiewalkabout.nowdothis.feature.category.presentation.AndroidDefaultCategoryNameResolver
 import com.indiewalkabout.nowdothis.feature.category.presentation.DefaultCategoryNameResolver
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.CategoryCandidate
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParserLanguage
@@ -45,24 +46,31 @@ import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ValidateTask
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskEditorKey
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -129,6 +137,76 @@ class TaskEditorViewModelTest {
         assertEquals("", viewModel.uiState.value.title)
         assertEquals(0, naturalLanguageEnvironment.snapshotCalls)
     }
+
+    @Test
+    fun quickEntryParse_waitsForFirstSuccessfulCategorySnapshot() = runTest(dispatcher) {
+        val delayedCategories = MutableSharedFlow<List<Category>>()
+        val home = category(8, customName = "Home")
+        categories.observations += delayedCategories
+        naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+            language = ParserLanguage.ENGLISH,
+            nowEpochMillis = NOW,
+            zoneId = ROME,
+            categories = listOf(CategoryCandidate(8, "Home"))
+        )
+        val viewModel = createViewModel(TaskEditorKey(null, null))
+        runCurrent()
+
+        assertFalse(viewModel.uiState.value.isLoading)
+        assertEquals(CategoryReadiness.LOADING, viewModel.uiState.value.categoryReadiness)
+        viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("Task #Home"))
+        viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+        assertEquals(0, naturalLanguageEnvironment.snapshotCalls)
+        assertEquals("", viewModel.uiState.value.title)
+        assertNull(viewModel.uiState.value.categoryId)
+
+        delayedCategories.emit(listOf(home))
+        runCurrent()
+
+        assertEquals(CategoryReadiness.READY, viewModel.uiState.value.categoryReadiness)
+        viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+        assertEquals(1, naturalLanguageEnvironment.snapshotCalls)
+        assertEquals("Task", viewModel.uiState.value.title)
+        assertEquals(8, viewModel.uiState.value.categoryId)
+    }
+
+    @Test
+    fun categoryObservationFailure_exposesRetryAndRecoversBeforeParsing() =
+        runTest(dispatcher) {
+            val work = category(9, customName = "Work")
+            categories.observations += flow { throw IllegalStateException("categories failed") }
+            categories.observations += flowOf(listOf(work))
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ENGLISH,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = listOf(CategoryCandidate(9, "Work"))
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            val effect = async { viewModel.effects.first() }
+            advanceUntilIdle()
+
+            assertEquals(CategoryReadiness.ERROR, viewModel.uiState.value.categoryReadiness)
+            assertEquals(
+                TaskEditorEffect.ShowMessage(R.string.task_editor_load_failed),
+                effect.await()
+            )
+            viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("Task #Work"))
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+            assertEquals(0, naturalLanguageEnvironment.snapshotCalls)
+
+            viewModel.onEvent(TaskEditorEvent.RetryCategoryLoad)
+            advanceUntilIdle()
+
+            assertEquals(2, categories.observeCalls)
+            assertEquals(CategoryReadiness.READY, viewModel.uiState.value.categoryReadiness)
+            assertEquals(listOf(work), viewModel.uiState.value.categories)
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+            assertEquals("Task", viewModel.uiState.value.title)
+            assertEquals(9, viewModel.uiState.value.categoryId)
+        }
 
     @Test
     fun explicitQuickEntryParse_appliesAllFieldsInOneStateMutation() = runTest(dispatcher) {
@@ -261,6 +339,29 @@ class TaskEditorViewModelTest {
             assertEquals("Buy milk tomorrow", state.quickEntryInput)
             assertTrue(state.quickEntrySummary.isEmpty())
             assertEquals(listOf(QuickEntryIssue.PARSE_FAILED), state.quickEntryIssues)
+        }
+
+    @Test
+    fun quickEntryCancellation_propagatesWithoutDraftOrSavedStateMutation() =
+        runTest(dispatcher) {
+            val handle = SavedStateHandle()
+            val viewModel = createViewModel(TaskEditorKey(null, null), handle)
+            advanceUntilIdle()
+            viewModel.onEvent(TaskEditorEvent.UpdateTitle("Existing title"))
+            viewModel.onEvent(TaskEditorEvent.UpdateDescription("Existing description"))
+            viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("Buy milk tomorrow"))
+            naturalLanguageEnvironment.failure = CancellationException("cancel parse")
+            val beforeState = viewModel.uiState.value
+            val beforeSavedState = handle.snapshotValues()
+
+            assertThrows(CancellationException::class.java) {
+                viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+            }
+
+            assertEquals(beforeState, viewModel.uiState.value)
+            assertEquals(beforeSavedState, handle.snapshotValues())
+            assertFalse(QuickEntryIssue.PARSE_FAILED in viewModel.uiState.value.quickEntryIssues)
+            assertNull(repository.lastUpsert)
         }
 
     @Test
@@ -439,6 +540,42 @@ class TaskEditorViewModelTest {
     }
 
     @Test
+    fun androidEnvironment_usesFirstSupportedLocaleAndRenderedDefaultCategoryFallback() {
+        val context = EditorLocaleContext(
+            RuntimeEnvironment.getApplication(),
+            "fr-CH,en-US"
+        )
+        val environment = AndroidNaturalLanguageEnvironment(
+            context = context,
+            clock = AppClock { 10L },
+            zoneIdProvider = ZoneIdProvider { ROME },
+            defaultCategoryNameResolver = AndroidDefaultCategoryNameResolver(context)
+        )
+        val defaultCategory = category(
+            id = 1,
+            customName = null,
+            defaultKey = DefaultCategoryKey.WORK
+        )
+
+        val englishFallback = environment.snapshot(listOf(defaultCategory))
+
+        assertEquals(ParserLanguage.ENGLISH, englishFallback.language)
+        assertEquals(
+            listOf(CategoryCandidate(1, context.getString(R.string.category_work))),
+            englishFallback.categories
+        )
+
+        context.languageTags = "fr-CH,de-DE"
+        val unsupportedOnly = environment.snapshot(listOf(defaultCategory))
+
+        assertEquals(ParserLanguage.ITALIAN, unsupportedOnly.language)
+        assertEquals(
+            listOf(CategoryCandidate(1, context.getString(R.string.category_work))),
+            unsupportedOnly.categories
+        )
+    }
+
+    @Test
     fun existingTask_loadsOnceWithoutOverwritingEditedDraft() = runTest(dispatcher) {
         repository.emit(existingTask(title = "Original"))
         val viewModel = createViewModel(TaskEditorKey(taskId = 7, initialDueAt = null))
@@ -494,42 +631,157 @@ class TaskEditorViewModelTest {
     }
 
     @Test
-    fun enablingReminder_emitsOnlyRequiredPermissionEffectsOnce() = runTest(dispatcher) {
+    fun manualReminder_defersAccessChecksAndEffectsUntilSave() = runTest(dispatcher) {
         permissions.notificationRequired = true
         permissions.exactAlarmRequired = true
         val viewModel = createViewModel(TaskEditorKey(null, null))
-        val effects = async { List(2) { viewModel.effects.first() } }
+        val effects = mutableListOf<TaskEditorEffect>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.effects.collect { effects += it }
+        }
         advanceUntilIdle()
 
         viewModel.onEvent(TaskEditorEvent.UpdateReminderAt(70_000L))
         advanceUntilIdle()
-        assertEquals(
-            listOf(
-                TaskEditorEffect.RequestNotificationPermission,
-                TaskEditorEffect.RequestExactAlarmAccess
-            ),
-            effects.await()
-        )
 
-        viewModel.onEvent(TaskEditorEvent.UpdateReminderAt(75_000L))
+        assertEquals(0, permissions.notificationChecks)
+        assertEquals(0, permissions.exactAlarmChecks)
+        assertTrue(effects.isEmpty())
+
+        viewModel.onEvent(TaskEditorEvent.UpdateTitle("Valid"))
+        viewModel.onEvent(TaskEditorEvent.UpdateDescription("Description"))
+        viewModel.onEvent(TaskEditorEvent.UpdateDueAt(80_000L))
+        viewModel.onEvent(TaskEditorEvent.Save)
         advanceUntilIdle()
+
+        assertEquals(
+            listOf(TaskEditorEffect.RequestNotificationPermission),
+            effects
+        )
         assertEquals(1, permissions.notificationChecks)
-        assertEquals(1, permissions.exactAlarmChecks)
+        assertEquals(0, permissions.exactAlarmChecks)
+        assertTrue(viewModel.uiState.value.isSaving)
+        assertNull(repository.lastUpsert)
     }
 
     @Test
-    fun permissionDenial_keepsReminderAndExposesRecoverableAccessState() = runTest(dispatcher) {
+    fun parsedReminder_notificationDenialKeepsEditorOpenWithoutPersistingOrNavigating() =
+        runTest(dispatcher) {
+            permissions.notificationRequired = true
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ENGLISH,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            val effects = mutableListOf<TaskEditorEffect>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                viewModel.effects.collect { effects += it }
+            }
+            advanceUntilIdle()
+            viewModel.onEvent(
+                TaskEditorEvent.UpdateQuickEntry(
+                    "Buy milk tomorrow at 18 remind 1h before"
+                )
+            )
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+            viewModel.onEvent(TaskEditorEvent.UpdateDescription("Description"))
+
+            viewModel.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals(listOf(TaskEditorEffect.RequestNotificationPermission), effects)
+            assertTrue(viewModel.uiState.value.isSaving)
+            assertNull(repository.lastUpsert)
+
+            viewModel.onEvent(TaskEditorEvent.NotificationPermissionResult(granted = false))
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.isSaving)
+            assertTrue(viewModel.uiState.value.notificationPermissionDenied)
+            assertEquals(ReminderStatus.REQUESTED, viewModel.uiState.value.reminderStatus)
+            assertNull(repository.lastUpsert)
+            assertFalse(TaskEditorEffect.NavigateBack in effects)
+        }
+
+    @Test
+    fun manualReminder_notificationGrantContinuesPendingSaveAndNavigates() =
+        runTest(dispatcher) {
+            permissions.notificationRequired = true
+            val viewModel = validViewModel(reminderAt = 70_000L, dueAt = 80_000L)
+            val effects = mutableListOf<TaskEditorEffect>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                viewModel.effects.collect { effects += it }
+            }
+
+            viewModel.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals(listOf(TaskEditorEffect.RequestNotificationPermission), effects)
+            assertNull(repository.lastUpsert)
+            permissions.notificationRequired = false
+
+            viewModel.onEvent(TaskEditorEvent.NotificationPermissionResult(granted = true))
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(
+                    TaskEditorEffect.RequestNotificationPermission,
+                    TaskEditorEffect.NavigateBack
+                ),
+                effects
+            )
+            assertFalse(viewModel.uiState.value.notificationPermissionDenied)
+            assertEquals(70_000L, repository.lastUpsert?.reminderAt)
+            assertEquals(ReminderStatus.SCHEDULED, viewModel.uiState.value.reminderStatus)
+        }
+
+    @Test
+    fun exactAlarmUnavailable_afterAccessResultUsesInexactFallbackAndKeepsVisibleState() =
+        runTest(dispatcher) {
+            permissions.exactAlarmRequired = true
+            scheduler.result = ReminderScheduleResult.INEXACT
+            val viewModel = validViewModel(reminderAt = 70_000L, dueAt = 80_000L)
+            val effects = mutableListOf<TaskEditorEffect>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                viewModel.effects.collect { effects += it }
+            }
+
+            viewModel.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals(listOf(TaskEditorEffect.RequestExactAlarmAccess), effects)
+            assertTrue(viewModel.uiState.value.isSaving)
+            assertTrue(viewModel.uiState.value.exactTimingUnavailable)
+            assertNull(repository.lastUpsert)
+
+            viewModel.onEvent(TaskEditorEvent.RefreshExactAlarmAccess)
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(
+                    TaskEditorEffect.RequestExactAlarmAccess,
+                    TaskEditorEffect.NavigateBack
+                ),
+                effects
+            )
+            assertTrue(viewModel.uiState.value.exactTimingUnavailable)
+            assertEquals(ReminderStatus.SCHEDULED, viewModel.uiState.value.reminderStatus)
+            assertEquals(listOf(70_000L), scheduler.scheduledTriggers)
+        }
+
+    @Test
+    fun permissionResultsWithoutPendingSave_updateVisibleAccessStateOnly() = runTest(dispatcher) {
         permissions.notificationRequired = true
         permissions.exactAlarmRequired = true
         val handle = SavedStateHandle()
         val viewModel = createViewModel(TaskEditorKey(null, null), handle)
-        val effects = async { List(2) { viewModel.effects.first() } }
         advanceUntilIdle()
         viewModel.onEvent(TaskEditorEvent.UpdateReminderAt(70_000L))
-        advanceUntilIdle()
-        effects.await()
 
         viewModel.onEvent(TaskEditorEvent.NotificationPermissionResult(granted = false))
+        viewModel.onEvent(TaskEditorEvent.RefreshExactAlarmAccess)
         assertEquals(70_000L, viewModel.uiState.value.reminderAt)
         assertTrue(viewModel.uiState.value.notificationPermissionDenied)
         assertTrue(viewModel.uiState.value.exactTimingUnavailable)
@@ -542,6 +794,64 @@ class TaskEditorViewModelTest {
         advanceUntilIdle()
         assertTrue(restored.uiState.value.notificationPermissionDenied)
         assertFalse(restored.uiState.value.exactTimingUnavailable)
+    }
+
+    @Test
+    fun draftChangingEvents_areRejectedWhileSaveIsSuspended() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        val saveGate = CompletableDeferred<Unit>()
+        repository.upsertGate = saveGate
+        val viewModel = createViewModel(TaskEditorKey(null, null), handle)
+        advanceUntilIdle()
+        viewModel.onEvent(TaskEditorEvent.UpdateTitle("Draft A"))
+        viewModel.onEvent(TaskEditorEvent.UpdateDescription("Description A"))
+        viewModel.onEvent(TaskEditorEvent.UpdateDueAt(90_000L))
+        viewModel.onEvent(TaskEditorEvent.AddSubtask)
+        viewModel.onEvent(TaskEditorEvent.AddSubtask)
+        val subtaskIds = viewModel.uiState.value.subtasks.map(TaskEditorSubtask::draftId)
+        viewModel.onEvent(TaskEditorEvent.RenameSubtask(subtaskIds[0], "First"))
+        viewModel.onEvent(TaskEditorEvent.RenameSubtask(subtaskIds[1], "Second"))
+
+        viewModel.onEvent(TaskEditorEvent.Save)
+        runCurrent()
+        val savingState = viewModel.uiState.value
+        val savedStateDuringSave = handle.snapshotValues()
+        assertTrue(savingState.isSaving)
+        assertEquals(1, repository.upsertCalls)
+
+        listOf(
+            TaskEditorEvent.UpdateQuickEntry("Draft B tomorrow"),
+            TaskEditorEvent.ParseQuickEntry,
+            TaskEditorEvent.UpdateTitle("Draft B"),
+            TaskEditorEvent.UpdateDescription("Description B"),
+            TaskEditorEvent.SelectPriority(TaskPriority.HIGH),
+            TaskEditorEvent.SelectCategory(99),
+            TaskEditorEvent.UpdateDueAt(100_000L),
+            TaskEditorEvent.UpdateReminderAt(80_000L),
+            TaskEditorEvent.SelectRecurrence(RecurrenceType.WEEKLY),
+            TaskEditorEvent.UpdateRecurrenceEndAt(200_000L),
+            TaskEditorEvent.AddSubtask,
+            TaskEditorEvent.RenameSubtask(subtaskIds[0], "Changed"),
+            TaskEditorEvent.ToggleSubtask(subtaskIds[0]),
+            TaskEditorEvent.MoveSubtask(subtaskIds[0], 1),
+            TaskEditorEvent.DeleteSubtask(subtaskIds[1])
+        ).forEach(viewModel::onEvent)
+
+        assertEquals(savingState, viewModel.uiState.value)
+        assertEquals(savedStateDuringSave, handle.snapshotValues())
+
+        saveGate.complete(Unit)
+        advanceUntilIdle()
+
+        val saved = requireNotNull(repository.lastUpsert)
+        assertEquals("Draft A", saved.title)
+        assertEquals("Description A", saved.description)
+        assertEquals(TaskPriority.LOW, saved.priority)
+        assertNull(saved.categoryId)
+        assertEquals(90_000L, saved.dueAt)
+        assertNull(saved.reminderAt)
+        assertEquals(RecurrenceType.NONE, saved.recurrence)
+        assertEquals(listOf("First", "Second"), saved.subtasks.map(Subtask::title))
     }
 
     @Test
@@ -882,6 +1192,9 @@ private fun SavedStateHandle.freshProcessSnapshot(): SavedStateHandle = SavedSta
     keys().associateWith { key -> get<Any?>(key) }
 )
 
+private fun SavedStateHandle.snapshotValues(): Map<String, Any?> =
+    keys().associateWith { key -> get<Any?>(key) }
+
 private class EditorNaturalLanguageEnvironment : NaturalLanguageEnvironment {
     var parserEnvironment = ParserEnvironment(
         language = ParserLanguage.ENGLISH,
@@ -949,14 +1262,24 @@ private class EditorPermissionChecker : ReminderPermissionChecker {
 
 private class EditorReminderScheduler : ReminderScheduler {
     var result = ReminderScheduleResult.EXACT
-    override suspend fun schedule(taskId: Int, triggerAt: Long) = result
+    val scheduledTriggers = mutableListOf<Long>()
+    override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+        scheduledTriggers += triggerAt
+        return result
+    }
     override suspend fun cancel(taskId: Int) = Unit
     override suspend fun reconcile() = Unit
 }
 
 private class EditorCategoryRepository : CategoryRepository {
     val categories = MutableStateFlow(emptyList<Category>())
-    override fun observeAll(): Flow<List<Category>> = categories
+    val observations = ArrayDeque<Flow<List<Category>>>()
+    var observeCalls = 0
+
+    override fun observeAll(): Flow<List<Category>> {
+        observeCalls += 1
+        return if (observations.isEmpty()) categories else observations.removeFirst()
+    }
     override suspend fun create(name: String, color: CategoryColor) = CategoryMutationResult.Success
     override suspend fun rename(id: Int, name: String) = CategoryMutationResult.Success
     override suspend fun recolor(id: Int, color: CategoryColor) = CategoryMutationResult.Success
@@ -972,6 +1295,7 @@ private class EditorTaskRepository : TaskRepository {
     var upsertCalls = 0
     var conditionalUpdateCalls = 0
     var lastExpectedVersion: TaskSnapshotVersion? = null
+    var upsertGate: CompletableDeferred<Unit>? = null
     private var nextId = 40
 
     fun emit(task: Task) {
@@ -988,6 +1312,7 @@ private class EditorTaskRepository : TaskRepository {
 
     override suspend fun upsert(task: Task): Int {
         upsertCalls += 1
+        upsertGate?.await()
         upsertFailure?.let { throw it }
         val id = task.id.takeIf { it != 0 } ?: nextId++
         val persisted = task.copy(id = id)

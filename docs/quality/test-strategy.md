@@ -35,19 +35,26 @@ future-version no-mutation behavior, reminder ordering/warnings, UDF busy state,
 Italian/English Compose semantics. Its normative contract is [documented here](../data-portability/backup-format-v1.md).
 
 Natural-Language Entry keeps grammar tests on the JVM with injected instants, zones,
-and category candidates. ViewModel tests prove atomic selective application and
-`SavedStateHandle` restoration. Compose tests cover localized semantics and 200% text,
-while connected journeys launch `MainActivity` and use production Navigation 3,
-TaskEditor, parser, Room repositories, `SaveTask`, and AlarmManager scheduling. The
-journey fixture seeds only deterministic category rows and restores locale, Room rows,
-nullable `sqlite_sequence` rows, and alarm state; it does not replace parser or
-persistence behavior. Its state snapshot precedes every mutation, preparation runs
-inside restoration `try/finally`, and a forced post-mutation setup failure proves exact
-row, sequence, and alarm restoration. Live alarm records are captured and re-queried
-through correlated `dumpsys alarm`/`dumpsys activity intents` evidence; restoration
-requires exact or fallback inexact scheduling success and asserts package, receiver,
-request code, trigger, and prior absence. Exact-alarm permission behavior and delivery
-remain manual platform checks.
+and category candidates. ViewModel tests prove atomic selective application,
+category-snapshot readiness/retry, Save-boundary reminder access, saving-draft
+freezing, cancellation propagation, and `SavedStateHandle` restoration. Compose tests
+cover localized semantics, category loading/error/retry states, saving controls, and
+200% text. Connected journeys launch `MainActivity` and use production Navigation 3,
+TaskEditor, parser, Room repositories, `SaveTask`, and AlarmManager scheduling. API 36
+coverage separately proves fresh notification denial/grant state and real
+exact-alarm-settings return followed by inexact fallback.
+
+The journey fixture seeds only deterministic category rows and restores locale, Room
+rows, nullable `sqlite_sequence` rows, and every package/component-owned reminder
+alarm, including orphan request codes; it does not replace parser or persistence
+behavior. Its state snapshot precedes every mutation, preparation runs inside
+restoration `try/finally`, and a forced post-mutation setup failure proves exact row,
+sequence, and alarm-set restoration without extras. Live alarm records are captured
+and re-queried through correlated `dumpsys alarm`/`dumpsys activity intents` evidence;
+restoration requires exact or fallback inexact scheduling success and asserts package,
+receiver, request code, and trigger. Platform notification-dialog interaction, alarm
+delivery, notification posting, exact-alarm grant, and vendor-specific timing remain
+manual/device checks.
 
 ## Local Gates
 

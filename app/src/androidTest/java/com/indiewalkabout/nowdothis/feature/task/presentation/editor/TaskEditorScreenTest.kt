@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.SemanticsMatcher
@@ -112,6 +113,7 @@ class TaskEditorScreenTest {
         setScreen(
             state = TaskEditorUiState(
                 isLoading = false,
+                categoryReadiness = CategoryReadiness.READY,
                 quickEntryInput = "Compra latte domani"
             ),
             onEvent = events::add
@@ -125,6 +127,80 @@ class TaskEditorScreenTest {
             ),
             events
         )
+    }
+
+    @Test
+    fun quickEntry_categoryReadinessDisablesParseAndExposesRetrySemantics() {
+        val events = mutableListOf<TaskEditorEvent>()
+        val input = "Task #Work"
+        setScreen(
+            state = TaskEditorUiState(
+                isLoading = false,
+                categoryReadiness = CategoryReadiness.LOADING,
+                quickEntryInput = input
+            ),
+            onEvent = events::add
+        )
+
+        composeRule.onNodeWithTag("quick-entry-parse").assertIsNotEnabled()
+        composeRule.onNodeWithTag("quick-entry-categories-loading")
+            .assertIsDisplayed()
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ContentDescription,
+                    listOf(context.getString(R.string.quick_entry_categories_loading))
+                )
+            )
+
+        setScreen(
+            state = TaskEditorUiState(
+                isLoading = false,
+                categoryReadiness = CategoryReadiness.ERROR,
+                quickEntryInput = input
+            ),
+            onEvent = events::add
+        )
+
+        composeRule.onNodeWithTag("quick-entry-parse").assertIsNotEnabled()
+        composeRule.onNodeWithTag("quick-entry-categories-error")
+            .assertTextEquals(context.getString(R.string.category_load_failed))
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.LiveRegion,
+                    LiveRegionMode.Polite
+                )
+            )
+        composeRule.onNodeWithTag("quick-entry-categories-retry")
+            .assertIsEnabled()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        assertEquals(listOf(TaskEditorEvent.RetryCategoryLoad), events)
+
+        setScreen(
+            state = TaskEditorUiState(
+                isLoading = false,
+                categoryReadiness = CategoryReadiness.READY,
+                quickEntryInput = input
+            )
+        )
+        composeRule.onNodeWithTag("quick-entry-parse").assertIsEnabled()
+        composeRule.onAllNodesWithTag("quick-entry-categories-error").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("quick-entry-categories-retry").assertCountEquals(0)
+    }
+
+    @Test
+    fun quickEntry_isDisabledWhileSaveOwnsTheDraft() {
+        setScreen(
+            state = TaskEditorUiState(
+                isLoading = false,
+                isSaving = true,
+                categoryReadiness = CategoryReadiness.READY,
+                quickEntryInput = "Task tomorrow"
+            )
+        )
+
+        composeRule.onNodeWithTag("quick-entry-input").assertIsNotEnabled()
+        composeRule.onNodeWithTag("quick-entry-parse").assertIsNotEnabled()
     }
 
     @Test
@@ -179,7 +255,13 @@ class TaskEditorScreenTest {
 
     @Test
     fun quickEntry_parseActionHasAtLeast48DpTarget() {
-        setScreen(state = TaskEditorUiState(isLoading = false, quickEntryInput = "Compra latte"))
+        setScreen(
+            state = TaskEditorUiState(
+                isLoading = false,
+                categoryReadiness = CategoryReadiness.READY,
+                quickEntryInput = "Compra latte"
+            )
+        )
 
         composeRule.onNodeWithTag("quick-entry-parse").assertHeightIsAtLeast(48.dp)
     }
@@ -370,6 +452,7 @@ class TaskEditorScreenTest {
                 )
             )
         composeRule.onNodeWithText(context.getString(R.string.task_editor_notification_denied))
+            .performScrollTo()
             .assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.task_editor_inexact_notice))
             .performScrollTo()

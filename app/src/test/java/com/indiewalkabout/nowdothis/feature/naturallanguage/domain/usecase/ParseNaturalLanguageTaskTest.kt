@@ -79,6 +79,66 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun english24HourInput_appliesDateAndRelativeReminderAndReconstructsTitle() {
+        val raw = "Deploy tomorrow at 18:45 remind 1h before"
+
+        val result = parse(raw, ParserLanguage.ENGLISH)
+
+        assertEquals("Deploy", result.draft.title)
+        assertEquals(epoch("2026-08-27T18:45:00+02:00"), result.draft.dueAt)
+        assertEquals(epoch("2026-08-27T17:45:00+02:00"), result.draft.reminderAt)
+        assertEquals(
+            listOf("tomorrow", "at 18:45", "remind 1h before"),
+            consumedText(raw, result.consumed)
+        )
+        assertTrue(result.issues.isEmpty())
+    }
+
+    @Test
+    fun english24HourAbsoluteReminder_isRecognizedAlongsideTwelveHourDueTime() {
+        val raw = "Deploy tomorrow at 6 pm remind today at 17:30"
+
+        val result = parse(raw, ParserLanguage.ENGLISH)
+
+        assertEquals("Deploy", result.draft.title)
+        assertEquals(epoch("2026-08-27T18:00:00+02:00"), result.draft.dueAt)
+        assertEquals(epoch("2026-08-26T17:30:00+02:00"), result.draft.reminderAt)
+        assertTrue(result.issues.isEmpty())
+    }
+
+    @Test
+    fun duplicateEnglishTwelveAndTwentyFourHourTimes_useLastValidOccurrence() {
+        val raw = "Deploy tomorrow at 6 pm at 20"
+
+        val result = parse(raw, ParserLanguage.ENGLISH)
+
+        assertEquals("Deploy", result.draft.title)
+        assertEquals(epoch("2026-08-27T20:00:00+02:00"), result.draft.dueAt)
+        assertEquals(
+            listOf(ParseIssue.DuplicateField(RecognizedField.DUE_DATE)),
+            result.issues
+        )
+    }
+
+    @Test
+    fun malformedEnglishTwentyFourHourAttempts_remainVisibleAndDoNotChangeDefaultTime() {
+        val malformed = listOf("at 24", "at 18:60", "at 18:3", "at 18 pm")
+
+        malformed.forEach { attempt ->
+            val raw = "Deploy tomorrow $attempt"
+            val result = parse(raw, ParserLanguage.ENGLISH)
+
+            assertEquals(raw, "Deploy $attempt", result.draft.title)
+            assertEquals(raw, epoch("2026-08-27T09:00:00+02:00"), result.draft.dueAt)
+            assertEquals(
+                raw,
+                listOf("tomorrow"),
+                consumedText(raw, result.consumed)
+            )
+        }
+    }
+
+    @Test
     fun allPriorityMarkers_mapByParserLanguage() {
         val cases = listOf(
             Triple(ParserLanguage.ITALIAN, "!alta", TaskPriority.HIGH),
@@ -136,6 +196,53 @@ class ParseNaturalLanguageTaskTest {
             assertEquals(case.raw, case.candidate.id, result.draft.categoryId)
             assertEquals(case.raw, "Task", result.draft.title)
             assertTrue(case.raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun categoryMatching_preservesDevanagariMarksAndNormalizesNbsp() {
+        val distinctRaw = "Task #कम"
+        val distinct = parse(
+            raw = distinctRaw,
+            language = ParserLanguage.ENGLISH,
+            categories = listOf(CategoryCandidate(41, "काम"))
+        )
+
+        assertNull(distinct.draft.categoryId)
+        assertEquals(distinctRaw, distinct.draft.title)
+        assertEquals(listOf(ParseIssue.UnknownCategory("#कम")), distinct.issues)
+
+        val spacedRaw = "Task #\"Progetti\u00a0Casa\""
+        val spaced = parse(
+            raw = spacedRaw,
+            language = ParserLanguage.ITALIAN,
+            categories = listOf(CategoryCandidate(42, "Progetti Casa"))
+        )
+
+        assertEquals(42, spaced.draft.categoryId)
+        assertEquals("Task", spaced.draft.title)
+        assertTrue(spaced.issues.isEmpty())
+    }
+
+    @Test
+    fun crossGrammarSlashTimeOverlaps_areRecoverableAndRemainVisible() {
+        val cases = listOf(
+            "Task alle 1/2",
+            "Task domani alle 1/2 promemoria 1h prima",
+            "Task promemoria alle 1/2"
+        )
+
+        cases.forEach { raw ->
+            val result = parse(raw, ParserLanguage.ITALIAN)
+
+            assertPairwiseDisjoint(raw, result.consumed)
+            assertTrue(raw, result.draft.title?.contains("alle 1/2") == true)
+            assertTrue(
+                raw,
+                result.consumed.none { match ->
+                    raw.substring(match.start, match.endExclusive).contains("1/2")
+                }
+            )
         }
     }
 

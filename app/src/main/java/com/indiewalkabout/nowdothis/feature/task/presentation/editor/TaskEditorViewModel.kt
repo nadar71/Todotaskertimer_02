@@ -30,6 +30,7 @@ import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,6 +65,8 @@ class TaskEditorViewModel @AssistedInject constructor(
     private var draftVersion: TaskSnapshotVersion? = restoreDraftVersion()?.takeIf { version ->
         version.id == _uiState.value.taskId
     }
+    private var pendingSave: PendingSave? = null
+    private var categoryObservationJob: Job? = null
 
     init {
         observeCategories()
@@ -78,6 +81,7 @@ class TaskEditorViewModel @AssistedInject constructor(
     }
 
     fun onEvent(event: TaskEditorEvent) {
+        if (_uiState.value.isSaving && event.changesDraft()) return
         when (event) {
             is TaskEditorEvent.UpdateQuickEntry -> {
                 if (_uiState.value.taskId == null) {
@@ -85,6 +89,7 @@ class TaskEditorViewModel @AssistedInject constructor(
                 }
             }
             TaskEditorEvent.ParseQuickEntry -> parseQuickEntry()
+            TaskEditorEvent.RetryCategoryLoad -> observeCategories()
             is TaskEditorEvent.UpdateTitle -> updateDraft {
                 it.copy(title = event.value, errors = it.errors.copy(title = null))
             }
@@ -106,11 +111,21 @@ class TaskEditorViewModel @AssistedInject constructor(
                 _uiState.update {
                     it.copy(notificationPermissionDenied = !event.granted)
                 }
+                if (pendingSave != null) {
+                    if (event.granted) {
+                        continueSaveAfterNotificationAccess()
+                    } else {
+                        pendingSave = null
+                        _uiState.update { it.copy(isSaving = false) }
+                    }
+                }
             }
             TaskEditorEvent.RefreshExactAlarmAccess -> {
+                val exactAlarmRequired = permissionChecker.needsExactAlarmAccess()
                 _uiState.update {
-                    it.copy(exactTimingUnavailable = permissionChecker.needsExactAlarmAccess())
+                    it.copy(exactTimingUnavailable = exactAlarmRequired)
                 }
+                if (pendingSave != null) performPendingSave()
             }
             is TaskEditorEvent.SelectRecurrence -> updateDraft {
                 it.copy(
@@ -148,7 +163,7 @@ class TaskEditorViewModel @AssistedInject constructor(
 
     private fun parseQuickEntry() {
         val state = _uiState.value
-        if (state.taskId != null) return
+        if (state.taskId != null || state.categoryReadiness != CategoryReadiness.READY) return
         val result = try {
             val environment = naturalLanguageEnvironment.snapshot(state.categories)
             parseNaturalLanguageTask(
@@ -182,14 +197,22 @@ class TaskEditorViewModel @AssistedInject constructor(
     }
 
     private fun observeCategories() {
-        viewModelScope.launch {
+        categoryObservationJob?.cancel()
+        _uiState.update { it.copy(categoryReadiness = CategoryReadiness.LOADING) }
+        categoryObservationJob = viewModelScope.launch {
             categoryRepository.observeAll()
                 .catch { error ->
                     if (error is CancellationException) throw error
+                    _uiState.update { it.copy(categoryReadiness = CategoryReadiness.ERROR) }
                     effectChannel.send(TaskEditorEffect.ShowMessage(R.string.task_editor_load_failed))
                 }
                 .collect { categories ->
-                    _uiState.update { it.copy(categories = categories) }
+                    _uiState.update {
+                        it.copy(
+                            categories = categories,
+                            categoryReadiness = CategoryReadiness.READY
+                        )
+                    }
                 }
         }
     }
@@ -207,7 +230,10 @@ class TaskEditorViewModel @AssistedInject constructor(
                 loadedTask = task
                 if (!restoredDraft) {
                     draftVersion = task.snapshotVersion()
-                    _uiState.value = task.toEditorState(_uiState.value.categories)
+                    val current = _uiState.value
+                    _uiState.value = task.toEditorState(current.categories).copy(
+                        categoryReadiness = current.categoryReadiness
+                    )
                     persistDraft(_uiState.value)
                 } else {
                     _uiState.update { it.copy(isLoading = false, taskId = task.id) }
@@ -223,7 +249,6 @@ class TaskEditorViewModel @AssistedInject constructor(
     }
 
     private fun updateReminder(value: Long?) {
-        val wasDisabled = _uiState.value.reminderAt == null
         updateDraft {
             it.copy(
                 reminderAt = value,
@@ -236,18 +261,6 @@ class TaskEditorViewModel @AssistedInject constructor(
                 exactTimingUnavailable = it.exactTimingUnavailable && value != null,
                 errors = it.errors.copy(reminder = null)
             )
-        }
-        if (wasDisabled && value != null) {
-            viewModelScope.launch {
-                if (permissionChecker.needsNotificationPermission()) {
-                    effectChannel.send(TaskEditorEffect.RequestNotificationPermission)
-                }
-                val exactAlarmRequired = permissionChecker.needsExactAlarmAccess()
-                _uiState.update { it.copy(exactTimingUnavailable = exactAlarmRequired) }
-                if (exactAlarmRequired) {
-                    effectChannel.send(TaskEditorEffect.RequestExactAlarmAccess)
-                }
-            }
         }
     }
 
@@ -297,10 +310,48 @@ class TaskEditorViewModel @AssistedInject constructor(
     private fun save() {
         if (_uiState.value.isSaving) return
         _uiState.update { it.copy(isSaving = true, errors = TaskEditorErrors()) }
+        val save = PendingSave(
+            task = _uiState.value.toTask(loadedTask),
+            expectedVersion = draftVersion
+        )
+        if (save.task.reminderAt == null) {
+            performSave(save)
+            return
+        }
+
+        pendingSave = save
         viewModelScope.launch {
-            val draft = _uiState.value.toTask(loadedTask)
+            if (permissionChecker.needsNotificationPermission()) {
+                effectChannel.send(TaskEditorEffect.RequestNotificationPermission)
+            } else {
+                _uiState.update { it.copy(notificationPermissionDenied = false) }
+                continueSaveAfterNotificationAccess()
+            }
+        }
+    }
+
+    private fun continueSaveAfterNotificationAccess() {
+        viewModelScope.launch {
+            val exactAlarmRequired = permissionChecker.needsExactAlarmAccess()
+            _uiState.update { it.copy(exactTimingUnavailable = exactAlarmRequired) }
+            if (exactAlarmRequired) {
+                effectChannel.send(TaskEditorEffect.RequestExactAlarmAccess)
+            } else {
+                performPendingSave()
+            }
+        }
+    }
+
+    private fun performPendingSave() {
+        val save = pendingSave ?: return
+        pendingSave = null
+        performSave(save)
+    }
+
+    private fun performSave(save: PendingSave) {
+        viewModelScope.launch {
             try {
-                when (val result = saveTask(draft, draftVersion)) {
+                when (val result = saveTask(save.task, save.expectedVersion)) {
                     is SaveTaskResult.Invalid -> {
                         _uiState.update {
                             it.copy(isSaving = false, errors = result.errors.toEditorErrors())
@@ -312,7 +363,7 @@ class TaskEditorViewModel @AssistedInject constructor(
                             TaskEditorEffect.ShowMessage(R.string.task_editor_save_failed)
                         )
                     }
-                    is SaveTaskResult.Saved -> handleSaved(draft, result)
+                    is SaveTaskResult.Saved -> handleSaved(save.task, result)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -322,6 +373,11 @@ class TaskEditorViewModel @AssistedInject constructor(
             }
         }
     }
+
+    private data class PendingSave(
+        val task: Task,
+        val expectedVersion: TaskSnapshotVersion?
+    )
 
     private suspend fun handleSaved(task: Task, result: SaveTaskResult.Saved) {
         loadedTask = task.copy(
@@ -621,4 +677,27 @@ private fun List<TaskValidationError>.toEditorErrors(): TaskEditorErrors {
         }
     }
     return mapped
+}
+
+private fun TaskEditorEvent.changesDraft(): Boolean = when (this) {
+    is TaskEditorEvent.UpdateQuickEntry,
+    TaskEditorEvent.ParseQuickEntry,
+    is TaskEditorEvent.UpdateTitle,
+    is TaskEditorEvent.UpdateDescription,
+    is TaskEditorEvent.SelectPriority,
+    is TaskEditorEvent.SelectCategory,
+    is TaskEditorEvent.UpdateDueAt,
+    is TaskEditorEvent.UpdateReminderAt,
+    is TaskEditorEvent.SelectRecurrence,
+    is TaskEditorEvent.UpdateRecurrenceEndAt,
+    TaskEditorEvent.AddSubtask,
+    is TaskEditorEvent.RenameSubtask,
+    is TaskEditorEvent.ToggleSubtask,
+    is TaskEditorEvent.MoveSubtask,
+    is TaskEditorEvent.DeleteSubtask -> true
+
+    is TaskEditorEvent.NotificationPermissionResult,
+    TaskEditorEvent.RefreshExactAlarmAccess,
+    TaskEditorEvent.RetryCategoryLoad,
+    TaskEditorEvent.Save -> false
 }
