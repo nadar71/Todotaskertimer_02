@@ -1,11 +1,18 @@
 package com.indiewalkabout.nowdothis.feature.task.presentation.editor
 
-import android.content.res.Configuration
+import android.app.LocaleManager
+import android.os.LocaleList
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
@@ -21,6 +28,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -35,8 +43,8 @@ import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryColor
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
-import java.util.Locale
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,13 +115,13 @@ class TaskEditorScreenTest {
     }
 
     @Test
-    fun quickEntry_stringsResolveInItalianAndEnglish() {
-        assertEquals("Inserimento rapido", quickEntryString("it", "quick_entry_label"))
-        assertEquals("Quick entry", quickEntryString("en", "quick_entry_label"))
-        assertEquals("Analizza", quickEntryString("it", "quick_entry_parse"))
-        assertEquals("Parse", quickEntryString("en", "quick_entry_parse"))
-        assertEquals("Categoria sconosciuta.", quickEntryString("it", "quick_entry_issue_unknown_category"))
-        assertEquals("Unknown category.", quickEntryString("en", "quick_entry_issue_unknown_category"))
+    fun quickEntry_rendersItalianAndEnglishInProductionCompose() {
+        withApplicationLocale("it") {
+            assertLocalizedQuickEntry()
+        }
+        withApplicationLocale("en") {
+            assertLocalizedQuickEntry()
+        }
     }
 
     @Test
@@ -125,7 +133,7 @@ class TaskEditorScreenTest {
                 context.getString(R.string.quick_entry_field_due_date)
             ).joinToString()
         )
-        val issue = context.getStringByName("quick_entry_issue_unknown_category")
+        val issue = context.getString(R.string.quick_entry_issue_unknown_category)
         setScreen(
             state = TaskEditorUiState(
                 isLoading = false,
@@ -163,21 +171,25 @@ class TaskEditorScreenTest {
     }
 
     @Test
-    fun quickEntry_largeTextWrapsFeedbackWithoutClippingOrOverlap() {
-        setScreen(
-            state = TaskEditorUiState(
-                isLoading = false,
-                quickEntryInput = "Compra latte domani alle 18 con una nota molto lunga",
-                quickEntrySummary = QuickEntrySummaryField.entries,
-                quickEntryIssues = QuickEntryIssue.entries
-            ),
-            fontScale = 2f
-        )
+    fun quickEntry_largeTextFitsWithinOneSurfaceWithoutOverlapOrClipping() {
+        withApplicationLocale("it") {
+            setQuickEntrySectionSurface(fontScale = 2f)
 
-        composeRule.onNodeWithTag("quick-entry-input").assertIsDisplayed()
-        composeRule.onNodeWithTag("quick-entry-parse").assertIsDisplayed()
-        composeRule.onNodeWithTag("quick-entry-summary").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithTag("quick-entry-issues").performScrollTo().assertIsDisplayed()
+            val root = bounds("quick-entry-layout-root")
+            val section = bounds("quick-entry-section")
+            val input = bounds("quick-entry-input")
+            val parse = bounds("quick-entry-parse")
+            val summary = bounds("quick-entry-summary")
+            val issues = bounds("quick-entry-issues")
+
+            assertContains(root, section)
+            listOf(input, parse, summary, issues).forEach { child ->
+                assertContains(section, child)
+            }
+            assertOrdered(input, parse)
+            assertOrdered(parse, summary)
+            assertOrdered(summary, issues)
+        }
     }
 
     @Test
@@ -373,17 +385,113 @@ class TaskEditorScreenTest {
         composeRule.waitForIdle()
     }
 
-    private fun quickEntryString(language: String, name: String): String {
-        val configuration = Configuration(context.resources.configuration).apply {
-            setLocale(Locale.forLanguageTag(language))
+    private fun assertLocalizedQuickEntry() {
+        val activity = composeRule.activity
+        val label = activity.getString(R.string.quick_entry_label)
+        val hint = activity.getString(R.string.quick_entry_hint)
+        val parse = activity.getString(R.string.quick_entry_parse)
+        val summary = activity.getString(
+            R.string.quick_entry_summary,
+            QuickEntrySummaryField.entries.joinToString { field ->
+                activity.getString(field.stringRes())
+            }
+        )
+        val issue = activity.getString(R.string.quick_entry_issue_duplicate_field)
+        setQuickEntrySectionSurface(fontScale = 1f)
+        composeRule.onNodeWithTag("quick-entry-input").performClick()
+
+        val root = bounds("quick-entry-layout-root")
+        val labels = composeRule.onAllNodesWithText(label).fetchSemanticsNodes()
+        assertEquals(2, labels.size)
+        labels.forEach { labelNode -> assertContains(root, labelNode.boundsInRoot) }
+        composeRule.onNodeWithText(hint).assertIsDisplayed()
+        composeRule.onNodeWithText(parse).assertIsDisplayed()
+        composeRule.onNodeWithTag("quick-entry-summary")
+            .assertTextEquals(summary)
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag("quick-entry-issues")
+            .assertTextEquals(issue)
+            .assertIsDisplayed()
+    }
+
+    private fun setQuickEntrySectionSurface(fontScale: Float) {
+        composeRule.runOnUiThread {
+            TaskEditorTestContent.content = {
+                val density = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density.density, fontScale)
+                ) {
+                    MaterialTheme {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp)
+                                .testTag("quick-entry-layout-root")
+                        ) {
+                            QuickEntrySection(
+                                input = "",
+                                summary = QuickEntrySummaryField.entries,
+                                issues = listOf(QuickEntryIssue.DUPLICATE_FIELD),
+                                onEvent = {},
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
         }
-        return context.createConfigurationContext(configuration).getStringByName(name)
+        composeRule.waitForIdle()
+    }
+
+    private fun withApplicationLocale(languageTags: String, block: () -> Unit) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val localeManager = instrumentation.targetContext.applicationContext
+            .getSystemService(LocaleManager::class.java)
+        val previousLocales = localeManager.applicationLocales
+        try {
+            localeManager.applicationLocales = LocaleList.forLanguageTags(languageTags)
+            instrumentation.waitForIdleSync()
+            composeRule.activityRule.scenario.recreate()
+            composeRule.waitForIdle()
+            block()
+        } finally {
+            localeManager.applicationLocales = previousLocales
+            instrumentation.waitForIdleSync()
+            composeRule.activityRule.scenario.recreate()
+            composeRule.waitForIdle()
+        }
+    }
+
+    private fun bounds(tag: String) = composeRule.onAllNodesWithTag(tag)
+        .fetchSemanticsNodes()
+        .single()
+        .boundsInRoot
+
+    private fun assertContains(
+        parent: androidx.compose.ui.geometry.Rect,
+        child: androidx.compose.ui.geometry.Rect
+    ) {
+        assertTrue(child.left >= parent.left)
+        assertTrue(child.top >= parent.top)
+        assertTrue(child.right <= parent.right)
+        assertTrue(child.bottom <= parent.bottom)
+    }
+
+    private fun assertOrdered(
+        upper: androidx.compose.ui.geometry.Rect,
+        lower: androidx.compose.ui.geometry.Rect
+    ) {
+        assertTrue(upper.bottom <= lower.top)
     }
 }
 
-private fun android.content.Context.getStringByName(name: String, vararg formatArgs: Any): String {
-    val resourceId = resources.getIdentifier(name, "string", packageName)
-    return getString(resourceId, *formatArgs)
+private fun QuickEntrySummaryField.stringRes(): Int = when (this) {
+    QuickEntrySummaryField.TITLE -> R.string.quick_entry_field_title
+    QuickEntrySummaryField.DUE_DATE -> R.string.quick_entry_field_due_date
+    QuickEntrySummaryField.REMINDER -> R.string.quick_entry_field_reminder
+    QuickEntrySummaryField.PRIORITY -> R.string.quick_entry_field_priority
+    QuickEntrySummaryField.CATEGORY -> R.string.quick_entry_field_category
+    QuickEntrySummaryField.RECURRENCE -> R.string.quick_entry_field_recurrence
 }
 
 private fun category(id: Int, name: String) = Category(
