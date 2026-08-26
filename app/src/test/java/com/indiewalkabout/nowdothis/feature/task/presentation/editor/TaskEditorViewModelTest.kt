@@ -385,6 +385,42 @@ class TaskEditorViewModelTest {
     }
 
     @Test
+    fun androidEnvironment_classifiesExactNormalizedPrimaryLanguageSubtag() {
+        val context = EditorLocaleContext(RuntimeEnvironment.getApplication(), "enx-PY")
+        var defaultCategoryName = "Lavoro"
+        val environment = AndroidNaturalLanguageEnvironment(
+            context = context,
+            clock = AppClock { 10L },
+            zoneIdProvider = ZoneIdProvider { ROME },
+            defaultCategoryNameResolver = DefaultCategoryNameResolver { defaultCategoryName }
+        )
+        val defaultCategory = category(
+            id = 1,
+            customName = null,
+            defaultKey = DefaultCategoryKey.WORK
+        )
+        val cases = listOf(
+            Triple("enx-PY", ParserLanguage.ITALIAN, "Lavoro"),
+            Triple("EN-lATN-us", ParserLanguage.ENGLISH, "Work"),
+            Triple("IT-lATN-it", ParserLanguage.ITALIAN, "Lavoro")
+        )
+
+        cases.forEach { (languageTags, expectedLanguage, expectedCategoryName) ->
+            context.languageTags = languageTags
+            defaultCategoryName = expectedCategoryName
+
+            val snapshot = environment.snapshot(listOf(defaultCategory))
+
+            assertEquals(languageTags, expectedLanguage, snapshot.language)
+            assertEquals(
+                languageTags,
+                listOf(CategoryCandidate(1, expectedCategoryName)),
+                snapshot.categories
+            )
+        }
+    }
+
+    @Test
     fun androidEnvironment_emptyLocaleTagsUseItalianParserAndCategoryNames() {
         val context = EditorEmptyLocaleContext(RuntimeEnvironment.getApplication())
         val environment = AndroidNaturalLanguageEnvironment(

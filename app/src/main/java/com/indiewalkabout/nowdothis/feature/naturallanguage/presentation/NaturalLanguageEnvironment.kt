@@ -10,6 +10,7 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.Categor
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParserLanguage
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.ZoneId
+import java.util.Locale
 import javax.inject.Inject
 
 data class ParserEnvironment(
@@ -44,24 +45,21 @@ class AndroidNaturalLanguageEnvironment @Inject constructor(
     )
 
     private fun activeLanguage(): ParserLanguage {
-        val languageTag = ConfigurationCompat
+        val primaryLanguage = ConfigurationCompat
             .getLocales(context.resources.configuration)
             .get(0)
-            ?.toLanguageTag()
+            ?.language
+            ?.lowercase(Locale.ROOT)
             .orEmpty()
-        return when {
-            languageTag.startsWith(ITALIAN_LANGUAGE_TAG, ignoreCase = true) -> {
-                ParserLanguage.ITALIAN
-            }
-            languageTag.startsWith(ENGLISH_LANGUAGE_TAG, ignoreCase = true) -> {
-                ParserLanguage.ENGLISH
-            }
+        return when (primaryLanguage) {
+            ENGLISH_LANGUAGE -> ParserLanguage.ENGLISH
+            ITALIAN_LANGUAGE -> ParserLanguage.ITALIAN
             else -> ParserLanguage.ITALIAN
         }
     }
 
     private companion object {
-        const val ITALIAN_LANGUAGE_TAG = "it"
-        const val ENGLISH_LANGUAGE_TAG = "en"
+        const val ITALIAN_LANGUAGE = "it"
+        const val ENGLISH_LANGUAGE = "en"
     }
 }
