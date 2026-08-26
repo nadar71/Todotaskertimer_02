@@ -652,6 +652,7 @@ private fun ParseIssue.toQuickEntryIssue(): QuickEntryIssue = when (this) {
     is ParseIssue.UnknownCategory -> QuickEntryIssue.UNKNOWN_CATEGORY
     is ParseIssue.AmbiguousCategory -> QuickEntryIssue.AMBIGUOUS_CATEGORY
     is ParseIssue.DuplicateField -> QuickEntryIssue.DUPLICATE_FIELD
+    ParseIssue.AmbiguousRecurrence -> QuickEntryIssue.AMBIGUOUS_RECURRENCE
     ParseIssue.RelativeReminderWithoutDueDate -> {
         QuickEntryIssue.RELATIVE_REMINDER_WITHOUT_DUE_DATE
     }
@@ -691,14 +692,11 @@ private fun TaskEditorUiState.applyQuickEntryResult(
         } else {
             categoryId
         },
-        recurrence = if (RecognizedField.RECURRENCE in recognized && draft.recurrence != null) {
-            RecurrenceEditorState.fromLegacyName(
-                draft.recurrence.name,
-                recurrence.endAt,
-                parsedDueAt?.let {
-                    java.time.Instant.ofEpochMilli(it).atZone(parserZoneId).dayOfMonth
-                } ?: 1
-            )
+        recurrence = if (
+            RecognizedField.RECURRENCE in recognized && draft.recurrenceRule != null
+        ) {
+            val parsedRule = draft.recurrenceRule.anchoredTo(parsedDueAt, parserZoneId)
+            RecurrenceEditorState.fromRule(parsedRule, recurrence.endAt)
         } else {
             recurrence
         },
@@ -706,6 +704,17 @@ private fun TaskEditorUiState.applyQuickEntryResult(
         quickEntryIssues = issues
     )
 }
+
+private fun RecurrenceRule.anchoredTo(dueAt: Long?, zoneId: ZoneId): RecurrenceRule =
+    if (this is RecurrenceRule.MonthlyDay && dueAt != null) {
+        copy(
+            anchorDay = java.time.Instant.ofEpochMilli(dueAt)
+                .atZone(zoneId)
+                .dayOfMonth
+        )
+    } else {
+        this
+    }
 
 private fun Task.toEditorState(categories: List<com.indiewalkabout.nowdothis.feature.category.domain.model.Category>) =
     TaskEditorUiState(

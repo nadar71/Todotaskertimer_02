@@ -6,7 +6,6 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParserL
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.RecognizedField
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.SourceMatch
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.immutableListSnapshot
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import java.util.Locale
 
@@ -14,7 +13,6 @@ import java.util.Locale
 data class AttributeParse private constructor(
     val priority: TaskPriority?,
     val categoryId: Int?,
-    val recurrence: RecurrenceType?,
     private val matchSnapshot: List<SourceMatch>,
     private val issueSnapshot: List<ParseIssue>
 ) {
@@ -28,13 +26,11 @@ data class AttributeParse private constructor(
         operator fun invoke(
             priority: TaskPriority?,
             categoryId: Int?,
-            recurrence: RecurrenceType?,
             matches: List<SourceMatch>,
             issues: List<ParseIssue>
         ): AttributeParse = AttributeParse(
             priority = priority,
             categoryId = categoryId,
-            recurrence = recurrence,
             matchSnapshot = immutableListSnapshot(matches),
             issueSnapshot = immutableListSnapshot(issues)
         )
@@ -57,24 +53,19 @@ class AttributeParser {
         val categoryResult = parseCategories(input)
         val priorities = parsePriorities(input)
             .rejectIntersecting(lowerGrammarExclusions)
-        val recurrences = parseRecurrences(input)
-            .rejectIntersecting(lowerGrammarExclusions)
         val issues = buildList {
             addAll(categoryResult.issues)
             addDuplicateIssue(priorities, RecognizedField.PRIORITY)
             addDuplicateIssue(categoryResult.candidates, RecognizedField.CATEGORY)
-            addDuplicateIssue(recurrences, RecognizedField.RECURRENCE)
         }
         val matches = buildList {
             addAll(priorities.map(AttributeCandidate<TaskPriority>::match))
             addAll(categoryResult.candidates.map(AttributeCandidate<Int>::match))
-            addAll(recurrences.map(AttributeCandidate<RecurrenceType>::match))
         }.sortedBy(SourceMatch::start)
 
         return AttributeParse(
             priority = priorities.lastOrNull()?.value,
             categoryId = categoryResult.candidates.lastOrNull()?.value,
-            recurrence = recurrences.lastOrNull()?.value,
             matches = matches,
             issues = issues
         )
@@ -108,24 +99,6 @@ class AttributeParser {
             )
         }.toList()
     }
-
-    private fun parseRecurrences(
-        input: NaturalLanguageInput
-    ): List<AttributeCandidate<RecurrenceType>> = recurrencePattern(input.language)
-        .findAll(input.rawText)
-        .map { match ->
-            val recurrence = when (match.groupValues[1].lowercase(Locale.ROOT)) {
-                "giorno", "day" -> RecurrenceType.DAILY
-                "settimana", "week" -> RecurrenceType.WEEKLY
-                "mese", "month" -> RecurrenceType.MONTHLY
-                else -> error("Unexpected recurrence token")
-            }
-            AttributeCandidate(
-                value = recurrence,
-                match = match.toSourceMatch(RecognizedField.RECURRENCE)
-            )
-        }
-        .toList()
 
     private fun parseCategories(input: NaturalLanguageInput): CategoryParse {
         val candidates = mutableListOf<AttributeCandidate<Int>>()
@@ -195,17 +168,10 @@ class AttributeParser {
         )
         val ITALIAN_PRIORITY_PATTERN = markerPattern("alta|media|bassa")
         val ENGLISH_PRIORITY_PATTERN = markerPattern("high|medium|low")
-        val ITALIAN_RECURRENCE_PATTERN = phrasePattern("ogni\\s+(giorno|settimana|mese)")
-        val ENGLISH_RECURRENCE_PATTERN = phrasePattern("every\\s+(day|week|month)")
 
         fun priorityPattern(language: ParserLanguage): Regex = when (language) {
             ParserLanguage.ITALIAN -> ITALIAN_PRIORITY_PATTERN
             ParserLanguage.ENGLISH -> ENGLISH_PRIORITY_PATTERN
-        }
-
-        fun recurrencePattern(language: ParserLanguage): Regex = when (language) {
-            ParserLanguage.ITALIAN -> ITALIAN_RECURRENCE_PATTERN
-            ParserLanguage.ENGLISH -> ENGLISH_RECURRENCE_PATTERN
         }
 
         fun markerPattern(values: String): Regex = Regex(
@@ -213,9 +179,5 @@ class AttributeParser {
             RegexOption.IGNORE_CASE
         )
 
-        fun phrasePattern(value: String): Regex = Regex(
-            "(?<![\\p{L}\\p{N}_])$value(?![\\p{L}\\p{N}_])",
-            RegexOption.IGNORE_CASE
-        )
     }
 }

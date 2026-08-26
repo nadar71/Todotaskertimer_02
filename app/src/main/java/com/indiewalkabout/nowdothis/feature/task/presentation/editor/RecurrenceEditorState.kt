@@ -245,34 +245,6 @@ data class RecurrenceEditorState private constructor(
             )
         }
 
-        fun fromLegacyName(
-            name: String,
-            endAt: Long?,
-            monthlyAnchorDay: Int = 1
-        ): RecurrenceEditorState = when (name) {
-            "DAILY" -> newRecurrenceEditorState(
-                kind = RecurrenceEditorKind.INTERVAL,
-                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
-                intervalUnit = RecurrenceEditorIntervalUnit.DAYS,
-                intervalEvery = 1,
-                endAt = endAt
-            )
-            "WEEKLY" -> newRecurrenceEditorState(
-                kind = RecurrenceEditorKind.INTERVAL,
-                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
-                intervalUnit = RecurrenceEditorIntervalUnit.WEEKS,
-                intervalEvery = 1,
-                endAt = endAt
-            )
-            "MONTHLY" -> newRecurrenceEditorState(
-                kind = RecurrenceEditorKind.MONTHLY_DAY,
-                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
-                monthlyEvery = 1,
-                monthlyAnchorDay = monthlyAnchorDay,
-                endAt = endAt
-            )
-            else -> newRecurrenceEditorState()
-        }
     }
 }
 

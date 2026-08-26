@@ -1,6 +1,7 @@
 package com.indiewalkabout.nowdothis.feature.naturallanguage.di
 
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.AttributeParser
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.RecurrenceParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.ReminderParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TemporalParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
@@ -29,13 +30,18 @@ object NaturalLanguageModule {
     fun provideReminderParser(): ReminderParser = ReminderParser()
 
     @Provides
+    fun provideRecurrenceParser(): RecurrenceParser = RecurrenceParser()
+
+    @Provides
     fun provideParseNaturalLanguageTask(
         temporalParser: TemporalParser,
         attributeParser: AttributeParser,
-        reminderParser: ReminderParser
+        reminderParser: ReminderParser,
+        recurrenceParser: RecurrenceParser
     ): ParseNaturalLanguageTask = ParseNaturalLanguageTask(
         temporalParser = temporalParser,
         attributeParser = attributeParser,
-        reminderParser = reminderParser
+        reminderParser = reminderParser,
+        recurrenceParser = recurrenceParser
     )
 }

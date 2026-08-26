@@ -150,6 +150,7 @@
     <string name="quick_entry_issue_unknown_category">Unknown category.</string>
     <string name="quick_entry_issue_ambiguous_category">Ambiguous category.</string>
     <string name="quick_entry_issue_duplicate_field">Repeated values: the last valid value was used.</string>
+    <string name="quick_entry_issue_ambiguous_recurrence">Incomplete or ambiguous recurrence.</string>
     <string name="quick_entry_issue_relative_reminder_without_due_date">A relative reminder needs a due date.</string>
     <string name="quick_entry_issue_parse_failed">Could not parse the task. Try again.</string>
     <string name="task_editor_title_label">Title</string>

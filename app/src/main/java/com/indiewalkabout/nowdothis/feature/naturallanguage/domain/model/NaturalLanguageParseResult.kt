@@ -1,6 +1,6 @@
 package com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model
 
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 
 data class ParsedTaskDraft(
@@ -9,7 +9,7 @@ data class ParsedTaskDraft(
     val reminderAt: Long?,
     val priority: TaskPriority?,
     val categoryId: Int?,
-    val recurrence: RecurrenceType?
+    val recurrenceRule: RecurrenceRule?
 )
 
 enum class RecognizedField {
@@ -29,6 +29,8 @@ sealed interface ParseIssue {
     data class AmbiguousCategory(val marker: String) : ParseIssue
 
     data class DuplicateField(val field: RecognizedField) : ParseIssue
+
+    data object AmbiguousRecurrence : ParseIssue
 
     data object RelativeReminderWithoutDueDate : ParseIssue
 }

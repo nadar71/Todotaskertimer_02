@@ -160,6 +160,9 @@ private fun QuickEntryIssue.message(): String = stringResource(
         QuickEntryIssue.UNKNOWN_CATEGORY -> R.string.quick_entry_issue_unknown_category
         QuickEntryIssue.AMBIGUOUS_CATEGORY -> R.string.quick_entry_issue_ambiguous_category
         QuickEntryIssue.DUPLICATE_FIELD -> R.string.quick_entry_issue_duplicate_field
+        QuickEntryIssue.AMBIGUOUS_RECURRENCE -> {
+            R.string.quick_entry_issue_ambiguous_recurrence
+        }
         QuickEntryIssue.RELATIVE_REMINDER_WITHOUT_DUE_DATE -> {
             R.string.quick_entry_issue_relative_reminder_without_due_date
         }

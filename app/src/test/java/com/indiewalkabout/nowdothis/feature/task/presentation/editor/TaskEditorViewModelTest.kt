@@ -20,6 +20,7 @@ import com.indiewalkabout.nowdothis.feature.category.presentation.DefaultCategor
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.CategoryCandidate
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParserLanguage
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.AttributeParser
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.RecurrenceParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.ReminderParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TemporalParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
@@ -100,7 +101,8 @@ class TaskEditorViewModelTest {
     private val naturalLanguageParser = ParseNaturalLanguageTask(
         temporalParser = TemporalParser(),
         attributeParser = AttributeParser(),
-        reminderParser = ReminderParser()
+        reminderParser = ReminderParser(),
+        recurrenceParser = RecurrenceParser()
     )
 
     @Before
@@ -299,6 +301,95 @@ class TaskEditorViewModelTest {
             TimeZone.setDefault(previousTimeZone)
         }
     }
+
+    @Test
+    fun advancedQuickEntry_mergesTypedRuleIntoCorrectableDraftAndKeepsEnd() =
+        runTest(dispatcher) {
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ITALIAN,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+            )
+            viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(2_000_000_000_000L))
+            viewModel.onEvent(
+                TaskEditorEvent.UpdateQuickEntry(
+                    "Palestra ogni lunedì e venerdì in base alla data di completamento"
+                )
+            )
+
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            val state = viewModel.uiState.value
+            assertEquals("Palestra", state.title)
+            assertEquals(RecurrenceEditorKind.SELECTED_WEEKDAYS, state.recurrence.kind)
+            assertEquals(RecurrenceEditorBasis.COMPLETION_DATE, state.recurrence.basis)
+            assertEquals(
+                setOf(RecurrenceEditorWeekday.MONDAY, RecurrenceEditorWeekday.FRIDAY),
+                state.recurrence.selectedWeekdays
+            )
+            assertEquals(2_000_000_000_000L, state.recurrence.endAt)
+            assertTrue(state.quickEntryIssues.isEmpty())
+        }
+
+    @Test
+    fun monthlyQuickEntryWithoutParsedDate_usesCurrentEditorDueInParserZone() =
+        runTest(dispatcher) {
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ENGLISH,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(TaskEditorEvent.UpdateDueAt(epoch("2026-08-31T00:30:00+02:00")))
+            viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("Rent every 3 months"))
+
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            val recurrence = viewModel.uiState.value.recurrence
+            assertEquals(RecurrenceEditorKind.MONTHLY_DAY, recurrence.kind)
+            assertEquals(3, recurrence.monthlyEvery)
+            assertEquals(31, recurrence.monthlyAnchorDay)
+            assertEquals(RecurrenceEditorBasis.SCHEDULED_DATE, recurrence.basis)
+        }
+
+    @Test
+    fun ambiguousQuickEntry_preservesExactTitleAndExistingCorrectableRule() =
+        runTest(dispatcher) {
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ITALIAN,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+            )
+            viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceIntervalEvery(4))
+            val previousRecurrence = viewModel.uiState.value.recurrence
+            val raw = "Report quinto lunedi del mese"
+            viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry(raw))
+
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            val state = viewModel.uiState.value
+            assertEquals(raw, state.title)
+            assertEquals(previousRecurrence, state.recurrence)
+            assertEquals(
+                listOf(QuickEntryIssue.AMBIGUOUS_RECURRENCE),
+                state.quickEntryIssues
+            )
+            assertEquals(listOf(QuickEntrySummaryField.TITLE), state.quickEntrySummary)
+        }
 
     @Test
     fun quickEntryReparse_replacesOnlyRecognizedFields() = runTest(dispatcher) {

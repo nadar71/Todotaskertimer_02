@@ -7,10 +7,15 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParserL
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.RecognizedField
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.SourceMatch
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.AttributeParser
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.RecurrenceParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.ReminderParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TemporalParser
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.MonthlyOrdinalValue
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
+import java.time.DayOfWeek
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
@@ -25,7 +30,8 @@ class ParseNaturalLanguageTaskTest {
     private val parser = ParseNaturalLanguageTask(
         temporalParser = TemporalParser(),
         attributeParser = AttributeParser(),
-        reminderParser = ReminderParser()
+        reminderParser = ReminderParser(),
+        recurrenceParser = RecurrenceParser()
     )
 
     @Test
@@ -43,7 +49,10 @@ class ParseNaturalLanguageTaskTest {
         assertEquals(epoch("2026-08-27T17:00:00+02:00"), result.draft.reminderAt)
         assertEquals(TaskPriority.HIGH, result.draft.priority)
         assertEquals(7, result.draft.categoryId)
-        assertEquals(RecurrenceType.WEEKLY, result.draft.recurrence)
+        assertEquals(
+            RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE),
+            result.draft.recurrenceRule
+        )
         assertEquals(RecognizedField.entries.toSet(), result.recognized)
         assertTrue(result.issues.isEmpty())
         assertEquals(
@@ -74,7 +83,10 @@ class ParseNaturalLanguageTaskTest {
         assertEquals(epoch("2026-08-27T17:30:00+02:00"), result.draft.reminderAt)
         assertEquals(TaskPriority.HIGH, result.draft.priority)
         assertEquals(8, result.draft.categoryId)
-        assertEquals(RecurrenceType.WEEKLY, result.draft.recurrence)
+        assertEquals(
+            RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE),
+            result.draft.recurrenceRule
+        )
         assertTrue(result.issues.isEmpty())
     }
 
@@ -180,20 +192,131 @@ class ParseNaturalLanguageTaskTest {
     @Test
     fun allRecurrencePhrases_mapByParserLanguage() {
         val cases = listOf(
-            Triple(ParserLanguage.ITALIAN, "ogni giorno", RecurrenceType.DAILY),
-            Triple(ParserLanguage.ITALIAN, "ogni settimana", RecurrenceType.WEEKLY),
-            Triple(ParserLanguage.ITALIAN, "ogni mese", RecurrenceType.MONTHLY),
-            Triple(ParserLanguage.ENGLISH, "every day", RecurrenceType.DAILY),
-            Triple(ParserLanguage.ENGLISH, "every week", RecurrenceType.WEEKLY),
-            Triple(ParserLanguage.ENGLISH, "every month", RecurrenceType.MONTHLY)
+            Triple(
+                ParserLanguage.ITALIAN,
+                "ogni giorno",
+                RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ITALIAN,
+                "ogni settimana",
+                RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ITALIAN,
+                "ogni mese",
+                RecurrenceRule.MonthlyDay(26, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ENGLISH,
+                "every day",
+                RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ENGLISH,
+                "every week",
+                RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ENGLISH,
+                "every month",
+                RecurrenceRule.MonthlyDay(26, 1, RecurrenceBasis.SCHEDULED_DATE)
+            )
         )
 
         cases.forEach { (language, phrase, recurrence) ->
             val result = parse("Task $phrase", language)
 
-            assertEquals(phrase, recurrence, result.draft.recurrence)
+            assertEquals(phrase, recurrence, result.draft.recurrenceRule)
             assertEquals(phrase, "Task", result.draft.title)
         }
+    }
+
+    @Test
+    fun advancedRecurrencePhrases_flowIntoTypedDraftAndExactTitle() {
+        val cases = listOf(
+            AdvancedRecurrenceCase(
+                ParserLanguage.ENGLISH,
+                "Plan every 2 weeks",
+                "Plan",
+                RecurrenceRule.Interval(
+                    IntervalUnit.WEEKS,
+                    2,
+                    RecurrenceBasis.COMPLETION_DATE
+                )
+            ),
+            AdvancedRecurrenceCase(
+                ParserLanguage.ITALIAN,
+                "Palestra ogni lunedi e venerdi",
+                "Palestra",
+                RecurrenceRule.SelectedWeekdays(
+                    setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY),
+                    RecurrenceBasis.SCHEDULED_DATE
+                )
+            ),
+            AdvancedRecurrenceCase(
+                ParserLanguage.ENGLISH,
+                "Report last Friday of every month",
+                "Report",
+                RecurrenceRule.MonthlyOrdinal(
+                    MonthlyOrdinalValue.LAST,
+                    DayOfWeek.FRIDAY,
+                    1,
+                    RecurrenceBasis.SCHEDULED_DATE
+                )
+            ),
+            AdvancedRecurrenceCase(
+                ParserLanguage.ITALIAN,
+                "Report ultimo venerdì del mese",
+                "Report",
+                RecurrenceRule.MonthlyOrdinal(
+                    MonthlyOrdinalValue.LAST,
+                    DayOfWeek.FRIDAY,
+                    1,
+                    RecurrenceBasis.SCHEDULED_DATE
+                )
+            )
+        )
+
+        cases.forEach { case ->
+            val result = parse(case.raw, case.language)
+
+            assertEquals(case.raw, case.title, result.draft.title)
+            assertEquals(case.raw, case.rule, result.draft.recurrenceRule)
+            assertEquals(
+                case.raw,
+                setOf(RecognizedField.TITLE, RecognizedField.RECURRENCE),
+                result.recognized
+            )
+            assertTrue(case.raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun monthlyIntervalUsesParsedDueInInputZoneAsAnchor() {
+        val result = parse(
+            "Rent tomorrow at 00:30 every 3 months",
+            ParserLanguage.ENGLISH
+        )
+
+        assertEquals("Rent", result.draft.title)
+        assertEquals(
+            RecurrenceRule.MonthlyDay(27, 3, RecurrenceBasis.SCHEDULED_DATE),
+            result.draft.recurrenceRule
+        )
+    }
+
+    @Test
+    fun malformedOrdinalPreservesWholeTitleAndShieldsInnerTime() {
+        val raw = "Report fifth Monday of every month at 5 pm"
+
+        val result = parse(raw, ParserLanguage.ENGLISH)
+
+        assertEquals(raw, result.draft.title)
+        assertNull(result.draft.dueAt)
+        assertNull(result.draft.recurrenceRule)
+        assertEquals(listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        assertTrue(result.consumed.isEmpty())
     }
 
     @Test
@@ -771,9 +894,17 @@ class ParseNaturalLanguageTaskTest {
             assertNull(raw, result.draft.reminderAt)
             assertNull(raw, result.draft.priority)
             assertNull(raw, result.draft.categoryId)
-            assertNull(raw, result.draft.recurrence)
+            assertNull(raw, result.draft.recurrenceRule)
             assertTrue(raw, result.consumed.isEmpty())
-            assertTrue(raw, result.issues.isEmpty())
+            assertEquals(
+                raw,
+                if (raw == "Task every weekdays every weeks") {
+                    listOf(ParseIssue.AmbiguousRecurrence)
+                } else {
+                    emptyList<ParseIssue>()
+                },
+                result.issues
+            )
         }
     }
 
@@ -887,7 +1018,7 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
-    fun validDuplicates_areAllConsumedAndLastExplicitValuesWin() {
+    fun duplicateRecurrencePreservesBothPhrasesAndAppliesNoRule() {
         val raw = "Task !low !high #Home #Work every day every month tomorrow today " +
             "remind 1h before remind 30m before"
 
@@ -900,10 +1031,10 @@ class ParseNaturalLanguageTaskTest {
             )
         )
 
-        assertEquals("Task", result.draft.title)
+        assertEquals("Task every day every month", result.draft.title)
         assertEquals(TaskPriority.HIGH, result.draft.priority)
         assertEquals(2, result.draft.categoryId)
-        assertEquals(RecurrenceType.MONTHLY, result.draft.recurrence)
+        assertNull(result.draft.recurrenceRule)
         assertEquals(epoch("2026-08-26T09:00:00+02:00"), result.draft.dueAt)
         assertEquals(epoch("2026-08-26T08:30:00+02:00"), result.draft.reminderAt)
         assertEquals(
@@ -912,16 +1043,16 @@ class ParseNaturalLanguageTaskTest {
                 ParseIssue.DuplicateField(RecognizedField.REMINDER),
                 ParseIssue.DuplicateField(RecognizedField.PRIORITY),
                 ParseIssue.DuplicateField(RecognizedField.CATEGORY),
-                ParseIssue.DuplicateField(RecognizedField.RECURRENCE)
+                ParseIssue.AmbiguousRecurrence
             ).toSet(),
             result.issues.toSet()
         )
-        assertEquals(10, result.consumed.size)
+        assertEquals(8, result.consumed.size)
         assertEquals(2, result.consumed.count { it.field == RecognizedField.DUE_DATE })
         assertEquals(2, result.consumed.count { it.field == RecognizedField.REMINDER })
         assertEquals(2, result.consumed.count { it.field == RecognizedField.PRIORITY })
         assertEquals(2, result.consumed.count { it.field == RecognizedField.CATEGORY })
-        assertEquals(2, result.consumed.count { it.field == RecognizedField.RECURRENCE })
+        assertEquals(0, result.consumed.count { it.field == RecognizedField.RECURRENCE })
     }
 
     @Test
@@ -934,11 +1065,14 @@ class ParseNaturalLanguageTaskTest {
             categories = listOf(CategoryCandidate(1, "Home"))
         )
 
-        assertEquals("Task !urgent #Unknown every year", result.draft.title)
+        assertEquals("Task !urgent #Unknown every year every week", result.draft.title)
         assertEquals(TaskPriority.HIGH, result.draft.priority)
         assertEquals(1, result.draft.categoryId)
-        assertEquals(RecurrenceType.WEEKLY, result.draft.recurrence)
-        assertEquals(listOf(ParseIssue.UnknownCategory("#Unknown")), result.issues)
+        assertNull(result.draft.recurrenceRule)
+        assertEquals(
+            listOf(ParseIssue.UnknownCategory("#Unknown"), ParseIssue.AmbiguousRecurrence),
+            result.issues
+        )
     }
 
     @Test
@@ -950,7 +1084,7 @@ class ParseNaturalLanguageTaskTest {
         assertNull(result.draft.reminderAt)
         assertNull(result.draft.priority)
         assertNull(result.draft.categoryId)
-        assertNull(result.draft.recurrence)
+        assertNull(result.draft.recurrenceRule)
         assertTrue(result.recognized.isEmpty())
         assertTrue(result.consumed.isEmpty())
         assertEquals(listOf(ParseIssue.EmptyInput), result.issues)
@@ -985,7 +1119,7 @@ class ParseNaturalLanguageTaskTest {
         assertNull(message, result.draft.reminderAt)
         assertNull(message, result.draft.priority)
         assertNull(message, result.draft.categoryId)
-        assertNull(message, result.draft.recurrence)
+        assertNull(message, result.draft.recurrenceRule)
         assertEquals(message, setOf(RecognizedField.TITLE), result.recognized)
     }
 
@@ -998,6 +1132,13 @@ class ParseNaturalLanguageTaskTest {
     private data class CategoryCase(
         val raw: String,
         val candidate: CategoryCandidate
+    )
+
+    private data class AdvancedRecurrenceCase(
+        val language: ParserLanguage,
+        val raw: String,
+        val title: String,
+        val rule: RecurrenceRule
     )
 
     private data class AbsoluteReminderCase(

@@ -20888,12 +20888,6 @@ Lcom/indiewalkabout/nowdothis/feature/task/di/TaskUseCaseModule_ProvideRestoreDe
 SPLcom/indiewalkabout/nowdothis/feature/task/di/TaskUseCaseModule_ProvideRestoreDeletedTaskFactory;->provideRestoreDeletedTask(Lcom/indiewalkabout/nowdothis/feature/task/domain/repository/TaskRepository;Lcom/indiewalkabout/nowdothis/feature/task/domain/repository/ReminderScheduler;Lcom/indiewalkabout/nowdothis/core/time/AppClock;)Lcom/indiewalkabout/nowdothis/feature/task/domain/usecase/RestoreDeletedTask;
 Lcom/indiewalkabout/nowdothis/feature/task/di/TaskUseCaseModule_ProvideSaveTaskFactory;
 SPLcom/indiewalkabout/nowdothis/feature/task/di/TaskUseCaseModule_ProvideSaveTaskFactory;->provideSaveTask(Lcom/indiewalkabout/nowdothis/feature/task/domain/repository/TaskRepository;Lcom/indiewalkabout/nowdothis/feature/task/domain/repository/ReminderScheduler;Lcom/indiewalkabout/nowdothis/core/time/AppClock;)Lcom/indiewalkabout/nowdothis/feature/task/domain/usecase/SaveTask;
-Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;
-SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;->$values()[Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;
-SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;-><clinit>()V
-SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;-><init>(Ljava/lang/String;I)V
-SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;->valueOf(Ljava/lang/String;)Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;
-SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;->values()[Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;
 Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;->$values()[Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;-><clinit>()V
@@ -20903,12 +20897,10 @@ SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;->value
 Lcom/indiewalkabout/nowdothis/feature/task/domain/model/Subtask;
 Lcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;-><clinit>()V
-SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;-><init>(ILjava/lang/String;Ljava/lang/String;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Ljava/lang/Integer;ZLjava/lang/Long;Ljava/lang/Long;Ljava/lang/Long;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Ljava/lang/Long;Ljava/lang/String;JJLjava/util/List;)V
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;->getCategoryId()Ljava/lang/Integer;
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;->getDueAt()Ljava/lang/Long;
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;->getId()I
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;->getPriority()Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;
-SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;->getRecurrence()Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;->getReminderStatus()Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;->getSubtasks()Ljava/util/List;
 SPLcom/indiewalkabout/nowdothis/feature/task/domain/model/Task;->getTitle()Ljava/lang/String;
@@ -21140,7 +21132,6 @@ SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScree
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->$r8$lambda$DgQgoEUJ7k7DEa2oeV3QkYcSCgw(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->$r8$lambda$M4wimWqG7TpAvYGbDdNnvF7Sh3k(Ljava/lang/Long;Landroid/content/Context;Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->$r8$lambda$Mz3BTlcXgHLX_Dm2krl8mS-TLWc(Ljava/util/List;Ljava/lang/Integer;Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->$r8$lambda$NVZC3J4V0KNy8GAHudy_y-I7K-o(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->$r8$lambda$ObF53BCH7tNLuphypSTDwE20_0U(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Lkotlin/jvm/functions/Function1;Landroidx/compose/material3/SingleChoiceSegmentedButtonRowScope;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->$r8$lambda$RAT2tIziNqpIXCR6jz1zomGOtoY(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/lazy/LazyItemScope;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->$r8$lambda$ST08HioLv1ZEO9urwgtwMa8taKk(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
@@ -21176,8 +21167,6 @@ SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScree
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->PriorityControl$lambda$0(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Lkotlin/jvm/functions/Function1;Landroidx/compose/material3/SingleChoiceSegmentedButtonRowScope;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->PriorityControl(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->RecurrenceControl$lambda$1(Landroidx/compose/runtime/MutableState;)Z
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->RecurrenceControl$lambda$3$1(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->RecurrenceControl(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorFieldError;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->TaskEditorScreen$lambda$0$0(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->TaskEditorScreen$lambda$0$1(Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->TaskEditorScreen$lambda$0$2(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/layout/RowScope;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
@@ -21186,7 +21175,6 @@ SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScree
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->TaskEditorScreen$lambda$2(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;Lkotlin/jvm/functions/Function1;Landroidx/compose/foundation/layout/PaddingValues;Landroidx/compose/runtime/Composer;I)Lkotlin/Unit;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->TaskEditorScreen(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;Landroidx/compose/material3/SnackbarHostState;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->priorityLabel(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Landroidx/compose/runtime/Composer;I)Ljava/lang/String;
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->recurrenceLabel(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Landroidx/compose/runtime/Composer;I)Ljava/lang/String;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt;->reminderError(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorFieldError;Landroidx/compose/runtime/Composer;I)Ljava/lang/String;
 Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda0;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda0;-><init>(Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Ljava/lang/String;II)V
@@ -21263,14 +21251,12 @@ SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScree
 Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda59;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda59;-><init>(Landroidx/compose/runtime/MutableState;)V
 Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda60;
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda60;-><init>(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;)V
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda60;->invoke(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
 Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda61;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda61;-><init>(Landroidx/compose/runtime/MutableState;)V
 Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda62;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda62;-><init>(Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/MutableState;)V
 Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda63;
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda63;-><init>(Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorFieldError;Lkotlin/jvm/functions/Function1;I)V
 Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda65;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda65;-><init>(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;Lkotlin/jvm/functions/Function1;)V
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorScreenKt$$ExternalSyntheticLambda65;->invoke(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
@@ -21294,10 +21280,6 @@ SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorSubta
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorSubtask$Companion;->serializer()Lkotlinx/serialization/KSerializer;
 Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;-><clinit>()V
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;-><init>(ZZLjava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Long;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;ZZLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Ljava/lang/Long;Ljava/util/List;Ljava/util/List;Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorErrors;)V
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;-><init>(ZZLjava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Long;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;ZZLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Ljava/lang/Long;Ljava/util/List;Ljava/util/List;Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorErrors;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->copy$default(Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;ZZLjava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Long;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;ZZLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Ljava/lang/Long;Ljava/util/List;Ljava/util/List;Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorErrors;ILjava/lang/Object;)Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->copy(ZZLjava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;Ljava/lang/Integer;Ljava/lang/Long;Ljava/lang/Long;Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;ZZLcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;Ljava/lang/Long;Ljava/util/List;Ljava/util/List;Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorErrors;)Lcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->equals(Ljava/lang/Object;)Z
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getCategories()Ljava/util/List;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getCategoryId()Ljava/lang/Integer;
@@ -21307,7 +21289,6 @@ SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiSta
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getExactTimingUnavailable()Z
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getNotificationPermissionDenied()Z
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getPriority()Lcom/indiewalkabout/nowdothis/feature/task/domain/model/TaskPriority;
-SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getRecurrence()Lcom/indiewalkabout/nowdothis/feature/task/domain/model/RecurrenceType;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getRecurrenceEndAt()Ljava/lang/Long;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getReminderAt()Ljava/lang/Long;
 SPLcom/indiewalkabout/nowdothis/feature/task/presentation/editor/TaskEditorUiState;->getReminderStatus()Lcom/indiewalkabout/nowdothis/feature/task/domain/model/ReminderStatus;

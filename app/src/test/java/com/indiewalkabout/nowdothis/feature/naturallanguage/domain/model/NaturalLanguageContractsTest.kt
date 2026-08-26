@@ -36,7 +36,7 @@ class NaturalLanguageContractsTest {
                 reminderAt = null,
                 priority = null,
                 categoryId = null,
-                recurrence = null
+                recurrenceRule = null
             ),
             recognized = recognized,
             issues = issues,

@@ -19,7 +19,6 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionRe
 import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
@@ -76,7 +75,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 priority = TaskPriority.MEDIUM,
                 dueAt = currentDueAt,
                 reminderAt = 1_500,
-                recurrenceRule = RecurrenceType.DAILY.toRule(),
+                recurrenceRule = DAILY_RULE,
                 createdAt = 0,
                 updatedAt = 0
             )
@@ -114,7 +113,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Original daily task",
                 dueAt = originalDueAt,
                 reminderAt = 1_500L,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = DAILY_RULE
             )
         )
         val coordinatedRepository = CoordinatedCompletionRepository(repository)
@@ -127,7 +126,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Saved weekly task",
                 dueAt = savedDueAt,
                 reminderAt = 19_000L,
-                recurrenceRule = RecurrenceType.WEEKLY.toRule(),
+                recurrenceRule = WEEKLY_RULE,
                 updatedAt = 500L
             )
         )
@@ -139,7 +138,7 @@ class QuickCaptureCompletionConcurrencyTest {
         assertEquals("Saved weekly task", requireNotNull(result.nextOccurrence).title)
         assertEquals(expectedNextDueAt, result.nextOccurrence.dueAt)
         assertEquals(expectedNextDueAt - 1_000L, result.nextOccurrence.reminderAt)
-        assertEquals(RecurrenceType.WEEKLY.toRule(), result.nextOccurrence.recurrenceRule)
+        assertEquals(WEEKLY_RULE, result.nextOccurrence.recurrenceRule)
     }
 
     @Test
@@ -149,7 +148,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Original recurring task",
                 dueAt = 2_000L,
                 reminderAt = 1_500L,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = DAILY_RULE
             )
         )
         val coordinatedRepository = CoordinatedCompletionRepository(repository)
@@ -201,7 +200,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Canonical recurring task",
                 dueAt = 2_000L,
                 reminderAt = 1_500L,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = DAILY_RULE
             ).copy(reminderAt = null)
         )
         val staleDraft = requireNotNull(repository.getTask(currentId)).copy(
@@ -239,7 +238,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Recurring with reminder",
                 dueAt = 2_000L,
                 reminderAt = 1_500L,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = DAILY_RULE
             )
         )
         val coordinatedRepository = CoordinatedPostCompletionRepository(repository)
@@ -265,7 +264,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Recurring with reminder",
                 dueAt = 2_000L,
                 reminderAt = 1_500L,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = DAILY_RULE
             ).copy(seriesId = "same-token-series")
         )
         val coordinatedRepository = CoordinatedPostCompletionRepository(repository)
@@ -304,7 +303,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Recurring with reminder",
                 dueAt = 2_000L,
                 reminderAt = 1_500L,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = DAILY_RULE
             )
         )
         val scheduler = CoordinatedScheduleReminderScheduler()
@@ -328,7 +327,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Recurring with reminder",
                 dueAt = 2_000L,
                 reminderAt = 1_500L,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = DAILY_RULE
             )
         )
         val restoredReminderAt = 25_000L
@@ -358,7 +357,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Recurring with reminder",
                 dueAt = 2_000L,
                 reminderAt = 1_500L,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = DAILY_RULE
             )
         )
         val ownerAReminderAt = 25_000L
@@ -456,14 +455,14 @@ class QuickCaptureCompletionConcurrencyTest {
         title: String,
         dueAt: Long,
         reminderAt: Long,
-        recurrence: RecurrenceType
+        recurrenceRule: RecurrenceRule
     ) = Task(
         title = title,
         description = "Description",
         priority = TaskPriority.MEDIUM,
         dueAt = dueAt,
         reminderAt = reminderAt,
-        recurrenceRule = recurrence.toRule(),
+        recurrenceRule = recurrenceRule,
         createdAt = 0,
         updatedAt = 0
     )
@@ -639,17 +638,14 @@ class QuickCaptureCompletionConcurrencyTest {
     }
 }
 
-private fun RecurrenceType.toRule(): RecurrenceRule = when (this) {
-    RecurrenceType.NONE -> RecurrenceRule.None
-    RecurrenceType.DAILY -> RecurrenceRule.Interval(
-        IntervalUnit.DAYS,
-        1,
-        RecurrenceBasis.SCHEDULED_DATE
-    )
-    RecurrenceType.WEEKLY -> RecurrenceRule.Interval(
-        IntervalUnit.WEEKS,
-        1,
-        RecurrenceBasis.SCHEDULED_DATE
-    )
-    RecurrenceType.MONTHLY -> error("Monthly recurrence is not used by this test fixture")
-}
+private val DAILY_RULE = RecurrenceRule.Interval(
+    IntervalUnit.DAYS,
+    1,
+    RecurrenceBasis.SCHEDULED_DATE
+)
+
+private val WEEKLY_RULE = RecurrenceRule.Interval(
+    IntervalUnit.WEEKS,
+    1,
+    RecurrenceBasis.SCHEDULED_DATE
+)
