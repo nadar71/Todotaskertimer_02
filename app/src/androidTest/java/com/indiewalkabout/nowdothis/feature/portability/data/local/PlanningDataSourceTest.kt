@@ -58,7 +58,7 @@ class PlanningDataSourceTest {
         assertEquals(
             PlanningBackup(
                 format = "now-do-this-backup",
-                version = 1,
+                version = 2,
                 createdAtEpochMillis = 9_999L,
                 categories = listOf(
                     PlanningCategory(10, "Home", null, "GREEN", 0, 100L),
@@ -268,7 +268,7 @@ class PlanningDataSourceTest {
 
     private fun originalBackup(createdAtEpochMillis: Long) = PlanningBackup(
         format = "now-do-this-backup",
-        version = 1,
+        version = 2,
         createdAtEpochMillis = createdAtEpochMillis,
         categories = listOf(
             PlanningCategory(10, "Home", null, "GREEN", 0, 100L),
@@ -319,7 +319,7 @@ class PlanningDataSourceTest {
 
     private fun replacementBackup() = PlanningBackup(
         format = "now-do-this-backup",
-        version = 1,
+        version = 2,
         createdAtEpochMillis = 5L,
         categories = listOf(PlanningCategory(30, "Restored", null, "RED", 0, 500L)),
         tasks = listOf(

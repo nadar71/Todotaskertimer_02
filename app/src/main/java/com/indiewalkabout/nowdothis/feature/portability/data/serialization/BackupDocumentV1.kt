@@ -11,8 +11,6 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlinx.serialization.Serializable
 
-internal class UnrepresentableV1Recurrence(message: String) : IllegalArgumentException(message)
-
 @Serializable
 internal data class BackupDocumentV1(
     val format: String,
@@ -30,20 +28,8 @@ internal data class BackupDocumentV1(
     )
 
     companion object {
-        const val FORMAT = "now-do-this-backup"
+        const val FORMAT = PlanningBackup.FORMAT
         const val VERSION = 1
-
-        fun fromDomain(backup: PlanningBackup): BackupDocumentV1 = BackupDocumentV1(
-            format = FORMAT,
-            version = VERSION,
-            createdAtEpochMillis = backup.createdAtEpochMillis,
-            categories = backup.categories
-                .sortedWith(compareBy(PlanningCategory::position, PlanningCategory::id))
-                .map(BackupCategoryV1::fromDomain),
-            tasks = backup.tasks
-                .sortedBy(PlanningTask::id)
-                .map(BackupTaskV1::fromDomain)
-        )
     }
 }
 
@@ -57,17 +43,6 @@ internal data class BackupCategoryV1(
     val createdAt: Long
 ) {
     fun toDomain(): PlanningCategory = PlanningCategory(id, customName, defaultKey, colorToken, position, createdAt)
-
-    companion object {
-        fun fromDomain(category: PlanningCategory) = BackupCategoryV1(
-            id = category.id,
-            customName = category.customName,
-            defaultKey = category.defaultKey,
-            colorToken = category.colorToken,
-            position = category.position,
-            createdAt = category.createdAt
-        )
-    }
 }
 
 @Serializable
@@ -107,29 +82,6 @@ internal data class BackupTaskV1(
         updatedAt = updatedAt,
         subtasks = subtasks.map(BackupSubtaskV1::toDomain)
     )
-
-    companion object {
-        fun fromDomain(task: PlanningTask) = BackupTaskV1(
-            id = task.id,
-            title = task.title,
-            description = task.description,
-            priority = task.priority,
-            categoryId = task.categoryId,
-            isCompleted = task.isCompleted,
-            completedAt = task.completedAt,
-            dueAt = task.dueAt,
-            reminderAt = task.reminderAt,
-            reminderStatus = task.reminderStatus,
-            recurrence = task.recurrenceRule.toV1Token(task.dueAt),
-            recurrenceEndAt = task.recurrenceEndAt,
-            seriesId = task.seriesId,
-            createdAt = task.createdAt,
-            updatedAt = task.updatedAt,
-            subtasks = task.subtasks
-                .sortedWith(compareBy(PlanningSubtask::position, PlanningSubtask::id))
-                .map(BackupSubtaskV1::fromDomain)
-        )
-    }
 }
 
 @Serializable
@@ -142,17 +94,6 @@ internal data class BackupSubtaskV1(
     val position: Int
 ) {
     fun toDomain(): PlanningSubtask = PlanningSubtask(id, taskId, title, isCompleted, completedAt, position)
-
-    companion object {
-        fun fromDomain(subtask: PlanningSubtask) = BackupSubtaskV1(
-            id = subtask.id,
-            taskId = subtask.taskId,
-            title = subtask.title,
-            isCompleted = subtask.isCompleted,
-            completedAt = subtask.completedAt,
-            position = subtask.position
-        )
-    }
 }
 
 private fun String.toRecurrenceRule(dueAt: Long?): RecurrenceRule = when (this) {
@@ -175,39 +116,5 @@ private fun String.toRecurrenceRule(dueAt: Long?): RecurrenceRule = when (this) 
     else -> throw IllegalArgumentException("Unsupported v1 recurrence: $this")
 }
 
-private fun RecurrenceRule.toV1Token(dueAt: Long?): String = when (this) {
-    RecurrenceRule.None -> "NONE"
-    is RecurrenceRule.Interval -> when {
-        unit == IntervalUnit.DAYS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
-            "DAILY"
-        }
-        unit == IntervalUnit.WEEKS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
-            "WEEKLY"
-        }
-        else -> unrepresentableInV1()
-    }
-    is RecurrenceRule.MonthlyDay -> {
-        val dueDay = Instant.ofEpochMilli(requireLegacyDueAt(dueAt, "MONTHLY"))
-            .atZone(ZoneId.systemDefault())
-            .dayOfMonth
-        if (
-            everyMonths == 1 &&
-            basis == RecurrenceBasis.SCHEDULED_DATE &&
-            anchorDay == dueDay
-        ) {
-            "MONTHLY"
-        } else {
-            unrepresentableInV1()
-        }
-    }
-    is RecurrenceRule.SelectedWeekdays,
-    is RecurrenceRule.MonthlyOrdinal -> unrepresentableInV1()
-}
-
 private fun requireLegacyDueAt(dueAt: Long?, recurrence: String): Long =
     requireNotNull(dueAt) { "V1 $recurrence recurrence requires dueAt" }
-
-private fun RecurrenceRule.unrepresentableInV1(): Nothing =
-    throw UnrepresentableV1Recurrence(
-        "Backup v1 cannot represent recurrence rule ${this::class.simpleName}"
-    )

@@ -12,6 +12,7 @@ import com.indiewalkabout.nowdothis.feature.portability.data.repository.Document
 import com.indiewalkabout.nowdothis.feature.portability.data.repository.OfflinePortabilityRepository
 import com.indiewalkabout.nowdothis.feature.portability.data.serialization.BackupCodec
 import com.indiewalkabout.nowdothis.feature.portability.data.serialization.BackupValidator
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.BackupCandidate
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.BackupSummary
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.DocumentReference
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.InvalidBackup
@@ -20,17 +21,19 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCat
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSubtask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PortabilityResult
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.RestoreFailed
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.UnsupportedFutureVersion
 import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.CreateBackup
 import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.InspectBackup
 import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.RestoreBackup
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
-import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.MonthlyOrdinalValue
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
+import java.time.DayOfWeek
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -61,7 +64,7 @@ class DataPortabilityJourneyTest {
             .build()
         dataSource = PlanningDataSource(database)
         documents = MemoryDocumentGateway()
-        reminders = RecordingReminderScheduler()
+        reminders = RecordingReminderScheduler(database)
         val repository = OfflinePortabilityRepository(
             planningDataStore = dataSource,
             documentGateway = documents,
@@ -91,8 +94,11 @@ class DataPortabilityJourneyTest {
         )
         val exportedBytes = documents.requireBytes(backupReference)
         assertTrue(exportedBytes.isNotEmpty())
+        assertTrue(exportedBytes.decodeToString().contains("\"version\":2"))
+        assertTrue(exportedBytes.decodeToString().contains("\"kind\":\"MONTHLY_ORDINAL\""))
 
         replaceWithMutation()
+        reminders.liveAlarms[MUTATED_TASK_ID] = 9_500L
         assertEquals(setOf(MUTATED_TASK_ID), database.taskDao().getAllTaskIds().toSet())
 
         val inspection = inspectBackup(backupReference)
@@ -107,6 +113,7 @@ class DataPortabilityJourneyTest {
         assertEquals(original, dataSource.snapshot(BACKUP_CREATED_AT))
         assertEquals(listOf(MUTATED_TASK_ID), reminders.cancelledTaskIds)
         assertEquals(1, reminders.reconcileCalls)
+        assertEquals(mapOf(101 to 1_786_896_400_000L), reminders.liveAlarms)
 
         val reExportReference = DocumentReference("memory://restored-backup")
         createBackup(reExportReference)
@@ -140,15 +147,48 @@ class DataPortabilityJourneyTest {
         createBackup(backupReference)
         documents.transform(backupReference) { bytes ->
             bytes.decodeToString()
-                .replace("\"version\":1", "\"version\":2")
+                .replace("\"version\":2", "\"version\":3")
                 .encodeToByteArray()
         }
 
         assertEquals(
-            PortabilityResult.Failed(UnsupportedFutureVersion(2)),
+            PortabilityResult.Failed(UnsupportedFutureVersion(3)),
             inspectBackup(backupReference)
         )
         assertEquals(before, dataSource.snapshot(BACKUP_CREATED_AT))
+        assertTrue(reminders.cancelledTaskIds.isEmpty())
+        assertEquals(0, reminders.reconcileCalls)
+    }
+
+    @Test
+    fun replaceAllFailure_rollsBackRowsSequencesAndLeavesAlarmsUntouched() = runTest {
+        seedPlanningGraph()
+        val beforeRows = dataSource.snapshot(BACKUP_CREATED_AT)
+        val beforeSequences = readSequences()
+        reminders.liveAlarms[101] = 1_786_896_400_000L
+        val beforeAlarms = reminders.liveAlarms.toMap()
+        val invalidTask = expectedBackup().tasks.first().copy(
+            id = 9_101,
+            categoryId = 941,
+            subtasks = listOf(
+                PlanningSubtask(9_501, 9_101, "First duplicate", false, null, 0),
+                PlanningSubtask(9_501, 9_101, "Second duplicate", false, null, 1)
+            )
+        )
+        val invalidBackup = expectedBackup().copy(
+            categories = listOf(PlanningCategory(941, "Invalid", null, "BLUE", 0, 1L)),
+            tasks = listOf(invalidTask)
+        )
+        val candidate = BackupCandidate(
+            backup = invalidBackup,
+            summary = BackupSummary(BACKUP_CREATED_AT, 1, 1, 0, 2)
+        )
+
+        assertEquals(PortabilityResult.Failed(RestoreFailed), restoreBackup(candidate))
+
+        assertEquals(beforeRows, dataSource.snapshot(BACKUP_CREATED_AT))
+        assertEquals(beforeSequences, readSequences())
+        assertEquals(beforeAlarms, reminders.liveAlarms)
         assertTrue(reminders.cancelledTaskIds.isEmpty())
         assertEquals(0, reminders.reconcileCalls)
     }
@@ -187,11 +227,12 @@ class DataPortabilityJourneyTest {
                     dueAt = 1_786_900_000_000L,
                     reminderAt = 1_786_896_400_000L,
                     reminderStatus = "SCHEDULED",
-                    recurrence = "WEEKLY",
-                    recurrenceKind = "INTERVAL",
-                    recurrenceIntervalUnit = "WEEKS",
-                    recurrenceIntervalCount = 1,
-                    recurrenceBasis = "SCHEDULED_DATE",
+                    recurrence = "MONTHLY_ORDINAL",
+                    recurrenceKind = "MONTHLY_ORDINAL",
+                    recurrenceIntervalCount = 3,
+                    recurrenceBasis = "COMPLETION_DATE",
+                    recurrenceOrdinal = "LAST",
+                    recurrenceOrdinalWeekday = "FRIDAY",
                     recurrenceEndAt = 1_789_000_000_000L,
                     seriesId = "series-launch",
                     createdAt = 1_786_000_000_000L,
@@ -244,7 +285,7 @@ class DataPortabilityJourneyTest {
 
     private fun expectedBackup() = PlanningBackup(
         format = "now-do-this-backup",
-        version = 1,
+        version = 2,
         createdAtEpochMillis = BACKUP_CREATED_AT,
         categories = listOf(
             PlanningCategory(41, "Clients", null, "PINK", 0, 1_000L),
@@ -262,10 +303,11 @@ class DataPortabilityJourneyTest {
                 dueAt = 1_786_900_000_000L,
                 reminderAt = 1_786_896_400_000L,
                 reminderStatus = "SCHEDULED",
-                recurrenceRule = RecurrenceRule.Interval(
-                    IntervalUnit.WEEKS,
-                    1,
-                    RecurrenceBasis.SCHEDULED_DATE
+                recurrenceRule = RecurrenceRule.MonthlyOrdinal(
+                    ordinal = MonthlyOrdinalValue.LAST,
+                    weekday = DayOfWeek.FRIDAY,
+                    everyMonths = 3,
+                    basis = RecurrenceBasis.COMPLETION_DATE
                 ),
                 recurrenceEndAt = 1_789_000_000_000L,
                 seriesId = "series-launch",
@@ -323,18 +365,39 @@ class DataPortabilityJourneyTest {
         }
     }
 
-    private class RecordingReminderScheduler : ReminderScheduler {
+    private fun readSequences(): Map<String, Long?> {
+        val sqlite = database.openHelper.writableDatabase
+        return listOf("categories", "tasks", "subtasks").associateWith { table ->
+            sqlite.query(
+                "SELECT seq FROM sqlite_sequence WHERE name = ?",
+                arrayOf(table)
+            ).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else null
+            }
+        }
+    }
+
+    private class RecordingReminderScheduler(
+        private val database: AppDatabase
+    ) : ReminderScheduler {
         val cancelledTaskIds = mutableListOf<Int>()
+        val liveAlarms = mutableMapOf<Int, Long>()
         var reconcileCalls: Int = 0
 
         override suspend fun schedule(taskId: Int, triggerAt: Long) = ReminderScheduleResult.EXACT
 
         override suspend fun cancel(taskId: Int) {
             cancelledTaskIds += taskId
+            liveAlarms.remove(taskId)
         }
 
         override suspend fun reconcile() {
             reconcileCalls += 1
+            database.taskDao().getAllTaskEntities().forEach { task ->
+                if (task.reminderStatus == "SCHEDULED" && task.reminderAt != null) {
+                    liveAlarms[task.id] = task.reminderAt
+                }
+            }
         }
     }
 

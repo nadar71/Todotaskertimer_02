@@ -8,7 +8,13 @@ data class PlanningBackup(
     val createdAtEpochMillis: Long,
     val categories: List<PlanningCategory>,
     val tasks: List<PlanningTask>
-)
+) {
+    companion object {
+        const val FORMAT = "now-do-this-backup"
+        const val MIN_SUPPORTED_VERSION = 1
+        const val CURRENT_VERSION = 2
+    }
+}
 
 data class PlanningCategory(
     val id: Int,

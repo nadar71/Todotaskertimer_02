@@ -3,7 +3,6 @@ package com.indiewalkabout.nowdothis.feature.portability.data.local
 import androidx.room.withTransaction
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.feature.category.data.local.CategoryEntity
-import com.indiewalkabout.nowdothis.feature.portability.data.serialization.BackupDocumentV1
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningBackup
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCategory
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSubtask
@@ -31,8 +30,8 @@ class PlanningDataSource(
                 .groupBy(SubtaskEntity::taskId)
 
             PlanningBackup(
-                format = BackupDocumentV1.FORMAT,
-                version = BackupDocumentV1.VERSION,
+                format = PlanningBackup.FORMAT,
+                version = PlanningBackup.CURRENT_VERSION,
                 createdAtEpochMillis = createdAtEpochMillis,
                 categories = database.categoryDao().getAll()
                     .map(CategoryEntity::toPlanningCategory),

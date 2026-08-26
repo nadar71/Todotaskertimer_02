@@ -39,8 +39,15 @@ class BackupValidator {
 
     private fun validateError(backup: PlanningBackup, documentSizeBytes: Long): PortabilityError? {
         if (documentSizeBytes > MAX_DOCUMENT_SIZE_BYTES) return DocumentTooLarge
-        if (backup.format != BackupDocumentV1.FORMAT || backup.version <= 0) return InvalidBackup
-        if (backup.version > BackupDocumentV1.VERSION) return UnsupportedFutureVersion(backup.version)
+        if (
+            backup.format != PlanningBackup.FORMAT ||
+            backup.version < PlanningBackup.MIN_SUPPORTED_VERSION
+        ) {
+            return InvalidBackup
+        }
+        if (backup.version > PlanningBackup.CURRENT_VERSION) {
+            return UnsupportedFutureVersion(backup.version)
+        }
 
         val categoryIds = mutableSetOf<Int>()
         val categoryPositions = mutableSetOf<Int>()
@@ -97,9 +104,18 @@ class BackupValidator {
     private fun completionIsConsistent(isCompleted: Boolean, completedAt: Long?): Boolean =
         (isCompleted && completedAt != null) || (!isCompleted && completedAt == null)
 
-    private fun recurrenceIsConsistent(task: PlanningTask): Boolean = when (task.recurrenceRule) {
-        RecurrenceRule.None -> task.recurrenceEndAt == null
-        else -> task.dueAt != null
+    private fun recurrenceIsConsistent(task: PlanningTask): Boolean {
+        val parametersAreValid = when (val rule = task.recurrenceRule) {
+            RecurrenceRule.None -> task.recurrenceEndAt == null
+            is RecurrenceRule.Interval -> rule.every in 1..MAX_RECURRENCE_INTERVAL
+            is RecurrenceRule.SelectedWeekdays -> rule.weekdays.isNotEmpty()
+            is RecurrenceRule.MonthlyDay ->
+                rule.anchorDay in 1..MAX_MONTH_DAY &&
+                    rule.everyMonths in 1..MAX_RECURRENCE_INTERVAL
+            is RecurrenceRule.MonthlyOrdinal -> rule.everyMonths in 1..MAX_RECURRENCE_INTERVAL
+        }
+        return parametersAreValid &&
+            (task.recurrenceRule is RecurrenceRule.None || task.dueAt != null)
     }
 
     private fun String.isStableName(values: Iterable<Enum<*>>): Boolean =
@@ -107,5 +123,7 @@ class BackupValidator {
 
     companion object {
         const val MAX_DOCUMENT_SIZE_BYTES: Long = 10L * 1024 * 1024
+        private const val MAX_RECURRENCE_INTERVAL = 999
+        private const val MAX_MONTH_DAY = 31
     }
 }

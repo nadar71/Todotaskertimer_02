@@ -1,8 +1,8 @@
 # Now Do This Backup Format v1
 
-This document defines the JSON contract written and accepted by Now Do This backup
-format version 1. A backup is a UTF-8 JSON document containing user-owned planning
-data only.
+This document defines the legacy JSON contract accepted by Now Do This backup format
+version 1. Version 1 is decode-only: current app versions export version 2. A backup is
+a UTF-8 JSON document containing user-owned planning data only.
 
 ## Root Object
 
@@ -56,6 +56,16 @@ Stable `priority` values are `HIGH`, `MEDIUM`, and `LOW`. Stable
 `reminderStatus` values are `NONE`, `REQUESTED`, `SCHEDULED`, and `UNAVAILABLE`.
 Stable `recurrence` values are `NONE`, `DAILY`, `WEEKLY`, and `MONTHLY`.
 
+On import, legacy recurrence values are converted without fallback or token coercion:
+
+- `NONE` becomes no recurrence;
+- `DAILY` becomes an interval of one day using scheduled-date basis;
+- `WEEKLY` becomes an interval of one week using scheduled-date basis;
+- `MONTHLY` becomes a one-month monthly-date rule anchored to `dueAt`'s local calendar
+  day using scheduled-date basis.
+
+`DAILY`, `WEEKLY`, and `MONTHLY` require `dueAt`. Any other recurrence token is invalid.
+
 For a completed task, `isCompleted` is `true` and `completedAt` is non-null. For an
 incomplete task, `isCompleted` is `false` and `completedAt` is `null`.
 
@@ -74,18 +84,18 @@ Subtask completion fields follow the same consistency rule as task completion fi
 
 ## Encoding And Compatibility
 
-- Export ordering is deterministic: categories by `position` then `id`, tasks by
-  `id`, and each task's subtasks by `position` then `id`.
+- Historical v1 export ordering was deterministic: categories by `position` then `id`,
+  tasks by `id`, and each task's subtasks by `position` then `id`.
 - Version 1 ignores unknown JSON keys so additive metadata from a compatible writer
   does not prevent restore.
 - UTF-8 decoding is strict. Malformed byte sequences are invalid and are never replaced
   with substitute characters before restore.
 - Missing required fields, invalid JSON types, unknown stable values, duplicate IDs
   or positions, and broken category/subtask references are invalid.
-- Only version `1` is supported. The required `format` and `version` envelope is read
-  before the v1 payload. A version greater than `1` with the correct format is rejected
-  as a future format even when its payload has a different schema. Missing headers,
-  a wrong format, and zero, negative, or malformed versions are invalid.
+- The required `format` and `version` envelope is read before the payload. Import
+  dispatches exactly to version `1` or version `2`; versions greater than `2` are
+  rejected as future formats before their payload is decoded. Missing headers, a wrong
+  format, and zero, negative, or malformed versions are invalid.
 - The maximum generated or accepted document size is 10 MiB (10,485,760 bytes).
   Larger exports are rejected before writing, and larger imports are rejected before
   an unbounded in-memory read.
