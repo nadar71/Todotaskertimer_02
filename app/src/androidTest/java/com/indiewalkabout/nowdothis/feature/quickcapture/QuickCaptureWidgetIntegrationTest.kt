@@ -43,6 +43,9 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuic
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetCoordinator
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetReceiver
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetState
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.observeQuickCaptureWidgetState
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
@@ -299,7 +302,20 @@ class QuickCaptureWidgetIntegrationTest {
         description = "Description",
         priority = TaskPriority.MEDIUM,
         dueAt = dueAt,
-        recurrence = recurrence,
+        recurrenceRule = when (recurrence) {
+            RecurrenceType.NONE -> RecurrenceRule.None
+            RecurrenceType.DAILY -> RecurrenceRule.Interval(
+                IntervalUnit.DAYS,
+                1,
+                RecurrenceBasis.SCHEDULED_DATE
+            )
+            RecurrenceType.WEEKLY -> RecurrenceRule.Interval(
+                IntervalUnit.WEEKS,
+                1,
+                RecurrenceBasis.SCHEDULED_DATE
+            )
+            RecurrenceType.MONTHLY -> error("Monthly recurrence is not used by this fixture")
+        },
         createdAt = 0,
         updatedAt = 0
     )

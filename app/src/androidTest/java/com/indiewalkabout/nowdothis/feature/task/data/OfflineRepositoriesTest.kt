@@ -18,7 +18,7 @@ import com.indiewalkabout.nowdothis.feature.task.data.repository.DataStoreTaskPr
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
 import com.indiewalkabout.nowdothis.feature.task.data.repository.dataStore
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -413,7 +413,7 @@ class OfflineRepositoriesTest {
         priority = priority,
         dueAt = dueAt,
         reminderStatus = ReminderStatus.NONE,
-        recurrence = RecurrenceType.NONE,
+        recurrenceRule = RecurrenceRule.None,
         createdAt = id.toLong(),
         updatedAt = id.toLong(),
         subtasks = subtasks

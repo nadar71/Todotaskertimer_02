@@ -15,6 +15,9 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.Complete
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -72,7 +75,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 priority = TaskPriority.MEDIUM,
                 dueAt = currentDueAt,
                 reminderAt = 1_500,
-                recurrence = RecurrenceType.DAILY,
+                recurrenceRule = RecurrenceType.DAILY.toRule(),
                 createdAt = 0,
                 updatedAt = 0
             )
@@ -123,7 +126,7 @@ class QuickCaptureCompletionConcurrencyTest {
                 title = "Saved weekly task",
                 dueAt = savedDueAt,
                 reminderAt = 19_000L,
-                recurrence = RecurrenceType.WEEKLY,
+                recurrenceRule = RecurrenceType.WEEKLY.toRule(),
                 updatedAt = 500L
             )
         )
@@ -135,7 +138,7 @@ class QuickCaptureCompletionConcurrencyTest {
         assertEquals("Saved weekly task", requireNotNull(result.nextOccurrence).title)
         assertEquals(expectedNextDueAt, result.nextOccurrence.dueAt)
         assertEquals(expectedNextDueAt - 1_000L, result.nextOccurrence.reminderAt)
-        assertEquals(RecurrenceType.WEEKLY, result.nextOccurrence.recurrence)
+        assertEquals(RecurrenceType.WEEKLY.toRule(), result.nextOccurrence.recurrenceRule)
     }
 
     @Test
@@ -415,7 +418,7 @@ class QuickCaptureCompletionConcurrencyTest {
         priority = TaskPriority.MEDIUM,
         dueAt = dueAt,
         reminderAt = reminderAt,
-        recurrence = recurrence,
+        recurrenceRule = recurrence.toRule(),
         createdAt = 0,
         updatedAt = 0
     )
@@ -589,4 +592,19 @@ class QuickCaptureCompletionConcurrencyTest {
         const val ONE_DAY_MILLIS = 86_400_000L
         const val ONE_WEEK_MILLIS = 7 * ONE_DAY_MILLIS
     }
+}
+
+private fun RecurrenceType.toRule(): RecurrenceRule = when (this) {
+    RecurrenceType.NONE -> RecurrenceRule.None
+    RecurrenceType.DAILY -> RecurrenceRule.Interval(
+        IntervalUnit.DAYS,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
+    RecurrenceType.WEEKLY -> RecurrenceRule.Interval(
+        IntervalUnit.WEEKS,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
+    RecurrenceType.MONTHLY -> error("Monthly recurrence is not used by this test fixture")
 }

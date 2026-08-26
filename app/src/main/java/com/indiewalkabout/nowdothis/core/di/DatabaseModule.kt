@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.core.database.DEFAULT_CATEGORIES_CALLBACK
 import com.indiewalkabout.nowdothis.core.database.MIGRATION_1_2
+import com.indiewalkabout.nowdothis.core.database.MIGRATION_2_3
 import com.indiewalkabout.nowdothis.core.util.Constants.DATABASE_NAME
 import com.indiewalkabout.nowdothis.feature.category.data.local.CategoryDao
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskDao
@@ -22,7 +23,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, DATABASE_NAME)
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .addCallback(DEFAULT_CATEGORIES_CALLBACK)
             .build()
 
