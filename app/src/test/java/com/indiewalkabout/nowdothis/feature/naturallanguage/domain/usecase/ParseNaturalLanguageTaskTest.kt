@@ -225,6 +225,213 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun categoryMarkersInsideLowerGrammar_areAuthoritativeOwnershipBarriers() {
+        val cases = listOf(
+            MarkerBridgeCase(
+                raw = "Task every #\"Home\" week",
+                markerStart = 11,
+                markerEndExclusive = 18,
+                blockedField = RecognizedField.RECURRENCE,
+                knownTitle = "Task every week"
+            ),
+            MarkerBridgeCase(
+                raw = "Task at #\"Home\" 5 pm",
+                markerStart = 8,
+                markerEndExclusive = 15,
+                blockedField = RecognizedField.DUE_DATE,
+                knownTitle = "Task at 5 pm"
+            ),
+            MarkerBridgeCase(
+                raw = "Task remind #\"Home\" tomorrow at 5 pm",
+                markerStart = 12,
+                markerEndExclusive = 19,
+                blockedField = RecognizedField.REMINDER,
+                knownTitle = "Task remind",
+                unresolvedTitle = "Task remind #\"Home\"",
+                expectedDueAt = epoch("2026-08-27T17:00:00+02:00"),
+                additionalConsumed = listOf(
+                    SourceMatch(20, 28, RecognizedField.DUE_DATE),
+                    SourceMatch(29, 36, RecognizedField.DUE_DATE)
+                )
+            )
+        )
+
+        cases.forEach { case ->
+            CategoryResolution.entries.forEach { resolution ->
+                val categories = when (resolution) {
+                    CategoryResolution.KNOWN -> listOf(CategoryCandidate(7, "Home"))
+                    CategoryResolution.UNKNOWN -> emptyList()
+                    CategoryResolution.AMBIGUOUS -> listOf(
+                        CategoryCandidate(7, "Home"),
+                        CategoryCandidate(8, "HOME")
+                    )
+                }
+                val input = input(case.raw, ParserLanguage.ENGLISH, categories)
+                val ownedRange = SourceMatch(
+                    case.markerStart,
+                    case.markerEndExclusive,
+                    RecognizedField.CATEGORY
+                )
+
+                assertEquals(
+                    "$resolution ${case.raw}",
+                    listOf(ownedRange),
+                    AttributeParser().ownedMarkerRanges(input)
+                )
+
+                val result = parser(input)
+
+                assertPairwiseDisjoint(case.raw, result.consumed)
+                assertFalse(
+                    "$resolution ${case.raw}",
+                    case.blockedField in result.recognized
+                )
+                assertTrue(
+                    "$resolution ${case.raw}",
+                    result.consumed.none { it.field == case.blockedField }
+                )
+                assertEquals(case.raw, case.expectedDueAt, result.draft.dueAt)
+                when (resolution) {
+                    CategoryResolution.KNOWN -> {
+                        assertEquals(case.raw, case.knownTitle, result.draft.title)
+                        assertEquals(case.raw, 7, result.draft.categoryId)
+                        assertEquals(
+                            case.raw,
+                            (listOf(ownedRange) + case.additionalConsumed)
+                                .sortedBy(SourceMatch::start),
+                            result.consumed
+                        )
+                        assertTrue(case.raw, result.issues.isEmpty())
+                    }
+
+                    CategoryResolution.UNKNOWN -> {
+                        assertEquals(
+                            case.raw,
+                            case.unresolvedTitle ?: case.raw,
+                            result.draft.title
+                        )
+                        assertNull(case.raw, result.draft.categoryId)
+                        assertEquals(case.raw, case.additionalConsumed, result.consumed)
+                        assertEquals(
+                            case.raw,
+                            listOf(ParseIssue.UnknownCategory("#\"Home\"")),
+                            result.issues
+                        )
+                    }
+
+                    CategoryResolution.AMBIGUOUS -> {
+                        assertEquals(
+                            case.raw,
+                            case.unresolvedTitle ?: case.raw,
+                            result.draft.title
+                        )
+                        assertNull(case.raw, result.draft.categoryId)
+                        assertEquals(case.raw, case.additionalConsumed, result.consumed)
+                        assertEquals(
+                            case.raw,
+                            listOf(ParseIssue.AmbiguousCategory("#\"Home\"")),
+                            result.issues
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun reminderRangesInsideTemporalPhrases_blockIntersectingDueCandidates() {
+        val validRaw = "Task at remind tomorrow 5 pm"
+        val validInput = input(validRaw, ParserLanguage.ENGLISH)
+        val validRange = SourceMatch(8, 23, RecognizedField.REMINDER)
+
+        assertEquals(
+            listOf(validRange),
+            ReminderParser().shieldingRanges(validInput)
+        )
+
+        val validResult = parser(validInput)
+
+        assertEquals("Task at 5 pm", validResult.draft.title)
+        assertNull(validResult.draft.dueAt)
+        assertEquals(epoch("2026-08-27T09:00:00+02:00"), validResult.draft.reminderAt)
+        assertEquals(listOf(validRange), validResult.consumed)
+        assertPairwiseDisjoint(validRaw, validResult.consumed)
+
+        val relativeRaw = "Task at remind 1h before 5 pm"
+        val relativeInput = input(relativeRaw, ParserLanguage.ENGLISH)
+        val relativeRange = SourceMatch(8, 24, RecognizedField.REMINDER)
+
+        assertEquals(
+            listOf(relativeRange),
+            ReminderParser().shieldingRanges(relativeInput)
+        )
+
+        val relativeResult = parser(relativeInput)
+
+        assertEquals(relativeRaw, relativeResult.draft.title)
+        assertNull(relativeResult.draft.dueAt)
+        assertNull(relativeResult.draft.reminderAt)
+        assertTrue(relativeResult.consumed.isEmpty())
+        assertEquals(listOf(ParseIssue.RelativeReminderWithoutDueDate), relativeResult.issues)
+        assertPairwiseDisjoint(relativeRaw, relativeResult.consumed)
+    }
+
+    @Test
+    fun multilineAndDoubledMalformedMarkers_shieldEveryLowerGrammar() {
+        val grammarContents = listOf(
+            "today",
+            "!high",
+            "every week",
+            "at 5 pm",
+            "remind tomorrow at 5 pm"
+        )
+
+        grammarContents.forEach { content ->
+            val multilineRaw = "Task #\"$content\nnotes"
+            val multilineInput = input(multilineRaw, ParserLanguage.ENGLISH)
+            val lineEnd = multilineRaw.indexOf('\n')
+            val multilineRange = SourceMatch(5, lineEnd, RecognizedField.CATEGORY)
+
+            assertEquals(
+                multilineRaw,
+                listOf(multilineRange),
+                AttributeParser().ownedMarkerRanges(multilineInput)
+            )
+
+            val multilineResult = parser(multilineInput)
+
+            assertEquals(multilineRaw, "Task #\"$content notes", multilineResult.draft.title)
+            assertTrue(multilineRaw, multilineResult.consumed.isEmpty())
+            assertTrue(multilineRaw, multilineResult.issues.isEmpty())
+            assertNoParsedFields(multilineRaw, multilineResult)
+            assertPairwiseDisjoint(multilineRaw, multilineResult.consumed)
+
+            val doubledMarker = if (content.any(Char::isWhitespace)) {
+                "##\"$content\""
+            } else {
+                "##$content"
+            }
+            val doubledRaw = "Task $doubledMarker"
+            val doubledInput = input(doubledRaw, ParserLanguage.ENGLISH)
+            val doubledRange = SourceMatch(5, doubledRaw.length, RecognizedField.CATEGORY)
+
+            assertEquals(
+                doubledRaw,
+                listOf(doubledRange),
+                AttributeParser().ownedMarkerRanges(doubledInput)
+            )
+
+            val doubledResult = parser(doubledInput)
+
+            assertEquals(doubledRaw, doubledRaw, doubledResult.draft.title)
+            assertTrue(doubledRaw, doubledResult.consumed.isEmpty())
+            assertTrue(doubledRaw, doubledResult.issues.isEmpty())
+            assertNoParsedFields(doubledRaw, doubledResult)
+            assertPairwiseDisjoint(doubledRaw, doubledResult.consumed)
+        }
+    }
+
+    @Test
     fun localizedAbsoluteReminders_doNotBecomeDueDateTokens() {
         val cases = listOf(
             AbsoluteReminderCase(
@@ -335,6 +542,52 @@ class ParseNaturalLanguageTaskTest {
                 result.consumed.none { it.field == RecognizedField.REMINDER }
             )
             assertTrue(case.raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun malformedAbsoluteTimeSuffix_ownsFullAttemptWithoutDateOnlyBacktracking() {
+        val cases = listOf(
+            MalformedReminderSuffixCase(
+                raw = "Task remind tomorrow at 5 pmx",
+                language = ParserLanguage.ENGLISH
+            ),
+            MalformedReminderSuffixCase(
+                raw = "Task remind tomorrow at 5 xm",
+                language = ParserLanguage.ENGLISH
+            ),
+            MalformedReminderSuffixCase(
+                raw = "Task remind tomorrow at 5 pm.0",
+                language = ParserLanguage.ENGLISH
+            ),
+            MalformedReminderSuffixCase(
+                raw = "Task promemoria domani alle 17x",
+                language = ParserLanguage.ITALIAN
+            ),
+            MalformedReminderSuffixCase(
+                raw = "Task promemoria domani alle 17:30:1",
+                language = ParserLanguage.ITALIAN
+            )
+        )
+
+        cases.forEach { case ->
+            val input = input(case.raw, case.language)
+            val ownedRange = SourceMatch(5, case.raw.length, RecognizedField.REMINDER)
+
+            assertEquals(
+                case.raw,
+                listOf(ownedRange),
+                ReminderParser().shieldingRanges(input)
+            )
+
+            val result = parser(input)
+
+            assertEquals(case.raw, case.raw, result.draft.title)
+            assertNull(case.raw, result.draft.dueAt)
+            assertNull(case.raw, result.draft.reminderAt)
+            assertTrue(case.raw, result.consumed.isEmpty())
+            assertTrue(case.raw, result.issues.isEmpty())
+            assertPairwiseDisjoint(case.raw, result.consumed)
         }
     }
 
@@ -598,6 +851,24 @@ class ParseNaturalLanguageTaskTest {
     private fun consumedText(raw: String, matches: List<SourceMatch>) =
         matches.sortedBy { it.start }.map { raw.substring(it.start, it.endExclusive) }
 
+    private fun assertNoParsedFields(
+        message: String,
+        result: com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.NaturalLanguageParseResult
+    ) {
+        assertNull(message, result.draft.dueAt)
+        assertNull(message, result.draft.reminderAt)
+        assertNull(message, result.draft.priority)
+        assertNull(message, result.draft.categoryId)
+        assertNull(message, result.draft.recurrence)
+        assertEquals(message, setOf(RecognizedField.TITLE), result.recognized)
+    }
+
+    private fun assertPairwiseDisjoint(message: String, matches: List<SourceMatch>) {
+        matches.sortedBy(SourceMatch::start).zipWithNext().forEach { (current, next) ->
+            assertTrue(message, current.endExclusive <= next.start)
+        }
+    }
+
     private data class CategoryCase(
         val raw: String,
         val candidate: CategoryCandidate
@@ -630,6 +901,22 @@ class ParseNaturalLanguageTaskTest {
     private data class OverflowCase(
         val raw: String,
         val expectedTitle: String
+    )
+
+    private data class MarkerBridgeCase(
+        val raw: String,
+        val markerStart: Int,
+        val markerEndExclusive: Int,
+        val blockedField: RecognizedField,
+        val knownTitle: String,
+        val unresolvedTitle: String? = null,
+        val expectedDueAt: Long? = null,
+        val additionalConsumed: List<SourceMatch> = emptyList()
+    )
+
+    private data class MalformedReminderSuffixCase(
+        val raw: String,
+        val language: ParserLanguage
     )
 
     private data class CategoryCollision(

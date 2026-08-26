@@ -43,11 +43,22 @@ data class AttributeParse private constructor(
 
 class AttributeParser {
 
-    fun parse(input: NaturalLanguageInput): AttributeParse {
+    fun parse(input: NaturalLanguageInput): AttributeParse = parse(
+        input = input,
+        excludedRanges = emptyList()
+    )
+
+    internal fun parse(
+        input: NaturalLanguageInput,
+        excludedRanges: List<SourceMatch>
+    ): AttributeParse {
+        val markerRanges = ownedMarkerRanges(input)
+        val lowerGrammarExclusions = markerRanges + excludedRanges
         val categoryResult = parseCategories(input)
-        val attributeRaw = input.rawText.maskRanges(ownedMarkerRanges(input))
-        val priorities = parsePriorities(input, attributeRaw)
-        val recurrences = parseRecurrences(input, attributeRaw)
+        val priorities = parsePriorities(input)
+            .rejectIntersecting(lowerGrammarExclusions)
+        val recurrences = parseRecurrences(input)
+            .rejectIntersecting(lowerGrammarExclusions)
         val issues = buildList {
             addAll(categoryResult.issues)
             addDuplicateIssue(priorities, RecognizedField.PRIORITY)
@@ -75,8 +86,7 @@ class AttributeParser {
             .toList()
 
     private fun parsePriorities(
-        input: NaturalLanguageInput,
-        raw: String
+        input: NaturalLanguageInput
     ): List<AttributeCandidate<TaskPriority>> {
         val values = when (input.language) {
             ParserLanguage.ITALIAN -> mapOf(
@@ -91,7 +101,7 @@ class AttributeParser {
                 "low" to TaskPriority.LOW
             )
         }
-        return priorityPattern(input.language).findAll(raw).map { match ->
+        return priorityPattern(input.language).findAll(input.rawText).map { match ->
             AttributeCandidate(
                 value = requireNotNull(values[match.groupValues[1].lowercase(Locale.ROOT)]),
                 match = match.toSourceMatch(RecognizedField.PRIORITY)
@@ -100,10 +110,9 @@ class AttributeParser {
     }
 
     private fun parseRecurrences(
-        input: NaturalLanguageInput,
-        raw: String
+        input: NaturalLanguageInput
     ): List<AttributeCandidate<RecurrenceType>> = recurrencePattern(input.language)
-        .findAll(raw)
+        .findAll(input.rawText)
         .map { match ->
             val recurrence = when (match.groupValues[1].lowercase(Locale.ROOT)) {
                 "giorno", "day" -> RecurrenceType.DAILY
@@ -145,13 +154,14 @@ class AttributeParser {
         return CategoryParse(candidates = candidates, issues = issues)
     }
 
-    private fun String.maskRanges(ranges: List<SourceMatch>): String {
-        val masked = toCharArray()
-        ranges.forEach { range ->
-            for (index in range.start until range.endExclusive) masked[index] = ' '
-        }
-        return masked.concatToString()
+    private fun <T> List<AttributeCandidate<T>>.rejectIntersecting(
+        excludedRanges: List<SourceMatch>
+    ): List<AttributeCandidate<T>> = filterNot { candidate ->
+        excludedRanges.any { excluded -> candidate.match.intersects(excluded) }
     }
+
+    private fun SourceMatch.intersects(other: SourceMatch): Boolean =
+        start < other.endExclusive && other.start < endExclusive
 
     private fun <T> MutableList<ParseIssue>.addDuplicateIssue(
         candidates: List<AttributeCandidate<T>>,
@@ -181,7 +191,7 @@ class AttributeParser {
             "(?<![\\p{L}\\p{N}_#])#(?:\"[^\"\\r\\n]+\"|[^\\s#\"]+)"
         )
         val categoryOwnershipPattern = Regex(
-            "(?<![\\p{L}\\p{N}_#])#(?:\"[^\"\\r\\n]*(?:\"|$)|[^\\s#\"]+)"
+            "(?<![\\p{L}\\p{N}_#])#+(?:\"[^\"\\r\\n]*(?:\"|(?=[\\r\\n]|$))|[^\\s#\"]+)"
         )
         val ITALIAN_PRIORITY_PATTERN = markerPattern("alta|media|bassa")
         val ENGLISH_PRIORITY_PATTERN = markerPattern("high|medium|low")

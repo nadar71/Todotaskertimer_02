@@ -21,18 +21,16 @@ class ParseNaturalLanguageTask(
         if (TextNormalizer.normalizeWhitespace(input.rawText).isBlank()) return emptyResult()
 
         val markerRanges = attributeParser.ownedMarkerRanges(input)
-        val markerShieldedInput = input.withMaskedRanges(markerRanges)
-        val reminderClaims = reminderParser.shieldingRanges(markerShieldedInput)
-        val temporal = temporalParser.parse(
-            input.withMaskedRanges(markerRanges + reminderClaims)
-        )
-        val reminder = reminderParser.parse(markerShieldedInput, temporal.dueAt)
-        val attributes = attributeParser.parse(input)
+        val reminderClaims = reminderParser.shieldingRanges(input, markerRanges)
+        val temporalExclusions = markerRanges + reminderClaims
+        val temporal = temporalParser.parse(input.withBarrierRanges(temporalExclusions))
+        val reminder = reminderParser.parse(input, temporal.dueAt, markerRanges)
+        val attributes = attributeParser.parse(input, reminderClaims)
         val consumed = buildList {
-            addAll(temporal.matches)
-            addAll(reminder.matches)
+            addAll(temporal.matches.rejectIntersecting(temporalExclusions))
+            addAll(reminder.matches.rejectIntersecting(markerRanges))
             addAll(attributes.matches)
-        }.sortedBy(SourceMatch::start)
+        }.validatedConsumedRanges(input.rawText)
         val title = TextNormalizer.remainingTitle(input.rawText, consumed).takeIf(String::isNotBlank)
         val recognized = buildSet {
             if (title != null) add(RecognizedField.TITLE)
@@ -58,19 +56,40 @@ class ParseNaturalLanguageTask(
         )
     }
 
-    private fun NaturalLanguageInput.withMaskedRanges(ranges: List<SourceMatch>): NaturalLanguageInput {
-        val masked = rawText.toCharArray()
+    private fun NaturalLanguageInput.withBarrierRanges(ranges: List<SourceMatch>): NaturalLanguageInput {
+        val shielded = rawText.toCharArray()
         ranges.forEach { range ->
-            for (index in range.start until range.endExclusive) masked[index] = ' '
+            for (index in range.start until range.endExclusive) shielded[index] = RANGE_BARRIER
         }
         return NaturalLanguageInput(
-            rawText = masked.concatToString(),
+            rawText = shielded.concatToString(),
             language = language,
             nowEpochMillis = nowEpochMillis,
             zoneId = zoneId,
             categories = categories
         )
     }
+
+    private fun List<SourceMatch>.rejectIntersecting(
+        excludedRanges: List<SourceMatch>
+    ): List<SourceMatch> = filterNot { candidate ->
+        excludedRanges.any { excluded -> candidate.intersects(excluded) }
+    }
+
+    private fun List<SourceMatch>.validatedConsumedRanges(raw: String): List<SourceMatch> =
+        sortedBy(SourceMatch::start).also { sorted ->
+            sorted.forEach { match ->
+                require(match.start >= 0 && match.endExclusive <= raw.length && match.start < match.endExclusive) {
+                    "Consumed range must be non-empty and within the raw input."
+                }
+            }
+            sorted.zipWithNext().forEach { (current, next) ->
+                require(!current.intersects(next)) { "Consumed ranges must be pairwise disjoint." }
+            }
+        }
+
+    private fun SourceMatch.intersects(other: SourceMatch): Boolean =
+        start < other.endExclusive && other.start < endExclusive
 
     private fun emptyResult(): NaturalLanguageParseResult = NaturalLanguageParseResult(
         draft = ParsedTaskDraft(
@@ -85,4 +104,8 @@ class ParseNaturalLanguageTask(
         issues = listOf(ParseIssue.EmptyInput),
         consumed = emptyList()
     )
+
+    private companion object {
+        const val RANGE_BARRIER = '\uFFFF'
+    }
 }

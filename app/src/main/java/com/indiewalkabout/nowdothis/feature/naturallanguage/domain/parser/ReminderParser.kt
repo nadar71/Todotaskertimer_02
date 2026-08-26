@@ -34,8 +34,18 @@ data class ReminderParse private constructor(
 
 class ReminderParser {
 
-    fun parse(input: NaturalLanguageInput, dueAt: Long?): ReminderParse {
-        val syntaxes = findSyntaxes(input)
+    fun parse(input: NaturalLanguageInput, dueAt: Long?): ReminderParse = parse(
+        input = input,
+        dueAt = dueAt,
+        excludedRanges = emptyList()
+    )
+
+    internal fun parse(
+        input: NaturalLanguageInput,
+        dueAt: Long?,
+        excludedRanges: List<SourceMatch>
+    ): ReminderParse {
+        val syntaxes = findSyntaxes(input).rejectIntersecting(excludedRanges)
         val successful = mutableListOf<ResolvedReminder>()
         var missingDueDate = false
 
@@ -70,8 +80,12 @@ class ReminderParser {
         )
     }
 
-    internal fun shieldingRanges(input: NaturalLanguageInput): List<SourceMatch> =
-        findSyntaxes(input).map(ReminderSyntax::match)
+    internal fun shieldingRanges(
+        input: NaturalLanguageInput,
+        excludedRanges: List<SourceMatch> = emptyList()
+    ): List<SourceMatch> = findSyntaxes(input)
+        .rejectIntersecting(excludedRanges)
+        .map(ReminderSyntax::match)
 
     private fun findSyntaxes(input: NaturalLanguageInput): List<ReminderSyntax> = buildList {
         relativePattern(input.language).findAll(input.rawText).forEach { match ->
@@ -131,6 +145,15 @@ class ReminderParser {
         null
     }
 
+    private fun List<ReminderSyntax>.rejectIntersecting(
+        excludedRanges: List<SourceMatch>
+    ): List<ReminderSyntax> = filterNot { syntax ->
+        excludedRanges.any { excluded -> syntax.match.intersects(excluded) }
+    }
+
+    private fun SourceMatch.intersects(other: SourceMatch): Boolean =
+        start < other.endExclusive && other.start < endExclusive
+
     private fun MatchResult.toSourceMatch(): SourceMatch = SourceMatch(
         start = range.first,
         endExclusive = range.last + 1,
@@ -166,8 +189,10 @@ class ReminderParser {
             "\\d{1,2}/\\d{1,2}(?:/[\\p{L}\\p{N}_/.:]+)?(?:[.:]\\d+)?"
         const val ITALIAN_DATE = "(?:oggi|domani|$NUMERIC_DATE)"
         const val ENGLISH_DATE = "(?:today|tomorrow|$NUMERIC_DATE)"
-        const val ITALIAN_TIME = "alle\\s+\\d{1,2}(?::\\d{2})?"
-        const val ENGLISH_TIME = "at\\s+\\d{1,2}(?::\\d{2})?\\s+[ap]\\.?m\\.?"
+        const val TIME_ATTEMPT_TOKEN = "[\\p{L}\\p{N}_/.:]+"
+        const val ITALIAN_TIME_ATTEMPT = "alle(?:\\s+$TIME_ATTEMPT_TOKEN)?"
+        const val ENGLISH_TIME_ATTEMPT =
+            "at(?:\\s+$TIME_ATTEMPT_TOKEN(?:\\s+$TIME_ATTEMPT_TOKEN)?)?"
         val ITALIAN_RELATIVE_PATTERN = Regex(
             "${WORD_BOUNDARY_START}promemoria\\s+(\\d+)\\s*([hm])\\s+prima$WORD_BOUNDARY_END",
             RegexOption.IGNORE_CASE
@@ -177,11 +202,15 @@ class ReminderParser {
             RegexOption.IGNORE_CASE
         )
         val ITALIAN_ABSOLUTE_PATTERN = Regex(
-            "${WORD_BOUNDARY_START}promemoria\\s+(($ITALIAN_DATE)(?:\\s+$ITALIAN_TIME)?|$ITALIAN_TIME)$WORD_BOUNDARY_END",
+            "${WORD_BOUNDARY_START}promemoria\\s+" +
+                "(($ITALIAN_DATE)(?:\\s+$ITALIAN_TIME_ATTEMPT|(?!\\s+alle$WORD_BOUNDARY_END))|" +
+                "$ITALIAN_TIME_ATTEMPT)$WORD_BOUNDARY_END",
             RegexOption.IGNORE_CASE
         )
         val ENGLISH_ABSOLUTE_PATTERN = Regex(
-            "${WORD_BOUNDARY_START}remind\\s+(($ENGLISH_DATE)(?:\\s+$ENGLISH_TIME)?|$ENGLISH_TIME)$WORD_BOUNDARY_END",
+            "${WORD_BOUNDARY_START}remind\\s+" +
+                "(($ENGLISH_DATE)(?:\\s+$ENGLISH_TIME_ATTEMPT|(?!\\s+at$WORD_BOUNDARY_END))|" +
+                "$ENGLISH_TIME_ATTEMPT)$WORD_BOUNDARY_END",
             RegexOption.IGNORE_CASE
         )
 
