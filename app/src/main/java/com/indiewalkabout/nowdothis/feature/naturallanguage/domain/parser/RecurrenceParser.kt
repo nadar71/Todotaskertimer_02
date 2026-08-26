@@ -203,11 +203,12 @@ class RecurrenceParser {
             )
         }
         if (invalidIndex == 0 && legacyUnit(tokens.first().value, language)) {
-            return if (tokens.drop(1).any { token -> weekdayLike(token.value, language) }) {
-                match.toAttempt(null).preserveMatchedOwnership()
-            } else {
-                null
+            val weekdayLikeIndex = tokens.indexOfFirst { token -> weekdayLike(token.value, language) }
+            if (weekdayLikeIndex > 0) {
+                val end = dayGroup.range.first + tokens[weekdayLikeIndex].range.last + 1
+                return sourceAttempt(match.range.first, end, null).preserveMatchedOwnership()
             }
+            return null
         }
         if (invalidIndex == 0 || weekdayLike(tokens[invalidIndex].value, language)) {
             return match.toAttempt(null)

@@ -378,6 +378,58 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun legacyPluralWeekdayContinuationLeavesTrailingTemporalFieldAvailable() {
+        val malformed = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every month, Mondays, tomorrow"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni mese, lunedìs, domani")
+        )
+
+        malformed.forEach { (language, raw) ->
+            val temporalText = if (language == ParserLanguage.ENGLISH) "tomorrow" else "domani"
+            val result = parse(raw, language)
+
+            assertEquals(raw, raw.removeSuffix(temporalText).trimEnd(), result.draft.title)
+            assertEquals(raw, epoch("2026-08-27T09:00:00+02:00"), result.draft.dueAt)
+            assertNull(raw, result.draft.recurrenceRule)
+            assertEquals(
+                raw,
+                listOf(SourceMatch(raw.indexOf(temporalText), raw.length, RecognizedField.DUE_DATE)),
+                result.consumed
+            )
+            assertPairwiseDisjoint(raw, result.consumed)
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
+
+        val validControls = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every month, notes, tomorrow"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni mese, note, domani")
+        )
+
+        validControls.forEach { (language, raw) ->
+            val temporalText = if (language == ParserLanguage.ENGLISH) "tomorrow" else "domani"
+            val result = parse(raw, language)
+
+            assertEquals(raw, "Task , ${if (language == ParserLanguage.ENGLISH) "notes" else "note"},", result.draft.title)
+            assertEquals(raw, epoch("2026-08-27T09:00:00+02:00"), result.draft.dueAt)
+            assertEquals(
+                raw,
+                RecurrenceRule.MonthlyDay(27, 1, RecurrenceBasis.SCHEDULED_DATE),
+                result.draft.recurrenceRule
+            )
+            assertEquals(
+                raw,
+                listOf(
+                    SourceMatch(5, raw.indexOf(','), RecognizedField.RECURRENCE),
+                    SourceMatch(raw.indexOf(temporalText), raw.length, RecognizedField.DUE_DATE)
+                ),
+                result.consumed
+            )
+            assertPairwiseDisjoint(raw, result.consumed)
+            assertTrue(raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
     fun malformedOrdinalPreservesWholeTitleAndShieldsInnerTime() {
         val raw = "Report fifth Monday of every month at 5 pm"
 

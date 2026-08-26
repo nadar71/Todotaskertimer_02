@@ -160,6 +160,44 @@ class RecurrenceParserTest {
     }
 
     @Test
+    fun legacyPluralWeekdayOwnershipStopsBeforeASecondComma() {
+        val malformed = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every month, Mondays, tomorrow"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni mese, lunedìs, domani")
+        )
+
+        malformed.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+            val recurrenceEnd = raw.lastIndexOf(',')
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.candidates.isEmpty())
+            assertTrue(raw, result.matches.isEmpty())
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, recurrenceEnd, RecognizedField.RECURRENCE)),
+                result.ownedRanges
+            )
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
+
+        val validControls = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every month, notes, tomorrow"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni mese, note, domani")
+        )
+
+        validControls.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+            val expected = SourceMatch(5, raw.indexOf(','), RecognizedField.RECURRENCE)
+
+            assertEquals(raw, RecurrenceRule.MonthlyDay(27, 1, RecurrenceBasis.SCHEDULED_DATE), result.rule)
+            assertEquals(raw, listOf(expected), result.matches)
+            assertEquals(raw, listOf(expected), result.ownedRanges)
+            assertTrue(raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
     fun selectedWeekdayLists_areAccentInsensitiveAndScheduled() {
         val cases = listOf(
             RecurrenceCase(
