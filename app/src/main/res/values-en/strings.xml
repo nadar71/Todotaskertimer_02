@@ -201,8 +201,9 @@
     <string name="task_editor_recurrence_ordinal_weekday_label">Weekday</string>
     <string name="task_editor_recurrence_basis_label">Calculate from</string>
     <string name="task_editor_recurrence_choose">Choose</string>
-    <string name="task_editor_recurrence_decrement">Decrease</string>
-    <string name="task_editor_recurrence_increment">Increase</string>
+    <string name="task_editor_recurrence_decrement_field">Decrease %1$s</string>
+    <string name="task_editor_recurrence_value_field">Value for %1$s</string>
+    <string name="task_editor_recurrence_increment_field">Increase %1$s</string>
     <string name="task_recurrence_unit_days">Days</string>
     <string name="task_recurrence_unit_weeks">Weeks</string>
     <string name="task_recurrence_basis_scheduled">Scheduled date</string>

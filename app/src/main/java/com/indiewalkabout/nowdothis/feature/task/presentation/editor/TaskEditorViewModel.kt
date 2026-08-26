@@ -29,7 +29,6 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.time.Instant
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -138,41 +137,59 @@ class TaskEditorViewModel @AssistedInject constructor(
                     errors = it.errors.copy(recurrence = null, recurrenceEnd = null)
                 )
             }
-            is TaskEditorEvent.SelectRecurrenceBasis -> updateRecurrence {
+            is TaskEditorEvent.SelectRecurrenceBasis -> updateRecurrenceFor(
+                RecurrenceEditorKind.INTERVAL,
+                RecurrenceEditorKind.SELECTED_WEEKDAYS,
+                RecurrenceEditorKind.MONTHLY_DAY,
+                RecurrenceEditorKind.MONTHLY_ORDINAL
+            ) {
                 it.copy(basis = event.value)
             }
-            is TaskEditorEvent.SelectRecurrenceIntervalUnit -> updateRecurrence {
+            is TaskEditorEvent.SelectRecurrenceIntervalUnit -> updateRecurrenceFor(
+                RecurrenceEditorKind.INTERVAL
+            ) {
                 it.copy(intervalUnit = event.value)
             }
-            is TaskEditorEvent.UpdateRecurrenceIntervalEvery -> updateRecurrence {
+            is TaskEditorEvent.UpdateRecurrenceIntervalEvery -> updateRecurrenceFor(
+                RecurrenceEditorKind.INTERVAL
+            ) {
                 it.copy(intervalEvery = event.value)
             }
-            is TaskEditorEvent.ToggleRecurrenceWeekday -> updateRecurrence { recurrence ->
-                recurrence.copy(
-                    selectedWeekdays = if (event.value in recurrence.selectedWeekdays) {
-                        recurrence.selectedWeekdays - event.value
-                    } else {
-                        recurrence.selectedWeekdays + event.value
-                    }
-                )
+            is TaskEditorEvent.ToggleRecurrenceWeekday -> updateRecurrenceFor(
+                RecurrenceEditorKind.SELECTED_WEEKDAYS
+            ) { recurrence ->
+                recurrence.toggledWeekday(event.value)
             }
-            is TaskEditorEvent.UpdateRecurrenceMonthlyEvery -> updateRecurrence {
+            is TaskEditorEvent.UpdateRecurrenceMonthlyEvery -> updateRecurrenceFor(
+                RecurrenceEditorKind.MONTHLY_DAY,
+                RecurrenceEditorKind.MONTHLY_ORDINAL
+            ) {
                 it.copy(monthlyEvery = event.value)
             }
-            is TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay -> updateRecurrence {
+            is TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay -> updateRecurrenceFor(
+                RecurrenceEditorKind.MONTHLY_DAY
+            ) {
                 it.copy(monthlyAnchorDay = event.value)
             }
-            is TaskEditorEvent.SelectRecurrenceOrdinal -> updateRecurrence {
+            is TaskEditorEvent.SelectRecurrenceOrdinal -> updateRecurrenceFor(
+                RecurrenceEditorKind.MONTHLY_ORDINAL
+            ) {
                 it.copy(ordinal = event.value)
             }
-            is TaskEditorEvent.SelectRecurrenceOrdinalWeekday -> updateRecurrence {
+            is TaskEditorEvent.SelectRecurrenceOrdinalWeekday -> updateRecurrenceFor(
+                RecurrenceEditorKind.MONTHLY_ORDINAL
+            ) {
                 it.copy(ordinalWeekday = event.value)
             }
-            is TaskEditorEvent.UpdateRecurrenceEndAt -> updateDraft {
-                it.copy(
-                    recurrence = it.recurrence.copy(endAt = event.value),
-                    errors = it.errors.copy(recurrenceEnd = null)
-                )
+            is TaskEditorEvent.UpdateRecurrenceEndAt -> {
+                if (_uiState.value.recurrence.kind != RecurrenceEditorKind.NONE) {
+                    updateDraft {
+                        it.copy(
+                            recurrence = it.recurrence.copy(endAt = event.value),
+                            errors = it.errors.copy(recurrenceEnd = null)
+                        )
+                    }
+                }
             }
             TaskEditorEvent.AddSubtask -> addSubtask()
             is TaskEditorEvent.RenameSubtask -> updateSubtask(event.draftId) {
@@ -196,9 +213,9 @@ class TaskEditorViewModel @AssistedInject constructor(
     private fun parseQuickEntry() {
         val state = _uiState.value
         if (state.taskId != null || state.categoryReadiness != CategoryReadiness.READY) return
-        val result = try {
+        val parsed = try {
             val environment = naturalLanguageEnvironment.snapshot(state.categories)
-            parseNaturalLanguageTask(
+            environment to parseNaturalLanguageTask(
                 NaturalLanguageInput(
                     rawText = state.quickEntryInput,
                     language = environment.language,
@@ -218,13 +235,14 @@ class TaskEditorViewModel @AssistedInject constructor(
             }
             return
         }
+        val (environment, result) = parsed
         val summary = QuickEntrySummaryField.entries.filter { field ->
             field.recognizedField in result.recognized
         }
         val issues = result.issues.map(ParseIssue::toQuickEntryIssue)
 
         updateDraft { current ->
-            current.applyQuickEntryResult(result, summary, issues)
+            current.applyQuickEntryResult(result, summary, issues, environment.zoneId)
         }
     }
 
@@ -467,6 +485,14 @@ class TaskEditorViewModel @AssistedInject constructor(
         }
     }
 
+    private fun updateRecurrenceFor(
+        vararg kinds: RecurrenceEditorKind,
+        transform: (RecurrenceEditorState) -> RecurrenceEditorState
+    ) {
+        if (_uiState.value.recurrence.kind !in kinds) return
+        updateRecurrence(transform)
+    }
+
     private fun persistDraft(state: TaskEditorUiState) {
         savedStateHandle[KEY_INITIALIZED] = true
         savedStateHandle[KEY_TASK_ID_SET] = true
@@ -490,6 +516,7 @@ class TaskEditorViewModel @AssistedInject constructor(
 
     private fun restoreDraftVersion(): TaskSnapshotVersion? {
         if (savedStateHandle.get<Boolean>(KEY_VERSION_SET) != true) return null
+        val restoredRecurrence = restoreVersionRecurrence() ?: return null
         return TaskSnapshotVersion(
             id = savedStateHandle.get<Int>(KEY_VERSION_ID) ?: return null,
             seriesId = savedStateHandle[KEY_VERSION_SERIES_ID],
@@ -502,21 +529,8 @@ class TaskEditorViewModel @AssistedInject constructor(
                 savedStateHandle.get<String>(KEY_VERSION_REMINDER_STATUS),
                 ReminderStatus.NONE
             ),
-            recurrenceRule = savedStateHandle.get<String>(KEY_VERSION_RECURRENCE_DRAFT)
-                ?.let { encoded ->
-                    runCatching {
-                        when (val result = Json.decodeFromString<RecurrenceEditorState>(encoded)
-                            .toValidatedRule()) {
-                            is RecurrenceRuleDraftResult.Valid -> result.rule
-                            is RecurrenceRuleDraftResult.Invalid -> null
-                        }
-                    }.getOrNull()
-                } ?: return null,
-            recurrenceEndAt = savedStateHandle.get<String>(KEY_VERSION_RECURRENCE_DRAFT)
-                ?.let { encoded ->
-                    runCatching { Json.decodeFromString<RecurrenceEditorState>(encoded).endAt }
-                        .getOrNull()
-                }
+            recurrenceRule = restoredRecurrence.rule,
+            recurrenceEndAt = restoredRecurrence.endAt
         )
     }
 
@@ -532,13 +546,17 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle.set<Long?>(KEY_VERSION_COMPLETED_AT, version.completedAt)
         savedStateHandle.set<Long?>(KEY_VERSION_REMINDER_AT, version.reminderAt)
         savedStateHandle[KEY_VERSION_REMINDER_STATUS] = version.reminderStatus.name
-        savedStateHandle[KEY_VERSION_RECURRENCE_DRAFT] = Json.encodeToString(
-            RecurrenceEditorState.fromRule(
-                version.recurrenceRule,
-                version.recurrenceEndAt
-            )
+        savedStateHandle[KEY_VERSION_RECURRENCE_SNAPSHOT] = Json.encodeToString(
+            RecurrenceVersionSnapshot.from(version)
         )
     }
+
+    private fun restoreVersionRecurrence(): RestoredRecurrenceVersion? =
+        savedStateHandle.get<String>(KEY_VERSION_RECURRENCE_SNAPSHOT)?.let { encoded ->
+            runCatching {
+                Json.decodeFromString<RecurrenceVersionSnapshot>(encoded).restore()
+            }.getOrNull()
+        }
 
     @AssistedFactory
     interface Factory {
@@ -572,7 +590,7 @@ class TaskEditorViewModel @AssistedInject constructor(
         const val KEY_VERSION_COMPLETED_AT = "draft_version_completed_at"
         const val KEY_VERSION_REMINDER_AT = "draft_version_reminder_at"
         const val KEY_VERSION_REMINDER_STATUS = "draft_version_reminder_status"
-        const val KEY_VERSION_RECURRENCE_DRAFT = "draft_version_recurrence_draft"
+        const val KEY_VERSION_RECURRENCE_SNAPSHOT = "draft_version_recurrence_snapshot"
     }
 }
 
@@ -642,7 +660,8 @@ private fun ParseIssue.toQuickEntryIssue(): QuickEntryIssue = when (this) {
 private fun TaskEditorUiState.applyQuickEntryResult(
     result: NaturalLanguageParseResult,
     summary: List<QuickEntrySummaryField>,
-    issues: List<QuickEntryIssue>
+    issues: List<QuickEntryIssue>,
+    parserZoneId: ZoneId
 ): TaskEditorUiState {
     val recognized = result.recognized
     val draft = result.draft
@@ -677,7 +696,7 @@ private fun TaskEditorUiState.applyQuickEntryResult(
                 draft.recurrence.name,
                 recurrence.endAt,
                 parsedDueAt?.let {
-                    Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).dayOfMonth
+                    java.time.Instant.ofEpochMilli(it).atZone(parserZoneId).dayOfMonth
                 } ?: 1
             )
         } else {

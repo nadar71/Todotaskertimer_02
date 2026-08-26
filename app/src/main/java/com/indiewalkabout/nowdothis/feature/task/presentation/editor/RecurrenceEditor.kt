@@ -36,13 +36,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -51,6 +54,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
+import java.util.Calendar
+import java.util.Locale
 
 @Composable
 fun RecurrenceEditor(
@@ -161,15 +166,17 @@ private fun WeekdayControls(
     error: TaskEditorFieldError?,
     onEvent: (TaskEditorEvent) -> Unit
 ) {
+    val weekdays = localeOrderedWeekdays()
     RecurrenceLabel(stringResource(R.string.task_editor_recurrence_weekdays_label))
     FlowRow(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("task-recurrence-weekdays"),
+            .testTag("task-recurrence-weekdays")
+            .semantics { isTraversalGroup = true },
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        RecurrenceEditorWeekday.entries.forEach { weekday ->
+        weekdays.forEachIndexed { index, weekday ->
             val isSelected = weekday in state.selectedWeekdays
             FilterChip(
                 selected = isSelected,
@@ -181,6 +188,7 @@ private fun WeekdayControls(
                     .semantics {
                         role = Role.Checkbox
                         selected = isSelected
+                        traversalIndex = index.toFloat()
                     }
             )
         }
@@ -253,7 +261,15 @@ private fun NumericStepper(
     incrementTag: String,
     onValueChange: (Int?) -> Unit
 ) {
-    val decrementDescription = stringResource(R.string.task_editor_recurrence_decrement)
+    val decrementDescription = stringResource(
+        R.string.task_editor_recurrence_decrement_field,
+        label
+    )
+    val valueDescription = stringResource(R.string.task_editor_recurrence_value_field, label)
+    val incrementDescription = stringResource(
+        R.string.task_editor_recurrence_increment_field,
+        label
+    )
     Column {
         RecurrenceLabel(label)
         Row(
@@ -279,7 +295,8 @@ private fun NumericStepper(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .testTag(valueTag),
+                    .testTag(valueTag)
+                    .semantics { contentDescription = valueDescription },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
             )
@@ -288,10 +305,11 @@ private fun NumericStepper(
                 modifier = Modifier
                     .heightIn(min = 48.dp)
                     .testTag(incrementTag)
+                    .semantics { contentDescription = incrementDescription }
             ) {
                 Icon(
                     Icons.Filled.Add,
-                    contentDescription = stringResource(R.string.task_editor_recurrence_increment)
+                    contentDescription = null
                 )
             }
         }
@@ -362,6 +380,7 @@ private fun OrdinalWeekdayMenu(
     onEvent: (TaskEditorEvent) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val weekdays = localeOrderedWeekdays()
     RecurrenceMenu(
         label = stringResource(R.string.task_editor_recurrence_ordinal_weekday_label),
         value = selected?.let { weekdayLongLabel(it) }
@@ -370,7 +389,7 @@ private fun OrdinalWeekdayMenu(
         expanded = expanded,
         onExpandedChange = { expanded = it }
     ) {
-        RecurrenceEditorWeekday.entries.forEach { weekday ->
+        weekdays.forEachIndexed { index, weekday ->
             DropdownMenuItem(
                 text = { Text(weekdayLongLabel(weekday)) },
                 onClick = {
@@ -380,6 +399,11 @@ private fun OrdinalWeekdayMenu(
                 modifier = Modifier
                     .heightIn(min = 48.dp)
                     .testTag("task-recurrence-ordinal-weekday-${weekday.name.lowercase()}")
+                    .semantics {
+                        role = Role.RadioButton
+                        this.selected = selected == weekday
+                        traversalIndex = index.toFloat()
+                    }
             )
         }
     }
@@ -606,6 +630,26 @@ private fun weekdayLongLabel(weekday: RecurrenceEditorWeekday): String = when (w
     RecurrenceEditorWeekday.FRIDAY -> stringResource(R.string.task_weekday_friday)
     RecurrenceEditorWeekday.SATURDAY -> stringResource(R.string.task_weekday_saturday)
     RecurrenceEditorWeekday.SUNDAY -> stringResource(R.string.task_weekday_sunday)
+}
+
+@Composable
+private fun localeOrderedWeekdays(): List<RecurrenceEditorWeekday> {
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+    return remember(locale) {
+        val first = when (Calendar.getInstance(locale).firstDayOfWeek) {
+            Calendar.SUNDAY -> RecurrenceEditorWeekday.SUNDAY
+            Calendar.MONDAY -> RecurrenceEditorWeekday.MONDAY
+            Calendar.TUESDAY -> RecurrenceEditorWeekday.TUESDAY
+            Calendar.WEDNESDAY -> RecurrenceEditorWeekday.WEDNESDAY
+            Calendar.THURSDAY -> RecurrenceEditorWeekday.THURSDAY
+            Calendar.FRIDAY -> RecurrenceEditorWeekday.FRIDAY
+            Calendar.SATURDAY -> RecurrenceEditorWeekday.SATURDAY
+            else -> RecurrenceEditorWeekday.MONDAY
+        }
+        val values = RecurrenceEditorWeekday.entries
+        val firstIndex = values.indexOf(first)
+        values.drop(firstIndex) + values.take(firstIndex)
+    }
 }
 
 private fun Long.recurrenceUtcDate(): LocalDate =

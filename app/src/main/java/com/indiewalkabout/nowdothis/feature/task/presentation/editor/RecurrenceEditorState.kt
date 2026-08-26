@@ -5,6 +5,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.MonthlyOrdinalValu
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import java.time.DayOfWeek
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -54,13 +55,69 @@ data class RecurrenceEditorState(
     val basis: RecurrenceEditorBasis? = null,
     val intervalUnit: RecurrenceEditorIntervalUnit? = null,
     val intervalEvery: Int? = null,
-    val selectedWeekdays: Set<RecurrenceEditorWeekday> = emptySet(),
+    @SerialName("selectedWeekdays")
+    private val selectedWeekdaySnapshot: List<RecurrenceEditorWeekday> = emptyList(),
     val monthlyEvery: Int? = null,
     val monthlyAnchorDay: Int? = null,
     val ordinal: RecurrenceEditorOrdinal? = null,
     val ordinalWeekday: RecurrenceEditorWeekday? = null,
     val endAt: Long? = null
 ) {
+    val selectedWeekdays: Set<RecurrenceEditorWeekday>
+        get() = selectedWeekdaySnapshot.toSet()
+
+    fun withSelectedWeekdays(
+        weekdays: Iterable<RecurrenceEditorWeekday>
+    ): RecurrenceEditorState = copy(selectedWeekdaySnapshot = weekdays.distinct())
+
+    fun toggledWeekday(weekday: RecurrenceEditorWeekday): RecurrenceEditorState =
+        withSelectedWeekdays(
+            if (weekday in selectedWeekdaySnapshot) {
+                selectedWeekdaySnapshot - weekday
+            } else {
+                selectedWeekdaySnapshot + weekday
+            }
+        )
+
+    internal fun hasCanonicalShape(): Boolean {
+        if (selectedWeekdaySnapshot.size != selectedWeekdaySnapshot.distinct().size) return false
+        return when (kind) {
+            RecurrenceEditorKind.NONE ->
+                basis == null &&
+                    intervalUnit == null &&
+                    intervalEvery == null &&
+                    selectedWeekdaySnapshot.isEmpty() &&
+                    monthlyEvery == null &&
+                    monthlyAnchorDay == null &&
+                    ordinal == null &&
+                    ordinalWeekday == null
+            RecurrenceEditorKind.INTERVAL ->
+                selectedWeekdaySnapshot.isEmpty() &&
+                    monthlyEvery == null &&
+                    monthlyAnchorDay == null &&
+                    ordinal == null &&
+                    ordinalWeekday == null
+            RecurrenceEditorKind.SELECTED_WEEKDAYS ->
+                intervalUnit == null &&
+                    intervalEvery == null &&
+                    monthlyEvery == null &&
+                    monthlyAnchorDay == null &&
+                    ordinal == null &&
+                    ordinalWeekday == null
+            RecurrenceEditorKind.MONTHLY_DAY ->
+                intervalUnit == null &&
+                    intervalEvery == null &&
+                    selectedWeekdaySnapshot.isEmpty() &&
+                    ordinal == null &&
+                    ordinalWeekday == null
+            RecurrenceEditorKind.MONTHLY_ORDINAL ->
+                intervalUnit == null &&
+                    intervalEvery == null &&
+                    selectedWeekdaySnapshot.isEmpty() &&
+                    monthlyAnchorDay == null
+        }
+    }
+
     companion object {
         fun forKind(kind: RecurrenceEditorKind, endAt: Long? = null): RecurrenceEditorState =
             when (kind) {
@@ -106,9 +163,8 @@ data class RecurrenceEditorState(
             is RecurrenceRule.SelectedWeekdays -> RecurrenceEditorState(
                 kind = RecurrenceEditorKind.SELECTED_WEEKDAYS,
                 basis = rule.basis.toEditorBasis(),
-                selectedWeekdays = rule.weekdays.mapTo(linkedSetOf()) { it.toEditorWeekday() },
                 endAt = endAt
-            )
+            ).withSelectedWeekdays(rule.weekdays.map { it.toEditorWeekday() })
             is RecurrenceRule.MonthlyDay -> RecurrenceEditorState(
                 kind = RecurrenceEditorKind.MONTHLY_DAY,
                 basis = rule.basis.toEditorBasis(),
@@ -163,6 +219,9 @@ internal sealed interface RecurrenceRuleDraftResult {
 }
 
 internal fun RecurrenceEditorState.toValidatedRule(): RecurrenceRuleDraftResult {
+    if (!hasCanonicalShape()) {
+        return RecurrenceRuleDraftResult.Invalid(TaskEditorFieldError.RECURRENCE_INCOMPLETE)
+    }
     if (kind == RecurrenceEditorKind.NONE) {
         return RecurrenceRuleDraftResult.Valid(RecurrenceRule.None)
     }
