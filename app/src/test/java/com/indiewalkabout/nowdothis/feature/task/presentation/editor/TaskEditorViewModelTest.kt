@@ -896,6 +896,44 @@ class TaskEditorViewModelTest {
     }
 
     @Test
+    fun monthlyRuleWithDifferentAnchor_isRejectedAtTheEditorLoadBoundary() = runTest(dispatcher) {
+        val dueDay = java.time.Instant.ofEpochMilli(90_000L)
+            .atZone(ZoneId.systemDefault())
+            .dayOfMonth
+        repository.emit(
+            existingTask(title = "Advanced monthly").copy(
+                recurrenceRule = RecurrenceRule.MonthlyDay(
+                    anchorDay = if (dueDay == 31) 30 else 31,
+                    everyMonths = 1,
+                    basis = RecurrenceBasis.SCHEDULED_DATE
+                )
+            )
+        )
+        val effect = async { createViewModel(TaskEditorKey(7, null)).effects.first() }
+
+        assertEquals(TaskEditorEffect.ShowMessage(R.string.task_editor_load_failed), effect.await())
+    }
+
+    @Test
+    fun recurrenceEndWithoutRule_mapsToAnInlineEditorError() = runTest(dispatcher) {
+        val viewModel = createViewModel(TaskEditorKey(null, null))
+        advanceUntilIdle()
+        viewModel.onEvent(TaskEditorEvent.UpdateTitle("Plan"))
+        viewModel.onEvent(TaskEditorEvent.UpdateDescription("Quarter"))
+        viewModel.onEvent(TaskEditorEvent.UpdateDueAt(70_000L))
+        viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(80_000L))
+
+        viewModel.onEvent(TaskEditorEvent.Save)
+        advanceUntilIdle()
+
+        assertEquals(
+            TaskEditorFieldError.END_WITHOUT_RECURRENCE,
+            viewModel.uiState.value.errors.recurrenceEnd
+        )
+        assertNull(repository.lastUpsert)
+    }
+
+    @Test
     fun invalidSave_mapsEveryValidationErrorInline() = runTest(dispatcher) {
         val viewModel = createViewModel(TaskEditorKey(null, null))
         advanceUntilIdle()
@@ -1178,7 +1216,9 @@ class TaskEditorViewModelTest {
         dueAt = 90_000L,
         reminderAt = 80_000L,
         recurrenceRule = RecurrenceRule.MonthlyDay(
-            1,
+            java.time.Instant.ofEpochMilli(90_000L)
+                .atZone(ZoneId.systemDefault())
+                .dayOfMonth,
             1,
             RecurrenceBasis.SCHEDULED_DATE
         ),

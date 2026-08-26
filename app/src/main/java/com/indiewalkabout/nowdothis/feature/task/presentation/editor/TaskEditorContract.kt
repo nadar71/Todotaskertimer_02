@@ -79,6 +79,7 @@ enum class TaskEditorFieldError {
     REMINDER_AFTER_DUE,
     REMINDER_IN_PAST,
     DUE_REQUIRED,
+    END_WITHOUT_RECURRENCE,
     END_BEFORE_DUE
 }
 

@@ -1,6 +1,7 @@
 package com.indiewalkabout.nowdothis.feature.task.data
 
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
+import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskWithSubtasks
 import com.indiewalkabout.nowdothis.feature.task.data.mapper.TaskEntityMapper
 import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
@@ -10,7 +11,10 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
+import java.time.Instant
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class TaskEntityMapperTest {
@@ -62,6 +66,69 @@ class TaskEntityMapperTest {
         assertEquals(listOf("First", "Middle", "Last"), mapped.subtasks.map { it.title })
     }
 
+    @Test
+    fun toDomain_rejectsLegacyDailyAndWeeklyRulesWithoutDueTime() {
+        listOf("DAILY", "WEEKLY").forEach { recurrence ->
+            assertThrows(IllegalArgumentException::class.java) {
+                TaskEntityMapper.toDomain(
+                    TaskWithSubtasks(taskEntity(dueAt = null, recurrence = recurrence), emptyList())
+                )
+            }
+        }
+    }
+
+    @Test
+    fun toEntities_rejectsEveryActiveRuleWithoutDueTime() {
+        listOf(
+            weeklyRule,
+            RecurrenceRule.SelectedWeekdays(
+                setOf(java.time.DayOfWeek.MONDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            )
+        ).forEach { rule ->
+            assertThrows(IllegalArgumentException::class.java) {
+                TaskEntityMapper.toEntities(task(dueAt = null, recurrenceRule = rule))
+            }
+        }
+    }
+
+    @Test
+    fun toEntities_rejectsMonthlyAnchorThatDiffersFromDueDate() {
+        val dueAt = 90_000L
+        val dueDay = Instant.ofEpochMilli(dueAt).atZone(ZoneId.systemDefault()).dayOfMonth
+        val task = task(
+            dueAt = dueAt,
+            recurrenceRule = RecurrenceRule.MonthlyDay(
+                anchorDay = if (dueDay == 31) 30 else 31,
+                everyMonths = 1,
+                basis = RecurrenceBasis.SCHEDULED_DATE
+            )
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            TaskEntityMapper.toEntities(task)
+        }
+    }
+
+    @Test
+    fun monthlyRuleWithDueDateAnchor_roundTripsThroughLegacyMapper() {
+        val dueAt = 90_000L
+        val original = task(
+            dueAt = dueAt,
+            recurrenceRule = RecurrenceRule.MonthlyDay(
+                anchorDay = Instant.ofEpochMilli(dueAt)
+                    .atZone(ZoneId.systemDefault())
+                    .dayOfMonth,
+                everyMonths = 1,
+                basis = RecurrenceBasis.SCHEDULED_DATE
+            )
+        )
+
+        val (entity, subtasks) = TaskEntityMapper.toEntities(original)
+
+        assertEquals(original, TaskEntityMapper.toDomain(TaskWithSubtasks(entity, subtasks)))
+    }
+
     private fun task(
         id: Int = 0,
         categoryId: Int? = null,
@@ -81,7 +148,7 @@ class TaskEntityMapperTest {
         reminderAt = reminderAt,
         reminderStatus = ReminderStatus.SCHEDULED,
         recurrenceRule = recurrenceRule,
-        recurrenceEndAt = 2_000,
+        recurrenceEndAt = if (recurrenceRule is RecurrenceRule.None) null else 2_000,
         seriesId = "series-1",
         createdAt = 0,
         updatedAt = 0,
@@ -98,6 +165,17 @@ class TaskEntityMapperTest {
         taskId = taskId,
         title = title,
         position = position
+    )
+
+    private fun taskEntity(dueAt: Long?, recurrence: String) = TaskEntity(
+        id = 9,
+        title = "Task",
+        description = "Description",
+        priority = TaskPriority.HIGH.name,
+        dueAt = dueAt,
+        recurrence = recurrence,
+        createdAt = 1,
+        updatedAt = 1
     )
 
     private val weeklyRule = RecurrenceRule.Interval(

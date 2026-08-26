@@ -82,6 +82,14 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun validate_rejectsRecurrenceEndWithoutAnActiveRule() {
+        assertEquals(
+            listOf(TaskValidationError.RECURRENCE_END_WITHOUT_RECURRENCE),
+            ValidateTask().invoke(task(dueAt = 1_000, recurrenceEndAt = 2_000), now = 0)
+        )
+    }
+
+    @Test
     fun activeRule_withoutDueDate_isRejected() {
         val errors = ValidateTask()(task(
             dueAt = null,

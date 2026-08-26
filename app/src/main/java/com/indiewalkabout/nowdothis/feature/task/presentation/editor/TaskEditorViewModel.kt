@@ -467,7 +467,14 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle[KEY_VERSION_UPDATED_AT] = version.updatedAt
         savedStateHandle[KEY_VERSION_COMPLETED] = version.isCompleted
         savedStateHandle.set<Long?>(KEY_VERSION_COMPLETED_AT, version.completedAt)
-        savedStateHandle[KEY_VERSION_RECURRENCE] = version.recurrenceRule.toLegacyRecurrenceType().name
+        val versionDueAt = if (version.recurrenceRule is RecurrenceRule.None) {
+            null
+        } else {
+            requireNotNull(loadedTask?.dueAt) { "Recurring task versions require a loaded due time" }
+        }
+        savedStateHandle[KEY_VERSION_RECURRENCE] = version.recurrenceRule
+            .toLegacyRecurrenceType(versionDueAt)
+            .name
         savedStateHandle.set<Int?>(
             KEY_VERSION_MONTHLY_ANCHOR_DAY,
             (version.recurrenceRule as? RecurrenceRule.MonthlyDay)?.anchorDay
@@ -631,7 +638,7 @@ private fun Task.toEditorState(categories: List<com.indiewalkabout.nowdothis.fea
         dueAt = dueAt,
         reminderAt = reminderAt,
         reminderStatus = reminderStatus,
-        recurrence = recurrenceRule.toLegacyRecurrenceType(),
+        recurrence = recurrenceRule.toLegacyRecurrenceType(dueAt),
         recurrenceEndAt = recurrenceEndAt,
         subtasks = subtasks.sortedBy(Subtask::position).map { subtask ->
             TaskEditorSubtask(
@@ -673,7 +680,7 @@ private fun TaskEditorUiState.toTask(existing: Task?): Task = Task(
     }
 )
 
-private fun RecurrenceRule.toLegacyRecurrenceType(): RecurrenceType = when (this) {
+private fun RecurrenceRule.toLegacyRecurrenceType(dueAt: Long?): RecurrenceType = when (this) {
     RecurrenceRule.None -> RecurrenceType.NONE
     is RecurrenceRule.Interval -> when {
         unit == IntervalUnit.DAYS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
@@ -684,9 +691,15 @@ private fun RecurrenceRule.toLegacyRecurrenceType(): RecurrenceType = when (this
         }
         else -> error("Advanced recurrence editing is not available yet")
     }
-    is RecurrenceRule.MonthlyDay -> when {
-        everyMonths == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> RecurrenceType.MONTHLY
-        else -> error("Advanced recurrence editing is not available yet")
+    is RecurrenceRule.MonthlyDay -> {
+        require(
+            everyMonths == 1 &&
+                basis == RecurrenceBasis.SCHEDULED_DATE &&
+                anchorDay == dueAt.localDayOfMonth("Monthly recurrence editing")
+        ) {
+            "Advanced recurrence editing is not available yet"
+        }
+        RecurrenceType.MONTHLY
     }
     is RecurrenceRule.SelectedWeekdays,
     is RecurrenceRule.MonthlyOrdinal -> error("Advanced recurrence editing is not available yet")
@@ -712,6 +725,11 @@ private fun RecurrenceType.toLegacyRecurrenceRule(dueAt: Long?): RecurrenceRule 
         dueAt?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).dayOfMonth }
     )
 
+private fun Long?.localDayOfMonth(boundary: String): Int =
+    Instant.ofEpochMilli(requireNotNull(this) { "$boundary requires a due time" })
+        .atZone(ZoneId.systemDefault())
+        .dayOfMonth
+
 private fun List<TaskValidationError>.toEditorErrors(): TaskEditorErrors {
     var mapped = TaskEditorErrors()
     forEach { error ->
@@ -728,6 +746,9 @@ private fun List<TaskValidationError>.toEditorErrors(): TaskEditorErrors {
             }
             TaskValidationError.RECURRENCE_WITHOUT_DUE_TIME -> {
                 mapped.copy(recurrence = TaskEditorFieldError.DUE_REQUIRED)
+            }
+            TaskValidationError.RECURRENCE_END_WITHOUT_RECURRENCE -> {
+                mapped.copy(recurrenceEnd = TaskEditorFieldError.END_WITHOUT_RECURRENCE)
             }
             TaskValidationError.RECURRENCE_END_BEFORE_DUE -> {
                 mapped.copy(recurrenceEnd = TaskEditorFieldError.END_BEFORE_DUE)

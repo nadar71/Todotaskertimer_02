@@ -15,8 +15,11 @@ import java.time.Instant
 import java.time.ZoneId
 
 object TaskEntityMapper {
-    fun toEntities(task: Task): Pair<TaskEntity, List<SubtaskEntity>> =
-        TaskEntity(
+    fun toEntities(task: Task): Pair<TaskEntity, List<SubtaskEntity>> {
+        require(task.recurrenceRule is RecurrenceRule.None || task.dueAt != null) {
+            "Active recurrence persistence requires a due time"
+        }
+        return TaskEntity(
             id = task.id,
             title = task.title,
             description = task.description,
@@ -27,7 +30,7 @@ object TaskEntityMapper {
             dueAt = task.dueAt,
             reminderAt = task.reminderAt,
             reminderStatus = task.reminderStatus.name,
-            recurrence = task.recurrenceRule.toLegacyRecurrenceType().name,
+            recurrence = task.recurrenceRule.toLegacyRecurrenceType(task.dueAt).name,
             recurrenceEndAt = task.recurrenceEndAt,
             seriesId = task.seriesId,
             createdAt = task.createdAt,
@@ -42,6 +45,7 @@ object TaskEntityMapper {
                 position = subtask.position
             )
         }
+    }
 
     fun toDomain(relation: TaskWithSubtasks): Task = relation.task.run {
         Task(
@@ -76,7 +80,7 @@ object TaskEntityMapper {
     }
 }
 
-private fun RecurrenceRule.toLegacyRecurrenceType(): RecurrenceType = when (this) {
+private fun RecurrenceRule.toLegacyRecurrenceType(dueAt: Long?): RecurrenceType = when (this) {
     RecurrenceRule.None -> RecurrenceType.NONE
     is RecurrenceRule.Interval -> when {
         unit == IntervalUnit.DAYS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
@@ -87,9 +91,15 @@ private fun RecurrenceRule.toLegacyRecurrenceType(): RecurrenceType = when (this
         }
         else -> error("Advanced recurrence persistence is not available until Room v3")
     }
-    is RecurrenceRule.MonthlyDay -> when {
-        everyMonths == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> RecurrenceType.MONTHLY
-        else -> error("Advanced recurrence persistence is not available until Room v3")
+    is RecurrenceRule.MonthlyDay -> {
+        require(
+            everyMonths == 1 &&
+                basis == RecurrenceBasis.SCHEDULED_DATE &&
+                anchorDay == dueAt.localDayOfMonth("Monthly recurrence persistence")
+        ) {
+            "Advanced recurrence persistence is not available until Room v3"
+        }
+        RecurrenceType.MONTHLY
     }
     is RecurrenceRule.SelectedWeekdays,
     is RecurrenceRule.MonthlyOrdinal -> error("Advanced recurrence persistence is not available until Room v3")
@@ -98,15 +108,24 @@ private fun RecurrenceRule.toLegacyRecurrenceType(): RecurrenceType = when (this
 private fun RecurrenceType.toLegacyRecurrenceRule(dueAt: Long?): RecurrenceRule = when (this) {
     RecurrenceType.NONE -> RecurrenceRule.None
     RecurrenceType.DAILY -> {
+        dueAt.requireForActiveRecurrence("Legacy daily recurrence")
         RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
     }
     RecurrenceType.WEEKLY -> {
+        dueAt.requireForActiveRecurrence("Legacy weekly recurrence")
         RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
     }
     RecurrenceType.MONTHLY -> RecurrenceRule.MonthlyDay(
-        anchorDay = dueAt?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).dayOfMonth }
-            ?: error("Legacy monthly recurrence requires a due time"),
+        anchorDay = dueAt.localDayOfMonth("Legacy monthly recurrence"),
         everyMonths = 1,
         basis = RecurrenceBasis.SCHEDULED_DATE
     )
 }
+
+private fun Long?.localDayOfMonth(boundary: String): Int =
+    Instant.ofEpochMilli(requireForActiveRecurrence(boundary))
+        .atZone(ZoneId.systemDefault())
+        .dayOfMonth
+
+private fun Long?.requireForActiveRecurrence(boundary: String): Long =
+    requireNotNull(this) { "$boundary requires a due time" }
