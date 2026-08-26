@@ -143,17 +143,17 @@ class TaskEditorViewModel @AssistedInject constructor(
                 RecurrenceEditorKind.MONTHLY_DAY,
                 RecurrenceEditorKind.MONTHLY_ORDINAL
             ) {
-                it.copy(basis = event.value)
+                it.withBasis(event.value)
             }
             is TaskEditorEvent.SelectRecurrenceIntervalUnit -> updateRecurrenceFor(
                 RecurrenceEditorKind.INTERVAL
             ) {
-                it.copy(intervalUnit = event.value)
+                it.withIntervalUnit(event.value)
             }
             is TaskEditorEvent.UpdateRecurrenceIntervalEvery -> updateRecurrenceFor(
                 RecurrenceEditorKind.INTERVAL
             ) {
-                it.copy(intervalEvery = event.value)
+                it.withIntervalEvery(event.value)
             }
             is TaskEditorEvent.ToggleRecurrenceWeekday -> updateRecurrenceFor(
                 RecurrenceEditorKind.SELECTED_WEEKDAYS
@@ -164,28 +164,28 @@ class TaskEditorViewModel @AssistedInject constructor(
                 RecurrenceEditorKind.MONTHLY_DAY,
                 RecurrenceEditorKind.MONTHLY_ORDINAL
             ) {
-                it.copy(monthlyEvery = event.value)
+                it.withMonthlyEvery(event.value)
             }
             is TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay -> updateRecurrenceFor(
                 RecurrenceEditorKind.MONTHLY_DAY
             ) {
-                it.copy(monthlyAnchorDay = event.value)
+                it.withMonthlyAnchorDay(event.value)
             }
             is TaskEditorEvent.SelectRecurrenceOrdinal -> updateRecurrenceFor(
                 RecurrenceEditorKind.MONTHLY_ORDINAL
             ) {
-                it.copy(ordinal = event.value)
+                it.withOrdinal(event.value)
             }
             is TaskEditorEvent.SelectRecurrenceOrdinalWeekday -> updateRecurrenceFor(
                 RecurrenceEditorKind.MONTHLY_ORDINAL
             ) {
-                it.copy(ordinalWeekday = event.value)
+                it.withOrdinalWeekday(event.value)
             }
             is TaskEditorEvent.UpdateRecurrenceEndAt -> {
                 if (_uiState.value.recurrence.kind != RecurrenceEditorKind.NONE) {
                     updateDraft {
                         it.copy(
-                            recurrence = it.recurrence.copy(endAt = event.value),
+                            recurrence = it.recurrence.withEndAt(event.value),
                             errors = it.errors.copy(recurrenceEnd = null)
                         )
                     }

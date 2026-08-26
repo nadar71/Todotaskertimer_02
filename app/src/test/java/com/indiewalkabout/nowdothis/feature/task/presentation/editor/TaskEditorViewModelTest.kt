@@ -47,6 +47,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepositor
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.SaveTask
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ValidateTask
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskEditorKey
+import java.lang.reflect.Modifier
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.util.TimeZone
@@ -931,28 +932,28 @@ class TaskEditorViewModelTest {
             add(RecurrenceEditorState(ordinalWeekday = RecurrenceEditorWeekday.MONDAY))
 
             add(interval.withSelectedWeekdays(setOf(RecurrenceEditorWeekday.MONDAY)))
-            add(interval.copy(monthlyEvery = 1))
-            add(interval.copy(monthlyAnchorDay = 1))
-            add(interval.copy(ordinal = RecurrenceEditorOrdinal.FIRST))
-            add(interval.copy(ordinalWeekday = RecurrenceEditorWeekday.MONDAY))
+            add(interval.withMonthlyEvery(1))
+            add(interval.withMonthlyAnchorDay(1))
+            add(interval.withOrdinal(RecurrenceEditorOrdinal.FIRST))
+            add(interval.withOrdinalWeekday(RecurrenceEditorWeekday.MONDAY))
 
-            add(weekdays.copy(intervalUnit = RecurrenceEditorIntervalUnit.DAYS))
-            add(weekdays.copy(intervalEvery = 1))
-            add(weekdays.copy(monthlyEvery = 1))
-            add(weekdays.copy(monthlyAnchorDay = 1))
-            add(weekdays.copy(ordinal = RecurrenceEditorOrdinal.FIRST))
-            add(weekdays.copy(ordinalWeekday = RecurrenceEditorWeekday.MONDAY))
+            add(weekdays.withIntervalUnit(RecurrenceEditorIntervalUnit.DAYS))
+            add(weekdays.withIntervalEvery(1))
+            add(weekdays.withMonthlyEvery(1))
+            add(weekdays.withMonthlyAnchorDay(1))
+            add(weekdays.withOrdinal(RecurrenceEditorOrdinal.FIRST))
+            add(weekdays.withOrdinalWeekday(RecurrenceEditorWeekday.MONDAY))
 
-            add(monthlyDay.copy(intervalUnit = RecurrenceEditorIntervalUnit.DAYS))
-            add(monthlyDay.copy(intervalEvery = 1))
+            add(monthlyDay.withIntervalUnit(RecurrenceEditorIntervalUnit.DAYS))
+            add(monthlyDay.withIntervalEvery(1))
             add(monthlyDay.withSelectedWeekdays(setOf(RecurrenceEditorWeekday.MONDAY)))
-            add(monthlyDay.copy(ordinal = RecurrenceEditorOrdinal.FIRST))
-            add(monthlyDay.copy(ordinalWeekday = RecurrenceEditorWeekday.MONDAY))
+            add(monthlyDay.withOrdinal(RecurrenceEditorOrdinal.FIRST))
+            add(monthlyDay.withOrdinalWeekday(RecurrenceEditorWeekday.MONDAY))
 
-            add(monthlyOrdinal.copy(intervalUnit = RecurrenceEditorIntervalUnit.DAYS))
-            add(monthlyOrdinal.copy(intervalEvery = 1))
+            add(monthlyOrdinal.withIntervalUnit(RecurrenceEditorIntervalUnit.DAYS))
+            add(monthlyOrdinal.withIntervalEvery(1))
             add(monthlyOrdinal.withSelectedWeekdays(setOf(RecurrenceEditorWeekday.MONDAY)))
-            add(monthlyOrdinal.copy(monthlyAnchorDay = 1))
+            add(monthlyOrdinal.withMonthlyAnchorDay(1))
         }
 
         invalidDrafts.forEach { draft ->
@@ -1032,6 +1033,29 @@ class TaskEditorViewModelTest {
         val restoredExposure = restored.selectedWeekdays as MutableSet<RecurrenceEditorWeekday>
         runCatching { restoredExposure += RecurrenceEditorWeekday.FRIDAY }
         assertEquals(setOf(RecurrenceEditorWeekday.MONDAY), restored.selectedWeekdays)
+    }
+
+    @Test
+    fun weekdayBackingList_constructorAndCopyAreNotPublicAliasPaths() {
+        val stateClass = RecurrenceEditorState::class.java
+        val publicBackingConstructors = stateClass.declaredConstructors.filter { constructor ->
+            Modifier.isPublic(constructor.modifiers) &&
+                constructor.parameterTypes.any { List::class.java.isAssignableFrom(it) }
+        }
+        val publicBackingCopies = stateClass.declaredMethods.filter { method ->
+            method.name == "copy" &&
+                Modifier.isPublic(method.modifiers) &&
+                method.parameterTypes.any { List::class.java.isAssignableFrom(it) }
+        }
+
+        assertTrue(
+            "Backing-list constructor must not be public: $publicBackingConstructors",
+            publicBackingConstructors.isEmpty()
+        )
+        assertTrue(
+            "Backing-list copy must not be public: $publicBackingCopies",
+            publicBackingCopies.isEmpty()
+        )
     }
 
     @Test
