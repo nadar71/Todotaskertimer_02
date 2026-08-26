@@ -307,6 +307,75 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun legacyRecurrenceBeforeCommaProseConsumesOnlyTheRecurrence() {
+        val cases = listOf(
+            Triple(
+                ParserLanguage.ENGLISH,
+                "Task every day, notes",
+                RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ENGLISH,
+                "Task every week, notes",
+                RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ENGLISH,
+                "Task every month, notes",
+                RecurrenceRule.MonthlyDay(26, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ITALIAN,
+                "Task ogni giorno, note",
+                RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ITALIAN,
+                "Task ogni settimana, note",
+                RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            Triple(
+                ParserLanguage.ITALIAN,
+                "Task ogni mese, note",
+                RecurrenceRule.MonthlyDay(26, 1, RecurrenceBasis.SCHEDULED_DATE)
+            )
+        )
+
+        cases.forEach { (language, raw, expectedRule) ->
+            val result = parse(raw, language)
+            val expectedMatch = SourceMatch(5, raw.indexOf(','), RecognizedField.RECURRENCE)
+            val expectedTitle = if (language == ParserLanguage.ENGLISH) {
+                "Task , notes"
+            } else {
+                "Task , note"
+            }
+
+            assertEquals(raw, expectedTitle, result.draft.title)
+            assertEquals(raw, expectedRule, result.draft.recurrenceRule)
+            assertEquals(raw, listOf(expectedMatch), result.consumed)
+            assertEquals(
+                raw,
+                setOf(RecognizedField.TITLE, RecognizedField.RECURRENCE),
+                result.recognized
+            )
+            assertTrue(raw, result.issues.isEmpty())
+        }
+
+        val malformedContinuations = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every month / Friday"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni mese / venerdì")
+        )
+        malformedContinuations.forEach { (language, raw) ->
+            val result = parse(raw, language)
+
+            assertEquals(raw, raw, result.draft.title)
+            assertNull(raw, result.draft.recurrenceRule)
+            assertTrue(raw, result.consumed.isEmpty())
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
+    }
+
+    @Test
     fun malformedOrdinalPreservesWholeTitleAndShieldsInnerTime() {
         val raw = "Report fifth Monday of every month at 5 pm"
 

@@ -58,6 +58,23 @@ class RecurrenceParserTest {
             )
             assertTrue(case.raw, result.issues.isEmpty())
         }
+
+        val malformedContinuations = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every month / Friday"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni mese / venerdì")
+        )
+        malformedContinuations.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.matches.isEmpty())
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.ownedRanges
+            )
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
     }
 
     @Test
@@ -86,6 +103,57 @@ class RecurrenceParserTest {
                 case.expected,
                 parser.parse(input(case.raw, case.language), DUE_AT).rule
             )
+        }
+    }
+
+    @Test
+    fun legacyRecurrenceBeforeCommaProseRemainsValid() {
+        val cases = listOf(
+            RecurrenceCase(
+                ParserLanguage.ENGLISH,
+                "Task every day, notes",
+                RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            RecurrenceCase(
+                ParserLanguage.ENGLISH,
+                "Task every week, notes",
+                RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            RecurrenceCase(
+                ParserLanguage.ENGLISH,
+                "Task every month, notes",
+                RecurrenceRule.MonthlyDay(27, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            RecurrenceCase(
+                ParserLanguage.ITALIAN,
+                "Task ogni giorno, note",
+                RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            RecurrenceCase(
+                ParserLanguage.ITALIAN,
+                "Task ogni settimana, note",
+                RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
+            ),
+            RecurrenceCase(
+                ParserLanguage.ITALIAN,
+                "Task ogni mese, note",
+                RecurrenceRule.MonthlyDay(27, 1, RecurrenceBasis.SCHEDULED_DATE)
+            )
+        )
+
+        cases.forEach { case ->
+            val result = parser.parse(input(case.raw, case.language), DUE_AT)
+            val expectedMatch = SourceMatch(
+                5,
+                case.raw.indexOf(','),
+                RecognizedField.RECURRENCE
+            )
+
+            assertEquals(case.raw, case.expected, result.rule)
+            assertEquals(case.raw, listOf(case.expected), result.candidates.map { it.rule })
+            assertEquals(case.raw, listOf(expectedMatch), result.matches)
+            assertEquals(case.raw, listOf(expectedMatch), result.ownedRanges)
+            assertTrue(case.raw, result.issues.isEmpty())
         }
     }
 

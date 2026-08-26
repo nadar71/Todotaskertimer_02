@@ -107,7 +107,7 @@ class RecurrenceParser {
                 add(parseLegacy(match, input, dueAt))
             }
             grammar.weekdayListPattern.findAll(input.rawText).forEach { match ->
-                add(parseWeekdayList(match, input.language))
+                parseWeekdayList(match, input.language)?.let(::add)
             }
         }
             .removeContainedAttempts()
@@ -183,7 +183,7 @@ class RecurrenceParser {
         return match.toAttempt(rule)
     }
 
-    private fun parseWeekdayList(match: MatchResult, language: ParserLanguage): Attempt {
+    private fun parseWeekdayList(match: MatchResult, language: ParserLanguage): Attempt? {
         val dayGroup = requireNotNull(match.groups["days"])
         val grammar = Grammar.forLanguage(language)
         val tokens = grammar.weekdayTokenPattern.findAll(dayGroup.value)
@@ -202,6 +202,7 @@ class RecurrenceParser {
                 )
             )
         }
+        if (invalidIndex == 0 && legacyUnit(tokens.first().value, language)) return null
         if (invalidIndex == 0 || weekdayLike(tokens[invalidIndex].value, language)) {
             return match.toAttempt(null)
         }
@@ -211,6 +212,14 @@ class RecurrenceParser {
             ?: return match.toAttempt(null)
         val end = dayGroup.range.first + tokens[invalidIndex - 1].range.last + 1
         return sourceAttempt(match.range.first, end, rule)
+    }
+
+    private fun legacyUnit(value: String, language: ParserLanguage): Boolean {
+        val normalized = TextNormalizer.matchingKey(value)
+        return normalized in when (language) {
+            ParserLanguage.ENGLISH -> ENGLISH_LEGACY_UNITS
+            ParserLanguage.ITALIAN -> ITALIAN_LEGACY_UNITS
+        }
     }
 
     private fun selectedWeekdaysRule(
@@ -438,6 +447,8 @@ class RecurrenceParser {
             "primo", "secondo", "terzo", "quarto", "quinto", "sesto", "settimo", "ottavo",
             "nono", "decimo", "ultimo"
         )
+        val ENGLISH_LEGACY_UNITS = setOf("day", "week", "month")
+        val ITALIAN_LEGACY_UNITS = setOf("giorno", "settimana", "mese")
         val WEEKDAY_CONTINUATION_PATTERN = Regex(
             "^\\s*(?:[\\p{P}]+\\s*)?(?<weekday>$WORD_TOKEN)$END_BOUNDARY",
             RegexOption.IGNORE_CASE
