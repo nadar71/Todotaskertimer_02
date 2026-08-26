@@ -814,7 +814,7 @@ class TaskEditorScreenTest {
         fontScale: Float = 1f
     ) {
         composeRule.runOnUiThread {
-            TaskEditorTestContent.content = {
+            composeRule.activity.setTestContent {
                 val density = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density.density, fontScale)
@@ -862,7 +862,7 @@ class TaskEditorScreenTest {
 
     private fun setQuickEntrySectionSurface(fontScale: Float, height: androidx.compose.ui.unit.Dp? = null) {
         composeRule.runOnUiThread {
-            TaskEditorTestContent.content = {
+            composeRule.activity.setTestContent {
                 val density = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density.density, fontScale)
@@ -902,7 +902,7 @@ class TaskEditorScreenTest {
         onEvent: (TaskEditorEvent) -> Unit = {}
     ) {
         composeRule.runOnUiThread {
-            TaskEditorTestContent.content = {
+            composeRule.activity.setTestContent {
                 val density = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(density.density, fontScale)
@@ -1034,6 +1034,10 @@ class TaskEditorScreenTest {
         assertEquals(
             expected.primaryLanguage,
             composeRule.activity.resources.configuration.locales[0].language
+        )
+        assertEquals(
+            expected.label,
+            composeRule.activity.getString(R.string.quick_entry_label)
         )
     }
 
@@ -1201,6 +1205,7 @@ private class ApplicationLocaleRule(
             val localeManager = instrumentation.targetContext.applicationContext
                 .getSystemService(LocaleManager::class.java)
             val previousLocales = localeManager.applicationLocales
+            TaskEditorTestLocale.languageTags = expected.languageTag
             try {
                 localeManager.applicationLocales = LocaleList.forLanguageTags(expected.languageTag)
                 instrumentation.waitForIdleSync()
@@ -1208,6 +1213,7 @@ private class ApplicationLocaleRule(
             } finally {
                 localeManager.applicationLocales = previousLocales
                 instrumentation.waitForIdleSync()
+                TaskEditorTestLocale.languageTags = null
             }
         }
     }
