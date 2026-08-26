@@ -139,6 +139,25 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun malformedEnglishMeridiemAttempts_remainWholeAndDoNotSetDueTime() {
+        val malformed = listOf(
+            "at 5 pmx",
+            "at 5 amfoo",
+            "at 5 p.m.x",
+            "at 5:30 A.M.foo"
+        )
+
+        malformed.forEach { attempt ->
+            val raw = "Task $attempt"
+            val result = parse(raw, ParserLanguage.ENGLISH)
+
+            assertEquals(raw, raw, result.draft.title)
+            assertEquals(raw, null, result.draft.dueAt)
+            assertEquals(raw, emptyList<SourceMatch>(), result.consumed)
+        }
+    }
+
+    @Test
     fun allPriorityMarkers_mapByParserLanguage() {
         val cases = listOf(
             Triple(ParserLanguage.ITALIAN, "!alta", TaskPriority.HIGH),

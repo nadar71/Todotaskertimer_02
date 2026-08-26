@@ -4,13 +4,13 @@ Only `Passed`, `Failed`, and `Pending` are valid statuses. Emulator and physical
 
 | Area | Status | Command or procedure | Environment | Date | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| JVM tests | Passed | `./gradlew --no-daemon :app:testDebugUnitTest --rerun-tasks` | Local macOS, JDK 17 | 2026-08-26 | 320 passed; 0 failed, 0 errors, 0 skipped across 33 XML suites |
+| JVM tests | Passed | `./gradlew --no-daemon :app:testDebugUnitTest --rerun-tasks` | Local macOS, JDK 17 | 2026-08-26 | 325 passed; 0 failed, 0 errors, 0 skipped across 33 XML suites |
 | Android lint | Passed | `./gradlew --no-daemon :app:lintDebug` | Local macOS | 2026-08-26 | 0 errors, 68 warnings; `app/build/reports/lint-results-debug.html` |
 | Debug assembly | Passed | Combined lint/debug/release gate | Local macOS, API 36 SDK | 2026-08-26 | Signed debug APK; size/hash in Natural-Language Entry evidence |
 | Optimized release APK/AAB | Passed | Combined release gate plus explicit R8 full-mode assembly | Local macOS | 2026-08-26 | Unsigned APK/AAB, R8 mapping, manifest, locale config, resources, sizes, and hashes inspected |
 | Feature Compose tests | Passed | Feature-package `connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 39 tests passed; accessibility checklist |
-| Full connected suite | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest` | Medium Phone AVD, Android 16/API 36 | 2026-08-26 | 111 passed; 0 failed, 0 errors, 0 skipped; XML time 161.987 s |
-| Room migration and DAO behavior | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-26 | DAO, migration, Replace All, rollback, Quick Capture refresh, natural-language save, setup-failure-safe row/sequence/full alarm-set restoration, and deterministic completion/save/reminder interleavings passed within 111 tests |
+| Full connected suite | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest` | Medium Phone AVD, Android 16/API 36 | 2026-08-26 | 113 passed; 0 failed, 0 errors, 0 skipped; XML time 158.685 s |
+| Room migration and DAO behavior | Passed | Full connected suite | Medium Phone AVD, API 36 | 2026-08-26 | DAO, migration, Replace All, rollback, Quick Capture refresh, natural-language save, setup-failure-safe row/sequence/full alarm-set restoration, and deterministic completion/save/reminder interleavings passed within 113 tests |
 | Data portability JVM contracts | Passed | `./gradlew :app:testDebugUnitTest` | Local macOS, JDK 17 | 2026-08-13 | 42 codec, validator, repository, use-case, and ViewModel tests passed |
 | Data portability connected journey | Passed | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest` | Medium Phone AVD, API 36 | 2026-08-13 | 11 portability tests passed, including provider truncation and 3 export/mutate/restore and no-mutation journey proofs |
 | Localization | Passed | Full connected suite, XML parity inspection, and Italian/English screenshot smoke | Medium Phone AVD, API 36 | 2026-08-26 | Generated locale config contains `it`/`en`; both resource sets have 216 unique strings and 17 Quick entry keys with exact name parity; `fr-CH,en-US` and unsupported-only parser fallback passed |

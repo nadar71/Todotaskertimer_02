@@ -105,12 +105,19 @@ class TemporalParser {
             .toList()
 
         ParserLanguage.ENGLISH -> buildList {
-            englishTwelveHourTimePattern.findAll(raw).forEach { match ->
+            val malformedAttempts = malformedEnglishMeridiemAttemptPattern.findAll(raw)
+                .map { match -> match.range }
+                .toList()
+            englishTwelveHourTimePattern.findAll(raw)
+                .filterNot { match -> match.intersectsAny(malformedAttempts) }
+                .forEach { match ->
                 parseEnglishTwelveHourTime(match)?.let { time ->
                     add(TimeCandidate(time, match.toSourceMatch()))
                 }
             }
-            englishTwentyFourHourTimePattern.findAll(raw).forEach { match ->
+            englishTwentyFourHourTimePattern.findAll(raw)
+                .filterNot { match -> match.intersectsAny(malformedAttempts) }
+                .forEach { match ->
                 parseEnglishTwentyFourHourTime(match)?.let { time ->
                     add(TimeCandidate(time, match.toSourceMatch()))
                 }
@@ -201,6 +208,10 @@ class TemporalParser {
     private fun SourceMatch.intersects(other: SourceMatch): Boolean =
         start < other.endExclusive && other.start < endExclusive
 
+    private fun MatchResult.intersectsAny(ranges: List<IntRange>): Boolean = ranges.any { other ->
+        range.first <= other.last && other.first <= range.last
+    }
+
     private data class DateCandidate(val date: LocalDate, val match: SourceMatch)
 
     private data class TimeCandidate(val time: LocalTime, val match: SourceMatch)
@@ -223,6 +234,11 @@ class TemporalParser {
         val englishTwentyFourHourTimePattern = Regex(
             "(?<![\\p{L}\\p{N}_])at\\s+(\\d{1,2})(?::(\\d{2}))?" +
                 "(?![\\p{L}\\p{N}_:/]|\\.(?=\\d)|\\s+[ap]\\.?m\\.?(?![\\p{L}\\p{N}_]))",
+            RegexOption.IGNORE_CASE
+        )
+        val malformedEnglishMeridiemAttemptPattern = Regex(
+            "(?<![\\p{L}\\p{N}_])at\\s+\\d{1,2}(?::\\d{2})?\\s+" +
+                "[ap]\\.?m\\.?(?:[\\p{L}\\p{N}_]+|\\.+[\\p{L}\\p{N}_]+)",
             RegexOption.IGNORE_CASE
         )
 

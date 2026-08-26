@@ -169,13 +169,13 @@ fallback, and exact restoration of package/component alarms including orphans.
 
 | Gate | Exact command | Result |
 | --- | --- | --- |
-| Focused parser and editor JVM | `./gradlew --no-daemon :app:testDebugUnitTest --tests '*TextNormalizerTest' --tests '*TemporalParserTest' --tests '*ParseNaturalLanguageTaskTest' --tests '*TaskEditorViewModelTest' --rerun-tasks` | 111 tests across 4 XML suites; 0 failures, 0 errors, 0 skipped |
+| Focused parser and editor JVM | `./gradlew --no-daemon :app:testDebugUnitTest --tests '*TextNormalizerTest' --tests '*TemporalParserTest' --tests '*ParseNaturalLanguageTaskTest' --tests '*TaskEditorViewModelTest' --rerun-tasks` | 116 tests across 4 XML suites; 0 failures, 0 errors, 0 skipped |
 | Focused editor Compose UI | `./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.task.presentation.editor.TaskEditorScreenTest` | 16 tests; 0 failures, 0 errors, 0 skipped |
 | Focused journey, fallback, locales, and fixture cleanup | `./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.NaturalLanguageEntryJourneyTest` | 6 tests; 0 failures, 0 errors, 0 skipped |
 | API 33+ notification access | `./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.core.notifications.Api33ReminderPermissionConnectedTest` | 1 test; fresh denial and platform grant passed on API 36 |
 | Active locale-list adapter | `./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.AndroidNaturalLanguageEnvironmentConnectedTest` | 1 test; `fr-CH,en-US` and unsupported-only passed on API 36 |
-| Full JVM | `./gradlew --no-daemon :app:testDebugUnitTest --rerun-tasks` | 320 tests across 33 XML suites; 0 failures, 0 errors, 0 skipped |
-| Full connected | `./gradlew --no-daemon :app:connectedDebugAndroidTest` | 111 tests; 0 failures, 0 errors, 0 skipped; XML time 161.987 s |
+| Full JVM | `./gradlew --no-daemon :app:testDebugUnitTest --rerun-tasks` | 325 tests across 33 XML suites; 0 failures, 0 errors, 0 skipped |
+| Full connected | `./gradlew --no-daemon :app:connectedDebugAndroidTest` | 113 tests; 0 failures, 0 errors, 0 skipped; XML time 158.685 s |
 | Lint | `./gradlew --no-daemon :app:lintDebug` | Passed; 0 errors and 68 warnings |
 | APK and AAB packaging | `./gradlew --no-daemon :app:assembleDebug :app:assembleRelease :app:bundleRelease` | Passed; debug APK, optimized unsigned release APK, and unsigned release AAB produced |
 | Explicit R8 full mode | `./gradlew --no-daemon :app:assembleRelease -Pandroid.enableR8.fullMode=true --rerun-tasks` | Passed; all 55 tasks executed, including `minifyReleaseWithR8` |

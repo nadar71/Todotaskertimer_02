@@ -140,6 +140,38 @@ class TemporalParserTest(
                 matches = listOf(match(5, 13))
             ),
             case(
+                raw = "Task at 5 pmx",
+                language = ParserLanguage.ENGLISH,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = null,
+                matches = emptyList()
+            ),
+            case(
+                raw = "Task at 5 amfoo",
+                language = ParserLanguage.ENGLISH,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = null,
+                matches = emptyList()
+            ),
+            case(
+                raw = "Task at 5 p.m.x",
+                language = ParserLanguage.ENGLISH,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = null,
+                matches = emptyList()
+            ),
+            case(
+                raw = "Task at 5:30 A.M.foo",
+                language = ParserLanguage.ENGLISH,
+                zoneId = rome,
+                now = regularNow,
+                dueAt = null,
+                matches = emptyList()
+            ),
+            case(
                 raw = "Compra latte domani alle 18",
                 language = ParserLanguage.ITALIAN,
                 zoneId = rome,

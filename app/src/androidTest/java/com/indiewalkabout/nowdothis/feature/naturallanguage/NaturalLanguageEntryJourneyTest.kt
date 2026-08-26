@@ -1,11 +1,9 @@
 package com.indiewalkabout.nowdothis.feature.naturallanguage
 
-import android.Manifest
 import android.app.AlarmManager
 import android.app.LocaleManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.LocaleList
 import android.text.format.DateUtils
@@ -41,6 +39,7 @@ import com.indiewalkabout.nowdothis.app.MainActivity
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.core.database.DebugDatabaseEntryPoint
 import com.indiewalkabout.nowdothis.core.notifications.AndroidAlarmGateway
+import com.indiewalkabout.nowdothis.core.notifications.NotificationPermissionTestState
 import com.indiewalkabout.nowdothis.core.notifications.ReminderReceiver
 import com.indiewalkabout.nowdothis.feature.category.data.local.CategoryEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
@@ -591,19 +590,12 @@ private class NotificationPermissionRule : TestRule {
     override fun apply(base: Statement, description: Description): Statement = object : Statement() {
         override fun evaluate() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val instrumentation = InstrumentationRegistry.getInstrumentation()
-                val context = instrumentation.targetContext.applicationContext
-                if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                    PackageManager.PERMISSION_GRANTED
-                ) {
-                    instrumentation.uiAutomation.grantRuntimePermission(
-                        context.packageName,
-                        Manifest.permission.POST_NOTIFICATIONS
-                    )
-                    instrumentation.waitForIdleSync()
+                NotificationPermissionTestState.create().withForced(granted = true) {
+                    base.evaluate()
                 }
+            } else {
+                base.evaluate()
             }
-            base.evaluate()
         }
     }
 }
