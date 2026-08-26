@@ -1,7 +1,7 @@
 package com.indiewalkabout.nowdothis.feature.task.domain.usecase
 
 import com.indiewalkabout.nowdothis.core.time.AppClock
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
@@ -52,7 +52,7 @@ class SaveTask(
             updatedAt = existing?.updatedAt?.let { maxOf(now, it + 1) } ?: now,
             seriesId = existing?.seriesId
                 ?: task.seriesId
-                ?: if (task.recurrence != RecurrenceType.NONE) seriesIdFactory() else null,
+                ?: if (task.recurrenceRule !is RecurrenceRule.None) seriesIdFactory() else null,
             reminderStatus = if (hasFutureReminder) {
                 ReminderStatus.REQUESTED
             } else {

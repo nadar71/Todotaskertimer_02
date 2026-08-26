@@ -43,7 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.indiewalkabout.nowdothis.R
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
@@ -199,7 +199,7 @@ private fun TaskMetadata(task: Task) {
                 modifier = Modifier.size(15.dp)
             )
         }
-        if (task.recurrence != RecurrenceType.NONE) {
+        if (task.recurrenceRule !is RecurrenceRule.None) {
             Icon(
                 imageVector = Icons.Filled.Refresh,
                 contentDescription = stringResource(R.string.task_recurrence_indicator),

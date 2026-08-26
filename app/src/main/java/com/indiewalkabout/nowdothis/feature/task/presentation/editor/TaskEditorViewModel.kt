@@ -12,6 +12,9 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParseIs
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.RecognizedField
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
 import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.NaturalLanguageEnvironment
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
@@ -29,6 +32,8 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -443,7 +448,12 @@ class TaskEditorViewModel @AssistedInject constructor(
             createdAt = savedStateHandle.get<Long>(KEY_VERSION_CREATED_AT) ?: return null,
             updatedAt = savedStateHandle.get<Long>(KEY_VERSION_UPDATED_AT) ?: return null,
             isCompleted = savedStateHandle.get<Boolean>(KEY_VERSION_COMPLETED) ?: return null,
-            completedAt = savedStateHandle[KEY_VERSION_COMPLETED_AT]
+            completedAt = savedStateHandle[KEY_VERSION_COMPLETED_AT],
+            recurrenceRule = enumValueOrDefault(
+                savedStateHandle.get<String>(KEY_VERSION_RECURRENCE),
+                RecurrenceType.NONE
+            ).toLegacyRecurrenceRule(savedStateHandle[KEY_VERSION_MONTHLY_ANCHOR_DAY]),
+            recurrenceEndAt = savedStateHandle[KEY_VERSION_RECURRENCE_END_AT]
         )
     }
 
@@ -457,6 +467,12 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle[KEY_VERSION_UPDATED_AT] = version.updatedAt
         savedStateHandle[KEY_VERSION_COMPLETED] = version.isCompleted
         savedStateHandle.set<Long?>(KEY_VERSION_COMPLETED_AT, version.completedAt)
+        savedStateHandle[KEY_VERSION_RECURRENCE] = version.recurrenceRule.toLegacyRecurrenceType().name
+        savedStateHandle.set<Int?>(
+            KEY_VERSION_MONTHLY_ANCHOR_DAY,
+            (version.recurrenceRule as? RecurrenceRule.MonthlyDay)?.anchorDay
+        )
+        savedStateHandle.set<Long?>(KEY_VERSION_RECURRENCE_END_AT, version.recurrenceEndAt)
     }
 
     @AssistedFactory
@@ -491,6 +507,9 @@ class TaskEditorViewModel @AssistedInject constructor(
         const val KEY_VERSION_UPDATED_AT = "draft_version_updated_at"
         const val KEY_VERSION_COMPLETED = "draft_version_completed"
         const val KEY_VERSION_COMPLETED_AT = "draft_version_completed_at"
+        const val KEY_VERSION_RECURRENCE = "draft_version_recurrence"
+        const val KEY_VERSION_MONTHLY_ANCHOR_DAY = "draft_version_monthly_anchor_day"
+        const val KEY_VERSION_RECURRENCE_END_AT = "draft_version_recurrence_end_at"
     }
 }
 
@@ -612,7 +631,7 @@ private fun Task.toEditorState(categories: List<com.indiewalkabout.nowdothis.fea
         dueAt = dueAt,
         reminderAt = reminderAt,
         reminderStatus = reminderStatus,
-        recurrence = recurrence,
+        recurrence = recurrenceRule.toLegacyRecurrenceType(),
         recurrenceEndAt = recurrenceEndAt,
         subtasks = subtasks.sortedBy(Subtask::position).map { subtask ->
             TaskEditorSubtask(
@@ -637,7 +656,7 @@ private fun TaskEditorUiState.toTask(existing: Task?): Task = Task(
     dueAt = dueAt,
     reminderAt = reminderAt,
     reminderStatus = reminderStatus,
-    recurrence = recurrence,
+    recurrenceRule = recurrence.toLegacyRecurrenceRule(dueAt),
     recurrenceEndAt = recurrenceEndAt,
     seriesId = existing?.seriesId,
     createdAt = existing?.createdAt ?: 0,
@@ -653,6 +672,45 @@ private fun TaskEditorUiState.toTask(existing: Task?): Task = Task(
         )
     }
 )
+
+private fun RecurrenceRule.toLegacyRecurrenceType(): RecurrenceType = when (this) {
+    RecurrenceRule.None -> RecurrenceType.NONE
+    is RecurrenceRule.Interval -> when {
+        unit == IntervalUnit.DAYS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
+            RecurrenceType.DAILY
+        }
+        unit == IntervalUnit.WEEKS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
+            RecurrenceType.WEEKLY
+        }
+        else -> error("Advanced recurrence editing is not available yet")
+    }
+    is RecurrenceRule.MonthlyDay -> when {
+        everyMonths == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> RecurrenceType.MONTHLY
+        else -> error("Advanced recurrence editing is not available yet")
+    }
+    is RecurrenceRule.SelectedWeekdays,
+    is RecurrenceRule.MonthlyOrdinal -> error("Advanced recurrence editing is not available yet")
+}
+
+private fun RecurrenceType.toLegacyRecurrenceRule(monthlyAnchorDay: Int?): RecurrenceRule = when (this) {
+    RecurrenceType.NONE -> RecurrenceRule.None
+    RecurrenceType.DAILY -> {
+        RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
+    }
+    RecurrenceType.WEEKLY -> {
+        RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
+    }
+    RecurrenceType.MONTHLY -> RecurrenceRule.MonthlyDay(
+        anchorDay = monthlyAnchorDay ?: 1,
+        everyMonths = 1,
+        basis = RecurrenceBasis.SCHEDULED_DATE
+    )
+}
+
+private fun RecurrenceType.toLegacyRecurrenceRule(dueAt: Long?): RecurrenceRule =
+    toLegacyRecurrenceRule(
+        dueAt?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).dayOfMonth }
+    )
 
 private fun List<TaskValidationError>.toEditorErrors(): TaskEditorErrors {
     var mapped = TaskEditorErrors()

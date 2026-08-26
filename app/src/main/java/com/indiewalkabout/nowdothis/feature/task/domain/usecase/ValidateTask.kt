@@ -1,6 +1,6 @@
 package com.indiewalkabout.nowdothis.feature.task.domain.usecase
 
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 
 enum class TaskValidationError {
@@ -23,7 +23,7 @@ class ValidateTask {
         ) {
             add(TaskValidationError.REMINDER_AFTER_DUE)
         }
-        if (task.recurrence != RecurrenceType.NONE && task.dueAt == null) {
+        if (task.recurrenceRule !is RecurrenceRule.None && task.dueAt == null) {
             add(TaskValidationError.RECURRENCE_WITHOUT_DUE_TIME)
         }
         if (

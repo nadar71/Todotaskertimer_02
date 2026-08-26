@@ -3,7 +3,9 @@ package com.indiewalkabout.nowdothis.feature.task.data
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskWithSubtasks
 import com.indiewalkabout.nowdothis.feature.task.data.mapper.TaskEntityMapper
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -19,7 +21,7 @@ class TaskEntityMapperTest {
             categoryId = 2,
             dueAt = 1_000,
             reminderAt = 900,
-            recurrence = RecurrenceType.WEEKLY,
+            recurrenceRule = weeklyRule,
             subtasks = listOf(
                 Subtask(
                     id = 11,
@@ -65,7 +67,7 @@ class TaskEntityMapperTest {
         categoryId: Int? = null,
         dueAt: Long? = null,
         reminderAt: Long? = null,
-        recurrence: RecurrenceType = RecurrenceType.NONE,
+        recurrenceRule: RecurrenceRule = RecurrenceRule.None,
         subtasks: List<Subtask> = emptyList()
     ) = Task(
         id = id,
@@ -78,7 +80,7 @@ class TaskEntityMapperTest {
         dueAt = dueAt,
         reminderAt = reminderAt,
         reminderStatus = ReminderStatus.SCHEDULED,
-        recurrence = recurrence,
+        recurrenceRule = recurrenceRule,
         recurrenceEndAt = 2_000,
         seriesId = "series-1",
         createdAt = 0,
@@ -96,5 +98,11 @@ class TaskEntityMapperTest {
         taskId = taskId,
         title = title,
         position = position
+    )
+
+    private val weeklyRule = RecurrenceRule.Interval(
+        IntervalUnit.WEEKS,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
     )
 }

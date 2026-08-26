@@ -5,7 +5,9 @@ import com.indiewalkabout.nowdothis.core.time.DayBounds
 import com.indiewalkabout.nowdothis.core.time.ZoneIdProvider
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -53,7 +55,7 @@ class TaskLifecycleUseCasesTest {
                 description = "\t",
                 dueAt = 1_000,
                 reminderAt = 1_001,
-                recurrence = RecurrenceType.DAILY,
+                recurrenceRule = dailyRule,
                 recurrenceEndAt = 999
             ),
             now = 2_000
@@ -75,7 +77,47 @@ class TaskLifecycleUseCasesTest {
     fun validate_rejectsRecurrenceWithoutDueTime() {
         assertEquals(
             listOf(TaskValidationError.RECURRENCE_WITHOUT_DUE_TIME),
-            ValidateTask().invoke(task(recurrence = RecurrenceType.WEEKLY), now = 500)
+            ValidateTask().invoke(task(recurrenceRule = weeklyRule), now = 500)
+        )
+    }
+
+    @Test
+    fun activeRule_withoutDueDate_isRejected() {
+        val errors = ValidateTask()(task(
+            dueAt = null,
+            recurrenceRule = RecurrenceRule.Interval(
+                IntervalUnit.DAYS,
+                2,
+                RecurrenceBasis.COMPLETION_DATE
+            )
+        ), now = 0L)
+
+        assertTrue(TaskValidationError.RECURRENCE_WITHOUT_DUE_TIME in errors)
+    }
+
+    @Test
+    fun snapshotVersion_changesWhenRecurrenceFieldsChange() {
+        val original = task(
+            dueAt = 1_000,
+            recurrenceRule = RecurrenceRule.Interval(
+                IntervalUnit.DAYS,
+                1,
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            recurrenceEndAt = 2_000
+        )
+
+        assertTrue(
+            original.snapshotVersion() != original.copy(
+                recurrenceRule = RecurrenceRule.Interval(
+                    IntervalUnit.WEEKS,
+                    1,
+                    RecurrenceBasis.SCHEDULED_DATE
+                )
+            ).snapshotVersion()
+        )
+        assertTrue(
+            original.snapshotVersion() != original.copy(recurrenceEndAt = 2_001).snapshotVersion()
         )
     }
 
@@ -87,7 +129,7 @@ class TaskLifecycleUseCasesTest {
             task(
                 dueAt = boundary,
                 reminderAt = boundary,
-                recurrence = RecurrenceType.MONTHLY,
+                recurrenceRule = monthlyRule,
                 recurrenceEndAt = boundary
             ),
             now = boundary
@@ -144,7 +186,7 @@ class TaskLifecycleUseCasesTest {
             task(
                 dueAt = 3_000,
                 reminderAt = 2_000,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = dailyRule
             )
         )
 
@@ -164,7 +206,7 @@ class TaskLifecycleUseCasesTest {
         val existing = task(
             id = 7,
             dueAt = 3_000,
-            recurrence = RecurrenceType.WEEKLY,
+            recurrenceRule = weeklyRule,
             seriesId = "existing-series",
             createdAt = 25,
             updatedAt = 30
@@ -339,7 +381,7 @@ class TaskLifecycleUseCasesTest {
             dueAt = due,
             reminderAt = due - 3_600_000,
             reminderStatus = ReminderStatus.SCHEDULED,
-            recurrence = RecurrenceType.DAILY,
+            recurrenceRule = dailyRule,
             recurrenceEndAt = nextDue,
             seriesId = "series-4",
             createdAt = 50,
@@ -377,7 +419,7 @@ class TaskLifecycleUseCasesTest {
         assertEquals(current.title, result.completed.title)
         assertEquals(current.dueAt, result.completed.dueAt)
         assertEquals(current.reminderAt, result.completed.reminderAt)
-        assertEquals(current.recurrence, result.completed.recurrence)
+        assertEquals(current.recurrenceRule, result.completed.recurrenceRule)
         assertEquals(current.recurrenceEndAt, result.completed.recurrenceEndAt)
         assertEquals(current.seriesId, result.completed.seriesId)
         assertEquals(current.createdAt, result.completed.createdAt)
@@ -397,7 +439,7 @@ class TaskLifecycleUseCasesTest {
     fun complete_weeklyTaskAdvancesOneWeek() = runTest {
         val due = epoch("2025-01-01T09:00:00Z")
         val repository = FakeTaskRepository(
-            task(id = 6, dueAt = due, recurrence = RecurrenceType.WEEKLY)
+            task(id = 6, dueAt = due, recurrenceRule = weeklyRule)
         )
 
         val result = completeUseCase(repository, FakeReminderScheduler())(6)
@@ -412,7 +454,7 @@ class TaskLifecycleUseCasesTest {
             task(
                 id = 7,
                 dueAt = epoch("2025-01-31T09:00:00Z"),
-                recurrence = RecurrenceType.MONTHLY
+                recurrenceRule = monthlyRule
             )
         )
 
@@ -429,7 +471,7 @@ class TaskLifecycleUseCasesTest {
             task(
                 id = 8,
                 dueAt = due,
-                recurrence = RecurrenceType.DAILY,
+                recurrenceRule = dailyRule,
                 recurrenceEndAt = epoch("2025-01-02T08:59:59Z")
             )
         )
@@ -452,7 +494,7 @@ class TaskLifecycleUseCasesTest {
                 id = 10,
                 dueAt = due,
                 reminderAt = due - 1_000,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = dailyRule
             ),
             nextId = 88,
             events = events
@@ -473,7 +515,7 @@ class TaskLifecycleUseCasesTest {
             id = 4,
             dueAt = 10_000L,
             reminderAt = 9_000L,
-            recurrence = RecurrenceType.DAILY,
+            recurrenceRule = dailyRule,
             seriesId = "series-4"
         )
         val delegate = FakeTaskRepository(current, nextId = 77, events = events)
@@ -618,7 +660,7 @@ class TaskLifecycleUseCasesTest {
         dueAt: Long? = null,
         reminderAt: Long? = null,
         reminderStatus: ReminderStatus = ReminderStatus.NONE,
-        recurrence: RecurrenceType = RecurrenceType.NONE,
+        recurrenceRule: RecurrenceRule = RecurrenceRule.None,
         recurrenceEndAt: Long? = null,
         seriesId: String? = null,
         createdAt: Long = 0,
@@ -631,7 +673,7 @@ class TaskLifecycleUseCasesTest {
         dueAt = dueAt,
         reminderAt = reminderAt,
         reminderStatus = reminderStatus,
-        recurrence = recurrence,
+        recurrenceRule = recurrenceRule,
         recurrenceEndAt = recurrenceEndAt,
         seriesId = seriesId,
         createdAt = createdAt,
@@ -639,6 +681,24 @@ class TaskLifecycleUseCasesTest {
     )
 
     private fun epoch(value: String): Long = Instant.parse(value).toEpochMilli()
+
+    private val dailyRule = RecurrenceRule.Interval(
+        IntervalUnit.DAYS,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
+
+    private val weeklyRule = RecurrenceRule.Interval(
+        IntervalUnit.WEEKS,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
+
+    private val monthlyRule = RecurrenceRule.MonthlyDay(
+        31,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
 
     private fun saveUseCase(
         repository: TaskRepository,

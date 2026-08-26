@@ -29,6 +29,9 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.ParserE
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -850,7 +853,7 @@ class TaskEditorViewModelTest {
         assertNull(saved.categoryId)
         assertEquals(90_000L, saved.dueAt)
         assertNull(saved.reminderAt)
-        assertEquals(RecurrenceType.NONE, saved.recurrence)
+        assertEquals(RecurrenceRule.None, saved.recurrenceRule)
         assertEquals(listOf("First", "Second"), saved.subtasks.map(Subtask::title))
     }
 
@@ -882,7 +885,10 @@ class TaskEditorViewModelTest {
         assertEquals(3, saved.categoryId)
         assertEquals(90_000L, saved.dueAt)
         assertEquals(80_000L, saved.reminderAt)
-        assertEquals(RecurrenceType.WEEKLY, saved.recurrence)
+        assertEquals(
+            RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE),
+            saved.recurrenceRule
+        )
         assertEquals(190_000L, saved.recurrenceEndAt)
         assertEquals(listOf("Outline"), saved.subtasks.map { it.title })
         assertEquals(listOf(0), saved.subtasks.map { it.position })
@@ -1171,7 +1177,11 @@ class TaskEditorViewModelTest {
         categoryId = 3,
         dueAt = 90_000L,
         reminderAt = 80_000L,
-        recurrence = RecurrenceType.MONTHLY,
+        recurrenceRule = RecurrenceRule.MonthlyDay(
+            1,
+            1,
+            RecurrenceBasis.SCHEDULED_DATE
+        ),
         recurrenceEndAt = 190_000L,
         createdAt = 10L,
         updatedAt = 20L,
