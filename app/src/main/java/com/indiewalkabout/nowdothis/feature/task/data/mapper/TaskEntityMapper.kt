@@ -19,6 +19,9 @@ object TaskEntityMapper {
         require(task.recurrenceRule is RecurrenceRule.None || task.dueAt != null) {
             "Active recurrence persistence requires a due time"
         }
+        require(task.recurrenceRule !is RecurrenceRule.None || task.recurrenceEndAt == null) {
+            "A non-recurring task cannot have a recurrence end"
+        }
         return TaskEntity(
             id = task.id,
             title = task.title,
@@ -48,6 +51,10 @@ object TaskEntityMapper {
     }
 
     fun toDomain(relation: TaskWithSubtasks): Task = relation.task.run {
+        val recurrenceType = enumValueOf<RecurrenceType>(recurrence)
+        require(recurrenceType != RecurrenceType.NONE || recurrenceEndAt == null) {
+            "A legacy non-recurring task cannot have a recurrence end"
+        }
         Task(
             id = id,
             title = title,
@@ -59,7 +66,7 @@ object TaskEntityMapper {
             dueAt = dueAt,
             reminderAt = reminderAt,
             reminderStatus = enumValueOf<ReminderStatus>(reminderStatus),
-            recurrenceRule = enumValueOf<RecurrenceType>(recurrence).toLegacyRecurrenceRule(dueAt),
+            recurrenceRule = recurrenceType.toLegacyRecurrenceRule(dueAt),
             recurrenceEndAt = recurrenceEndAt,
             seriesId = seriesId,
             createdAt = createdAt,

@@ -93,6 +93,25 @@ class TaskEntityMapperTest {
     }
 
     @Test
+    fun toEntities_rejectsNoneRuleWithRecurrenceEnd() {
+        assertThrows(IllegalArgumentException::class.java) {
+            TaskEntityMapper.toEntities(task().copy(recurrenceEndAt = 2_000))
+        }
+    }
+
+    @Test
+    fun toDomain_rejectsLegacyNoneWithRecurrenceEnd() {
+        assertThrows(IllegalArgumentException::class.java) {
+            TaskEntityMapper.toDomain(
+                TaskWithSubtasks(
+                    taskEntity(dueAt = null, recurrence = "NONE", recurrenceEndAt = 2_000),
+                    emptyList()
+                )
+            )
+        }
+    }
+
+    @Test
     fun toEntities_rejectsMonthlyAnchorThatDiffersFromDueDate() {
         val dueAt = 90_000L
         val dueDay = Instant.ofEpochMilli(dueAt).atZone(ZoneId.systemDefault()).dayOfMonth
@@ -167,13 +186,18 @@ class TaskEntityMapperTest {
         position = position
     )
 
-    private fun taskEntity(dueAt: Long?, recurrence: String) = TaskEntity(
+    private fun taskEntity(
+        dueAt: Long?,
+        recurrence: String,
+        recurrenceEndAt: Long? = null
+    ) = TaskEntity(
         id = 9,
         title = "Task",
         description = "Description",
         priority = TaskPriority.HIGH.name,
         dueAt = dueAt,
         recurrence = recurrence,
+        recurrenceEndAt = recurrenceEndAt,
         createdAt = 1,
         updatedAt = 1
     )
