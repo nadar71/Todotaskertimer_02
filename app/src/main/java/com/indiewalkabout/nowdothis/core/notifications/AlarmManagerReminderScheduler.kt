@@ -2,13 +2,15 @@ package com.indiewalkabout.nowdothis.core.notifications
 
 import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
-import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderReconcileResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.yield
 
 class AlarmManagerReminderScheduler @Inject constructor(
     private val gateway: AlarmGateway,
@@ -35,8 +37,9 @@ class AlarmManagerReminderScheduler @Inject constructor(
     override suspend fun reconcileWithResult(): ReminderReconcileResult {
         val now = clock.nowMillis()
         val statuses = taskRepository.futureReminders(now)
-            .filter { it.isEligibleAt(now) }
-            .map { task -> reconcile(task) }
+            .map { it.snapshotVersion() }
+            .filter { it.eligibleReminderAt(now) != null }
+            .map { version -> reconcile(version, now) }
         return if (ReminderStatus.UNAVAILABLE in statuses) {
             ReminderReconcileResult.SOME_UNAVAILABLE
         } else {
@@ -44,9 +47,65 @@ class AlarmManagerReminderScheduler @Inject constructor(
         }
     }
 
-    private suspend fun reconcile(task: Task): ReminderStatus {
-        val status = try {
-            when (schedule(task.id, requireNotNull(task.reminderAt))) {
+    private suspend fun reconcile(
+        initialVersion: TaskSnapshotVersion,
+        now: Long
+    ): ReminderStatus {
+        val taskId = initialVersion.id
+        return try {
+            var expectedVersion: TaskSnapshotVersion? = initialVersion
+            repeat(MAX_RECONCILIATION_ATTEMPTS) { attempt ->
+                val authoritativeVersion = taskRepository.getTask(taskId)?.snapshotVersion()
+                if (authoritativeVersion != expectedVersion) {
+                    cancel(taskId)
+                    expectedVersion = authoritativeVersion
+                } else {
+                    val reminderAt = expectedVersion.eligibleReminderAt(now)
+                    if (reminderAt == null) {
+                        cancel(taskId)
+                        val verifiedVersion = taskRepository.getTask(taskId)?.snapshotVersion()
+                        if (
+                            verifiedVersion == expectedVersion &&
+                            verifiedVersion.eligibleReminderAt(now) == null
+                        ) {
+                            return ReminderStatus.NONE
+                        }
+                        expectedVersion = verifiedVersion
+                    } else {
+                        val schedulingVersion = requireNotNull(expectedVersion)
+                        val status = schedule(schedulingVersion)
+                        val statusUpdated = taskRepository.updateReminderStatusIfCurrent(
+                            schedulingVersion,
+                            status
+                        )
+                        val expectedPostUpdate = schedulingVersion.copy(reminderStatus = status)
+                        val verifiedVersion = taskRepository.getTask(taskId)?.snapshotVersion()
+                        if (
+                            statusUpdated &&
+                            verifiedVersion == expectedPostUpdate &&
+                            verifiedVersion.eligibleReminderAt(now) == reminderAt
+                        ) {
+                            return status
+                        }
+                        cancel(taskId)
+                        expectedVersion = verifiedVersion
+                    }
+                }
+                if (attempt < MAX_RECONCILIATION_ATTEMPTS - 1) yield()
+            }
+            cancel(taskId)
+            ReminderStatus.UNAVAILABLE
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            cancelBestEffort(taskId)
+            ReminderStatus.UNAVAILABLE
+        }
+    }
+
+    private suspend fun schedule(version: TaskSnapshotVersion): ReminderStatus {
+        return try {
+            when (schedule(version.id, requireNotNull(version.reminderAt))) {
                 ReminderScheduleResult.EXACT,
                 ReminderScheduleResult.INEXACT -> ReminderStatus.SCHEDULED
                 ReminderScheduleResult.FAILED -> ReminderStatus.UNAVAILABLE
@@ -56,23 +115,27 @@ class AlarmManagerReminderScheduler @Inject constructor(
         } catch (_: Exception) {
             ReminderStatus.UNAVAILABLE
         }
+    }
 
+    private suspend fun cancelBestEffort(taskId: Int) {
         try {
-            taskRepository.updateReminderStatus(task.id, status)
+            cancel(taskId)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {
-            return ReminderStatus.UNAVAILABLE
+            Unit
         }
-        return status
     }
 
-    private fun Task.isEligibleAt(now: Long): Boolean =
-        !isCompleted &&
-            reminderAt?.let { it > now } == true &&
-            reminderStatus in RECONCILABLE_STATUSES
+    private fun TaskSnapshotVersion?.eligibleReminderAt(now: Long): Long? = this
+        ?.takeUnless { it.isCompleted }
+        ?.takeIf { it.reminderStatus in RECONCILABLE_STATUSES }
+        ?.reminderAt
+        ?.takeIf { it > now }
 
     private companion object {
+        const val MAX_RECONCILIATION_ATTEMPTS = 8
+
         val RECONCILABLE_STATUSES = setOf(
             ReminderStatus.REQUESTED,
             ReminderStatus.SCHEDULED,

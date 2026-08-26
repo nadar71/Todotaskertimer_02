@@ -129,7 +129,8 @@ class CompleteTask(
                     requireNotNull(expectedVersion),
                     status
                 ) && repository.getTask(taskId).let { verified ->
-                    verified?.snapshotVersion() == expectedVersion &&
+                    val expectedPostUpdate = expectedVersion.copy(reminderStatus = status)
+                    verified?.snapshotVersion() == expectedPostUpdate &&
                         verified.eligibleReminderAt(now) == reminderAt &&
                         verified?.reminderStatus == status
                 }

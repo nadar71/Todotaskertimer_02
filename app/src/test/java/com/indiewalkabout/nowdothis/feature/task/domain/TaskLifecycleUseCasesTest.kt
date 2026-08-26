@@ -737,6 +737,31 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun complete_reconciliationConvergesOnSuccessfulPostUpdateTokenWithoutDuplicateSchedule() =
+        runTest {
+            val current = task(
+                id = 5,
+                dueAt = 10_000L,
+                reminderAt = 9_000L,
+                recurrenceRule = dailyRule,
+                seriesId = "series-5"
+            )
+            val delegate = FakeTaskRepository(current, nextId = 78)
+            val repository = OneTimeOwnerChangeReminderRepository(delegate)
+            val scheduler = FakeReminderScheduler()
+
+            val result = completeUseCase(repository, scheduler)(5) as CompleteTaskResult.Completed
+
+            val successorId = requireNotNull(result.nextOccurrence).id
+            assertEquals(2, repository.statusAttempts)
+            assertEquals(2, scheduler.scheduled.count { it.first == successorId })
+            assertEquals(
+                ReminderStatus.SCHEDULED,
+                delegate.tasks.getValue(successorId).reminderStatus
+            )
+        }
+
+    @Test
     fun delete_returnsCompleteSnapshotBeforeCancellingStableAlarm() = runTest {
         val events = mutableListOf<String>()
         val current = task(id = 4, reminderAt = 2_000).copy(
@@ -974,6 +999,30 @@ class TaskLifecycleUseCasesTest {
                 )
             }
             return false
+        }
+    }
+
+    private class OneTimeOwnerChangeReminderRepository(
+        private val delegate: FakeTaskRepository
+    ) : TaskRepository by delegate {
+        var statusAttempts = 0
+            private set
+
+        override suspend fun updateReminderStatusIfCurrent(
+            expectedVersion: TaskSnapshotVersion,
+            status: ReminderStatus
+        ): Boolean {
+            statusAttempts += 1
+            if (statusAttempts == 1) {
+                delegate.tasks[expectedVersion.id]?.let { current ->
+                    delegate.tasks[expectedVersion.id] = current.copy(
+                        seriesId = "replacement-owner",
+                        updatedAt = current.updatedAt + 1
+                    )
+                }
+                return false
+            }
+            return delegate.updateReminderStatusIfCurrent(expectedVersion, status)
         }
     }
 

@@ -11,6 +11,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskFilter
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderReconcileResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
@@ -198,6 +199,70 @@ class AlarmManagerReminderSchedulerTest {
         assertEquals(ReminderReconcileResult.SOME_UNAVAILABLE, result)
     }
 
+    @Test
+    fun reconcile_reusedIdWithoutReminderCancelsStaleAlarmWithoutClobberingReplacement() = runTest {
+        val original = task(id = 41, reminderAt = 2_000, status = ReminderStatus.REQUESTED)
+        val replacement = original.copy(
+            reminderAt = null,
+            reminderStatus = ReminderStatus.NONE
+        )
+        val repository = FakeTaskRepository(reminders = listOf(original))
+        var replaced = false
+        val gateway = FakeAlarmGateway(
+            canScheduleExact = true,
+            beforeExact = { taskId, triggerAt ->
+                if (!replaced && taskId == original.id && triggerAt == original.reminderAt) {
+                    replaced = true
+                    repository.replace(replacement)
+                }
+            }
+        )
+        val scheduler = scheduler(gateway, repository)
+
+        val result = scheduler.reconcileWithResult()
+
+        assertEquals(ReminderReconcileResult.SUCCESS, result)
+        assertEquals(replacement, repository.current(original.id))
+        assertTrue(repository.statusUpdates.isEmpty())
+        assertTrue(original.id !in gateway.activeAlarms)
+        assertTrue(gateway.calls.contains(AlarmCall.Cancel(original.id)))
+    }
+
+    @Test
+    fun reconcile_reusedIdWithDifferentTriggerCancelsStaleAlarmAndSchedulesReplacement() = runTest {
+        val original = task(id = 42, reminderAt = 2_000, status = ReminderStatus.REQUESTED)
+        val replacement = original.copy(
+            reminderAt = 4_000
+        )
+        val repository = FakeTaskRepository(reminders = listOf(original))
+        var replaced = false
+        val gateway = FakeAlarmGateway(
+            canScheduleExact = true,
+            beforeExact = { taskId, triggerAt ->
+                if (!replaced && taskId == original.id && triggerAt == original.reminderAt) {
+                    replaced = true
+                    repository.replace(replacement)
+                }
+            }
+        )
+        val scheduler = scheduler(gateway, repository)
+
+        val result = scheduler.reconcileWithResult()
+
+        assertEquals(ReminderReconcileResult.SUCCESS, result)
+        assertEquals(4_000L, gateway.activeAlarms[original.id])
+        assertEquals(
+            replacement.copy(reminderStatus = ReminderStatus.SCHEDULED),
+            repository.current(original.id)
+        )
+        assertEquals(
+            listOf(original.id to ReminderStatus.SCHEDULED),
+            repository.statusUpdates
+        )
+        assertTrue(gateway.calls.contains(AlarmCall.Cancel(original.id)))
+        assertEquals(AlarmCall.Exact(original.id, 4_000), gateway.calls.last())
+    }
+
     private fun scheduler(
         gateway: AlarmGateway,
         repository: TaskRepository = FakeTaskRepository()
@@ -235,24 +300,32 @@ internal class FakeAlarmGateway(
     override val canScheduleExact: Boolean,
     private val exactResults: MutableMap<Int, Boolean> = mutableMapOf(),
     private val inexactResults: MutableMap<Int, Boolean> = mutableMapOf(),
-    private val throwingTaskIds: Set<Int> = emptySet()
+    private val throwingTaskIds: Set<Int> = emptySet(),
+    private val beforeExact: (Int, Long) -> Unit = { _, _ -> }
 ) : AlarmGateway {
     val calls = mutableListOf<AlarmCall>()
+    val activeAlarms = mutableMapOf<Int, Long>()
 
     override fun setExact(taskId: Int, triggerAt: Long): Boolean {
+        beforeExact(taskId, triggerAt)
         calls += AlarmCall.Exact(taskId, triggerAt)
         if (taskId in throwingTaskIds) error("alarm service unavailable")
-        return exactResults[taskId] ?: true
+        return (exactResults[taskId] ?: true).also { installed ->
+            if (installed) activeAlarms[taskId] = triggerAt
+        }
     }
 
     override fun setInexact(taskId: Int, triggerAt: Long): Boolean {
         calls += AlarmCall.Inexact(taskId, triggerAt)
         if (taskId in throwingTaskIds) error("alarm service unavailable")
-        return inexactResults[taskId] ?: true
+        return (inexactResults[taskId] ?: true).also { installed ->
+            if (installed) activeAlarms[taskId] = triggerAt
+        }
     }
 
     override fun cancel(taskId: Int) {
         calls += AlarmCall.Cancel(taskId)
+        activeAlarms.remove(taskId)
     }
 }
 
@@ -260,14 +333,21 @@ internal class FakeTaskRepository(
     private val reminders: List<Task> = emptyList(),
     private val failingStatusTaskIds: Set<Int> = emptySet()
 ) : TaskRepository {
+    private val tasks = reminders.associateBy(Task::id).toMutableMap()
     var requestedAfter: Long? = null
     val statusUpdates = mutableListOf<Pair<Int, ReminderStatus>>()
+
+    fun replace(task: Task) {
+        tasks[task.id] = task
+    }
+
+    fun current(taskId: Int): Task? = tasks[taskId]
 
     override fun observeTask(taskId: Int): Flow<Task?> = flowOf(null)
     override fun observeSections(filter: TaskFilter, bounds: DayBounds): Flow<TaskSections> =
         flowOf(TaskSections())
 
-    override suspend fun getTask(taskId: Int): Task? = reminders.firstOrNull { it.id == taskId }
+    override suspend fun getTask(taskId: Int): Task? = tasks[taskId]
     override suspend fun upsert(task: Task): Int = task.id
     override suspend fun updateIfUnchanged(
         task: Task,
@@ -288,13 +368,21 @@ internal class FakeTaskRepository(
 
     override suspend fun updateReminderStatus(taskId: Int, status: ReminderStatus) {
         if (taskId in failingStatusTaskIds) error("database unavailable")
+        tasks[taskId]?.let { task -> tasks[taskId] = task.copy(reminderStatus = status) }
         statusUpdates += taskId to status
     }
 
     override suspend fun updateReminderStatusIfCurrent(
         expectedVersion: TaskSnapshotVersion,
         status: ReminderStatus
-    ): Boolean = false
+    ): Boolean {
+        if (expectedVersion.id in failingStatusTaskIds) error("database unavailable")
+        val current = tasks[expectedVersion.id] ?: return false
+        if (current.snapshotVersion() != expectedVersion) return false
+        tasks[expectedVersion.id] = current.copy(reminderStatus = status)
+        statusUpdates += expectedVersion.id to status
+        return true
+    }
 
     override suspend fun futureReminders(after: Long): List<Task> {
         requestedAfter = after
