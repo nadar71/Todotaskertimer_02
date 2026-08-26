@@ -6,6 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.feature.category.domain.repository.CategoryRepository
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.NaturalLanguageInput
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.NaturalLanguageParseResult
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParseIssue
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.RecognizedField
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
+import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.NaturalLanguageEnvironment
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
@@ -43,7 +49,9 @@ class TaskEditorViewModel @AssistedInject constructor(
     private val categoryRepository: CategoryRepository,
     private val saveTask: SaveTask,
     private val permissionChecker: ReminderPermissionChecker,
-    private val clock: AppClock
+    private val clock: AppClock,
+    private val parseNaturalLanguageTask: ParseNaturalLanguageTask,
+    private val naturalLanguageEnvironment: NaturalLanguageEnvironment
 ) : ViewModel() {
     private val restoredDraft = savedStateHandle.hasDraft()
     private val _uiState = MutableStateFlow(savedStateHandle.restoreState(key, restoredDraft))
@@ -68,6 +76,12 @@ class TaskEditorViewModel @AssistedInject constructor(
 
     fun onEvent(event: TaskEditorEvent) {
         when (event) {
+            is TaskEditorEvent.UpdateQuickEntry -> {
+                if (key.taskId == null) {
+                    updateDraft { it.copy(quickEntryInput = event.value) }
+                }
+            }
+            TaskEditorEvent.ParseQuickEntry -> parseQuickEntry()
             is TaskEditorEvent.UpdateTitle -> updateDraft {
                 it.copy(title = event.value, errors = it.errors.copy(title = null))
             }
@@ -126,6 +140,41 @@ class TaskEditorViewModel @AssistedInject constructor(
                 state.copy(subtasks = state.subtasks.filterNot { it.draftId == event.draftId })
             }
             TaskEditorEvent.Save -> save()
+        }
+    }
+
+    private fun parseQuickEntry() {
+        if (key.taskId != null) return
+        val state = _uiState.value
+        val result = try {
+            val environment = naturalLanguageEnvironment.snapshot(state.categories)
+            parseNaturalLanguageTask(
+                NaturalLanguageInput(
+                    rawText = state.quickEntryInput,
+                    language = environment.language,
+                    nowEpochMillis = environment.nowEpochMillis,
+                    zoneId = environment.zoneId,
+                    categories = environment.categories
+                )
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            updateDraft {
+                it.copy(
+                    quickEntrySummary = emptyList(),
+                    quickEntryIssues = listOf(QuickEntryIssue.PARSE_FAILED)
+                )
+            }
+            return
+        }
+        val summary = QuickEntrySummaryField.entries.filter { field ->
+            field.recognizedField in result.recognized
+        }
+        val issues = result.issues.map(ParseIssue::toQuickEntryIssue)
+
+        updateDraft { current ->
+            current.applyQuickEntryResult(result, summary, issues)
         }
     }
 
@@ -319,6 +368,9 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle[KEY_RECURRENCE_END_SET] = true
         savedStateHandle.set<Long?>(KEY_RECURRENCE_END_AT, state.recurrenceEndAt)
         savedStateHandle[KEY_SUBTASKS] = Json.encodeToString(state.subtasks)
+        savedStateHandle[KEY_QUICK_ENTRY_INPUT] = state.quickEntryInput
+        savedStateHandle[KEY_QUICK_ENTRY_SUMMARY] = Json.encodeToString(state.quickEntrySummary)
+        savedStateHandle[KEY_QUICK_ENTRY_ISSUES] = Json.encodeToString(state.quickEntryIssues)
         persistDraftVersion()
     }
 
@@ -366,6 +418,9 @@ class TaskEditorViewModel @AssistedInject constructor(
         const val KEY_RECURRENCE_END_SET = "recurrence_end_at_set"
         const val KEY_RECURRENCE_END_AT = "recurrence_end_at"
         const val KEY_SUBTASKS = "subtasks"
+        const val KEY_QUICK_ENTRY_INPUT = "quick_entry_input"
+        const val KEY_QUICK_ENTRY_SUMMARY = "quick_entry_summary"
+        const val KEY_QUICK_ENTRY_ISSUES = "quick_entry_issues"
         const val KEY_VERSION_SET = "draft_version_set"
         const val KEY_VERSION_ID = "draft_version_id"
         const val KEY_VERSION_SERIES_ID = "draft_version_series_id"
@@ -403,12 +458,85 @@ private fun SavedStateHandle.restoreState(
         },
         subtasks = get<String>("subtasks")?.let { encoded ->
             runCatching { Json.decodeFromString<List<TaskEditorSubtask>>(encoded) }.getOrDefault(emptyList())
+        }.orEmpty(),
+        quickEntryInput = get<String>("quick_entry_input").orEmpty(),
+        quickEntrySummary = get<String>("quick_entry_summary")?.let { encoded ->
+            runCatching {
+                Json.decodeFromString<List<QuickEntrySummaryField>>(encoded)
+            }.getOrDefault(emptyList())
+        }.orEmpty(),
+        quickEntryIssues = get<String>("quick_entry_issues")?.let { encoded ->
+            runCatching {
+                Json.decodeFromString<List<QuickEntryIssue>>(encoded)
+            }.getOrDefault(emptyList())
         }.orEmpty()
     )
 }
 
 private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, default: T): T =
     value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
+
+private val QuickEntrySummaryField.recognizedField: RecognizedField
+    get() = when (this) {
+        QuickEntrySummaryField.TITLE -> RecognizedField.TITLE
+        QuickEntrySummaryField.DUE_DATE -> RecognizedField.DUE_DATE
+        QuickEntrySummaryField.REMINDER -> RecognizedField.REMINDER
+        QuickEntrySummaryField.PRIORITY -> RecognizedField.PRIORITY
+        QuickEntrySummaryField.CATEGORY -> RecognizedField.CATEGORY
+        QuickEntrySummaryField.RECURRENCE -> RecognizedField.RECURRENCE
+    }
+
+private fun ParseIssue.toQuickEntryIssue(): QuickEntryIssue = when (this) {
+    ParseIssue.EmptyInput -> QuickEntryIssue.EMPTY_INPUT
+    is ParseIssue.UnknownCategory -> QuickEntryIssue.UNKNOWN_CATEGORY
+    is ParseIssue.AmbiguousCategory -> QuickEntryIssue.AMBIGUOUS_CATEGORY
+    is ParseIssue.DuplicateField -> QuickEntryIssue.DUPLICATE_FIELD
+    ParseIssue.RelativeReminderWithoutDueDate -> {
+        QuickEntryIssue.RELATIVE_REMINDER_WITHOUT_DUE_DATE
+    }
+}
+
+private fun TaskEditorUiState.applyQuickEntryResult(
+    result: NaturalLanguageParseResult,
+    summary: List<QuickEntrySummaryField>,
+    issues: List<QuickEntryIssue>
+): TaskEditorUiState {
+    val recognized = result.recognized
+    val draft = result.draft
+    val parsedTitle = draft.title?.takeIf(String::isNotBlank)
+    val reminderRecognized = RecognizedField.REMINDER in recognized
+    return copy(
+        title = if (RecognizedField.TITLE in recognized && parsedTitle != null) {
+            parsedTitle
+        } else {
+            title
+        },
+        dueAt = if (RecognizedField.DUE_DATE in recognized) draft.dueAt else dueAt,
+        reminderAt = if (reminderRecognized) draft.reminderAt else reminderAt,
+        reminderStatus = if (reminderRecognized) {
+            if (draft.reminderAt == null) ReminderStatus.NONE else ReminderStatus.REQUESTED
+        } else {
+            reminderStatus
+        },
+        priority = if (RecognizedField.PRIORITY in recognized) {
+            draft.priority ?: priority
+        } else {
+            priority
+        },
+        categoryId = if (RecognizedField.CATEGORY in recognized) {
+            draft.categoryId
+        } else {
+            categoryId
+        },
+        recurrence = if (RecognizedField.RECURRENCE in recognized) {
+            draft.recurrence ?: recurrence
+        } else {
+            recurrence
+        },
+        quickEntrySummary = summary,
+        quickEntryIssues = issues
+    )
+}
 
 private fun Task.toEditorState(categories: List<com.indiewalkabout.nowdothis.feature.category.domain.model.Category>) =
     TaskEditorUiState(

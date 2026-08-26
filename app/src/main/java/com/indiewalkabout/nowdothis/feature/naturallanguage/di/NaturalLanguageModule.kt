@@ -4,6 +4,8 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.Attrib
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.ReminderParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TemporalParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
+import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.AndroidNaturalLanguageEnvironment
+import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.NaturalLanguageEnvironment
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -12,6 +14,11 @@ import dagger.hilt.components.SingletonComponent
 @Module
 @InstallIn(SingletonComponent::class)
 object NaturalLanguageModule {
+    @Provides
+    fun provideNaturalLanguageEnvironment(
+        implementation: AndroidNaturalLanguageEnvironment
+    ): NaturalLanguageEnvironment = implementation
+
     @Provides
     fun provideTemporalParser(): TemporalParser = TemporalParser()
 

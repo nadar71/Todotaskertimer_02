@@ -1,13 +1,30 @@
 package com.indiewalkabout.nowdothis.feature.task.presentation.editor
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.res.Configuration
+import android.content.res.Resources
+import android.os.LocaleList
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.lifecycle.SavedStateHandle
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.core.time.AppClock
+import com.indiewalkabout.nowdothis.core.time.ZoneIdProvider
 import com.indiewalkabout.nowdothis.feature.category.domain.model.Category
 import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryColor
 import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryMutationResult
+import com.indiewalkabout.nowdothis.feature.category.domain.model.DefaultCategoryKey
 import com.indiewalkabout.nowdothis.feature.category.domain.repository.CategoryRepository
+import com.indiewalkabout.nowdothis.feature.category.presentation.DefaultCategoryNameResolver
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.CategoryCandidate
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParserLanguage
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.AttributeParser
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.ReminderParser
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TemporalParser
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
+import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.AndroidNaturalLanguageEnvironment
+import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.NaturalLanguageEnvironment
+import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.ParserEnvironment
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
@@ -27,13 +44,17 @@ import com.indiewalkabout.nowdothis.feature.task.domain.usecase.SaveTask
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ValidateTask
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskEditorKey
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -46,8 +67,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
 class TaskEditorViewModelTest {
     @get:Rule
     val instantTaskExecutorRule = InstantTaskExecutorRule()
@@ -58,6 +83,12 @@ class TaskEditorViewModelTest {
     private lateinit var categories: EditorCategoryRepository
     private lateinit var scheduler: EditorReminderScheduler
     private lateinit var permissions: EditorPermissionChecker
+    private lateinit var naturalLanguageEnvironment: EditorNaturalLanguageEnvironment
+    private val naturalLanguageParser = ParseNaturalLanguageTask(
+        temporalParser = TemporalParser(),
+        attributeParser = AttributeParser(),
+        reminderParser = ReminderParser()
+    )
 
     @Before
     fun setUp() {
@@ -66,6 +97,7 @@ class TaskEditorViewModelTest {
         categories = EditorCategoryRepository()
         scheduler = EditorReminderScheduler()
         permissions = EditorPermissionChecker()
+        naturalLanguageEnvironment = EditorNaturalLanguageEnvironment()
     }
 
     @After
@@ -84,6 +116,263 @@ class TaskEditorViewModelTest {
         assertEquals("Bozza", viewModel.uiState.value.title)
         assertEquals(90_000L, viewModel.uiState.value.dueAt)
         assertFalse(viewModel.uiState.value.isLoading)
+    }
+
+    @Test
+    fun quickEntryTyping_updatesRawInputWithoutParsing() = runTest(dispatcher) {
+        val viewModel = createViewModel(TaskEditorKey(null, null))
+        advanceUntilIdle()
+
+        viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("Buy milk tomorrow"))
+
+        assertEquals("Buy milk tomorrow", viewModel.uiState.value.quickEntryInput)
+        assertEquals("", viewModel.uiState.value.title)
+        assertEquals(0, naturalLanguageEnvironment.snapshotCalls)
+    }
+
+    @Test
+    fun explicitQuickEntryParse_appliesAllFieldsInOneStateMutation() = runTest(dispatcher) {
+        val home = category(8, customName = "Home")
+        categories.categories.value = listOf(home)
+        naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+            language = ParserLanguage.ENGLISH,
+            nowEpochMillis = NOW,
+            zoneId = ROME,
+            categories = listOf(CategoryCandidate(8, "Home"))
+        )
+        val viewModel = createViewModel(TaskEditorKey(null, null))
+        advanceUntilIdle()
+        viewModel.onEvent(TaskEditorEvent.UpdateDescription("Keep this description"))
+        viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(epoch("2026-09-30T18:00:00+02:00")))
+        viewModel.onEvent(TaskEditorEvent.AddSubtask)
+        val subtaskId = viewModel.uiState.value.subtasks.single().draftId
+        viewModel.onEvent(TaskEditorEvent.RenameSubtask(subtaskId, "Keep this subtask"))
+        viewModel.onEvent(
+            TaskEditorEvent.UpdateQuickEntry(
+                "Buy milk tomorrow at 6 pm #Home !high every week remind 30m before"
+            )
+        )
+        val emissions = mutableListOf<TaskEditorUiState>()
+        val effects = mutableListOf<TaskEditorEffect>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect { emissions += it }
+        }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            viewModel.effects.collect { effects += it }
+        }
+        emissions.clear()
+
+        viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+        val state = viewModel.uiState.value
+        assertEquals(1, emissions.size)
+        assertEquals("Buy milk", state.title)
+        assertEquals(epoch("2026-08-27T18:00:00+02:00"), state.dueAt)
+        assertEquals(epoch("2026-08-27T17:30:00+02:00"), state.reminderAt)
+        assertEquals(ReminderStatus.REQUESTED, state.reminderStatus)
+        assertEquals(TaskPriority.HIGH, state.priority)
+        assertEquals(8, state.categoryId)
+        assertEquals(RecurrenceType.WEEKLY, state.recurrence)
+        assertEquals("Keep this description", state.description)
+        assertEquals(listOf("Keep this subtask"), state.subtasks.map { it.title })
+        assertEquals(epoch("2026-09-30T18:00:00+02:00"), state.recurrenceEndAt)
+        assertEquals(QuickEntrySummaryField.entries, state.quickEntrySummary)
+        assertTrue(state.quickEntryIssues.isEmpty())
+        assertEquals(listOf(home), naturalLanguageEnvironment.categorySnapshots.single())
+        assertEquals(0, permissions.notificationChecks)
+        assertEquals(0, permissions.exactAlarmChecks)
+        assertTrue(effects.isEmpty())
+    }
+
+    @Test
+    fun quickEntryReparse_replacesOnlyRecognizedFields() = runTest(dispatcher) {
+        naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+            language = ParserLanguage.ENGLISH,
+            nowEpochMillis = NOW,
+            zoneId = ROME,
+            categories = listOf(CategoryCandidate(8, "Home"))
+        )
+        val viewModel = createViewModel(TaskEditorKey(null, null))
+        advanceUntilIdle()
+        viewModel.onEvent(
+            TaskEditorEvent.UpdateQuickEntry(
+                "Buy milk tomorrow at 6 pm #Home !high every week remind 30m before"
+            )
+        )
+        viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+        viewModel.onEvent(TaskEditorEvent.UpdateDescription("User description"))
+        viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(2_000_000_000_000L))
+        viewModel.onEvent(TaskEditorEvent.AddSubtask)
+        val subtaskId = viewModel.uiState.value.subtasks.single().draftId
+        viewModel.onEvent(TaskEditorEvent.RenameSubtask(subtaskId, "User subtask"))
+        val before = viewModel.uiState.value
+
+        viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("!medium"))
+        viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+        val reparsed = viewModel.uiState.value
+        assertEquals(before.title, reparsed.title)
+        assertEquals(TaskPriority.MEDIUM, reparsed.priority)
+        assertEquals(before.dueAt, reparsed.dueAt)
+        assertEquals(before.reminderAt, reparsed.reminderAt)
+        assertEquals(before.reminderStatus, reparsed.reminderStatus)
+        assertEquals(before.categoryId, reparsed.categoryId)
+        assertEquals(before.recurrence, reparsed.recurrence)
+        assertEquals("User description", reparsed.description)
+        assertEquals(2_000_000_000_000L, reparsed.recurrenceEndAt)
+        assertEquals(listOf("User subtask"), reparsed.subtasks.map { it.title })
+        assertEquals(listOf(QuickEntrySummaryField.PRIORITY), reparsed.quickEntrySummary)
+    }
+
+    @Test
+    fun emptyQuickEntry_preservesDraftAndShowsTypedIssue() = runTest(dispatcher) {
+        val viewModel = createViewModel(TaskEditorKey(null, null))
+        advanceUntilIdle()
+        viewModel.onEvent(TaskEditorEvent.UpdateTitle("Existing title"))
+        viewModel.onEvent(TaskEditorEvent.UpdateDescription("Existing description"))
+        viewModel.onEvent(TaskEditorEvent.UpdateDueAt(90_000L))
+        viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("  \n\t "))
+
+        viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+        val state = viewModel.uiState.value
+        assertEquals("Existing title", state.title)
+        assertEquals("Existing description", state.description)
+        assertEquals(90_000L, state.dueAt)
+        assertTrue(state.quickEntrySummary.isEmpty())
+        assertEquals(listOf(QuickEntryIssue.EMPTY_INPUT), state.quickEntryIssues)
+    }
+
+    @Test
+    fun quickEntryFailure_preservesDraftAndContainsFailureAsTypedIssue() =
+        runTest(dispatcher) {
+            naturalLanguageEnvironment.failure = IllegalStateException("parser boundary failed")
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(TaskEditorEvent.UpdateTitle("Existing title"))
+            viewModel.onEvent(TaskEditorEvent.UpdateDescription("Existing description"))
+            viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("Buy milk tomorrow"))
+
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            val state = viewModel.uiState.value
+            assertEquals("Existing title", state.title)
+            assertEquals("Existing description", state.description)
+            assertEquals("Buy milk tomorrow", state.quickEntryInput)
+            assertTrue(state.quickEntrySummary.isEmpty())
+            assertEquals(listOf(QuickEntryIssue.PARSE_FAILED), state.quickEntryIssues)
+        }
+
+    @Test
+    fun existingTask_ignoresQuickEntryEvents() = runTest(dispatcher) {
+        repository.emit(existingTask(title = "Canonical"))
+        naturalLanguageEnvironment.failure = AssertionError("must not parse in edit mode")
+        val viewModel = createViewModel(TaskEditorKey(7, null))
+        advanceUntilIdle()
+        val before = viewModel.uiState.value
+
+        viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("Replace everything"))
+        viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+        assertEquals(before, viewModel.uiState.value)
+        assertEquals(0, naturalLanguageEnvironment.snapshotCalls)
+    }
+
+    @Test
+    fun quickEntryPresentation_restoresWithoutReparsingAndUsesStableValues() =
+        runTest(dispatcher) {
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ENGLISH,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val handle = SavedStateHandle()
+            val first = createViewModel(TaskEditorKey(null, null), handle)
+            advanceUntilIdle()
+            first.onEvent(TaskEditorEvent.UpdateQuickEntry("Buy milk tomorrow #Missing"))
+            first.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            assertEquals(
+                "[\"TITLE\",\"DUE_DATE\"]",
+                handle.get<String>("quick_entry_summary")
+            )
+            assertEquals(
+                "[\"UNKNOWN_CATEGORY\"]",
+                handle.get<String>("quick_entry_issues")
+            )
+            val restorationEnvironment = EditorNaturalLanguageEnvironment().apply {
+                failure = AssertionError("restoration must not parse")
+            }
+
+            val restored = createViewModel(
+                key = TaskEditorKey(null, null),
+                handle = handle,
+                environment = restorationEnvironment
+            )
+            advanceUntilIdle()
+
+            val state = restored.uiState.value
+            assertEquals("Buy milk tomorrow #Missing", state.quickEntryInput)
+            assertEquals(
+                listOf(QuickEntrySummaryField.TITLE, QuickEntrySummaryField.DUE_DATE),
+                state.quickEntrySummary
+            )
+            assertEquals(listOf(QuickEntryIssue.UNKNOWN_CATEGORY), state.quickEntryIssues)
+            assertEquals("Buy milk #Missing", state.title)
+            assertEquals(epoch("2026-08-27T09:00:00+02:00"), state.dueAt)
+            assertEquals(0, restorationEnvironment.snapshotCalls)
+        }
+
+    @Test
+    fun androidEnvironment_snapshotsActiveLocaleTimeZoneAndResolvedCategoryNames() {
+        val application = RuntimeEnvironment.getApplication()
+        val context = EditorLocaleContext(application, "it-IT")
+        var now = 10L
+        var zone = ZoneId.of("Europe/Rome")
+        var resolvedDefaultName = "Lavoro"
+        val resolvedKeys = mutableListOf<DefaultCategoryKey>()
+        val environment = AndroidNaturalLanguageEnvironment(
+            context = context,
+            clock = AppClock { now },
+            zoneIdProvider = ZoneIdProvider { zone },
+            defaultCategoryNameResolver = DefaultCategoryNameResolver { key ->
+                resolvedKeys += key
+                resolvedDefaultName
+            }
+        )
+        val sourceCategories = listOf(
+            category(1, customName = null, defaultKey = DefaultCategoryKey.WORK),
+            category(2, customName = "Studio")
+        )
+
+        val italian = environment.snapshot(sourceCategories)
+
+        assertEquals(ParserLanguage.ITALIAN, italian.language)
+        assertEquals(10L, italian.nowEpochMillis)
+        assertEquals(ZoneId.of("Europe/Rome"), italian.zoneId)
+        assertEquals(
+            listOf(CategoryCandidate(1, "Lavoro"), CategoryCandidate(2, "Studio")),
+            italian.categories
+        )
+
+        now = 20L
+        zone = ZoneId.of("America/New_York")
+        resolvedDefaultName = "Work"
+        context.languageTags = "en-US"
+        val english = environment.snapshot(sourceCategories)
+
+        assertEquals(ParserLanguage.ENGLISH, english.language)
+        assertEquals(20L, english.nowEpochMillis)
+        assertEquals(ZoneId.of("America/New_York"), english.zoneId)
+        assertEquals(
+            listOf(CategoryCandidate(1, "Work"), CategoryCandidate(2, "Studio")),
+            english.categories
+        )
+        assertEquals(listOf(DefaultCategoryKey.WORK, DefaultCategoryKey.WORK), resolvedKeys)
+
+        context.languageTags = "fr-FR"
+        assertEquals(ParserLanguage.ENGLISH, environment.snapshot(emptyList()).language)
     }
 
     @Test
@@ -428,7 +717,8 @@ class TaskEditorViewModelTest {
 
     private fun createViewModel(
         key: TaskEditorKey,
-        handle: SavedStateHandle = SavedStateHandle()
+        handle: SavedStateHandle = SavedStateHandle(),
+        environment: NaturalLanguageEnvironment = naturalLanguageEnvironment
     ) = TaskEditorViewModel(
         key = key,
         savedStateHandle = handle,
@@ -436,7 +726,9 @@ class TaskEditorViewModelTest {
         categoryRepository = categories,
         saveTask = SaveTask(repository, scheduler, ValidateTask(), clock) { "series" },
         permissionChecker = permissions,
-        clock = clock
+        clock = clock,
+        parseNaturalLanguageTask = naturalLanguageParser,
+        naturalLanguageEnvironment = environment
     )
 
     private fun existingTask(title: String) = Task(
@@ -453,6 +745,46 @@ class TaskEditorViewModelTest {
         updatedAt = 20L,
         subtasks = listOf(Subtask(4, 7, "Existing subtask", false, null, 0))
     )
+
+    private fun epoch(value: String): Long = ZonedDateTime.parse(value).toInstant().toEpochMilli()
+
+    private companion object {
+        val ROME: ZoneId = ZoneId.of("Europe/Rome")
+        val NOW: Long = ZonedDateTime.parse("2026-08-26T10:15:00+02:00")
+            .toInstant()
+            .toEpochMilli()
+    }
+}
+
+private class EditorNaturalLanguageEnvironment : NaturalLanguageEnvironment {
+    var parserEnvironment = ParserEnvironment(
+        language = ParserLanguage.ENGLISH,
+        nowEpochMillis = 0L,
+        zoneId = ZoneId.of("UTC"),
+        categories = emptyList()
+    )
+    var failure: Throwable? = null
+    var snapshotCalls = 0
+    val categorySnapshots = mutableListOf<List<Category>>()
+
+    override fun snapshot(categories: List<Category>): ParserEnvironment {
+        snapshotCalls += 1
+        categorySnapshots += categories.toList()
+        failure?.let { throw it }
+        return parserEnvironment
+    }
+}
+
+private class EditorLocaleContext(
+    base: Context,
+    var languageTags: String
+) : ContextWrapper(base) {
+    override fun getResources(): Resources {
+        val configuration = Configuration(baseContext.resources.configuration).apply {
+            setLocales(LocaleList.forLanguageTags(languageTags))
+        }
+        return baseContext.createConfigurationContext(configuration).resources
+    }
 }
 
 private class EditorPermissionChecker : ReminderPermissionChecker {
@@ -549,9 +881,14 @@ private class EditorTaskRepository : TaskRepository {
     override suspend fun futureReminders(after: Long): List<Task> = emptyList()
 }
 
-private fun category(id: Int) = Category(
+private fun category(
+    id: Int,
+    customName: String? = "Category $id",
+    defaultKey: DefaultCategoryKey? = null
+) = Category(
     id = id,
-    customName = "Category $id",
+    customName = customName,
+    defaultKey = defaultKey,
     color = CategoryColor.BLUE,
     position = 0,
     createdAt = 1
