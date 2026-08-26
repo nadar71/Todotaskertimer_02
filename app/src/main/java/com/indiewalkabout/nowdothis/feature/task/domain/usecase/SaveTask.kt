@@ -82,7 +82,10 @@ class SaveTask(
         return SaveTaskResult.Saved(
             taskId = taskId,
             reminderStatus = status,
-            version = saved.copy(id = taskId).snapshotVersion()
+            version = saved.copy(
+                id = taskId,
+                reminderStatus = status
+            ).snapshotVersion()
         )
     }
 }

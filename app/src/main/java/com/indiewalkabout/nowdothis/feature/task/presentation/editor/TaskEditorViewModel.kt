@@ -449,6 +449,11 @@ class TaskEditorViewModel @AssistedInject constructor(
             updatedAt = savedStateHandle.get<Long>(KEY_VERSION_UPDATED_AT) ?: return null,
             isCompleted = savedStateHandle.get<Boolean>(KEY_VERSION_COMPLETED) ?: return null,
             completedAt = savedStateHandle[KEY_VERSION_COMPLETED_AT],
+            reminderAt = savedStateHandle[KEY_VERSION_REMINDER_AT],
+            reminderStatus = enumValueOrDefault(
+                savedStateHandle.get<String>(KEY_VERSION_REMINDER_STATUS),
+                ReminderStatus.NONE
+            ),
             recurrenceRule = enumValueOrDefault(
                 savedStateHandle.get<String>(KEY_VERSION_RECURRENCE),
                 RecurrenceType.NONE
@@ -467,6 +472,8 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle[KEY_VERSION_UPDATED_AT] = version.updatedAt
         savedStateHandle[KEY_VERSION_COMPLETED] = version.isCompleted
         savedStateHandle.set<Long?>(KEY_VERSION_COMPLETED_AT, version.completedAt)
+        savedStateHandle.set<Long?>(KEY_VERSION_REMINDER_AT, version.reminderAt)
+        savedStateHandle[KEY_VERSION_REMINDER_STATUS] = version.reminderStatus.name
         val versionDueAt = if (version.recurrenceRule is RecurrenceRule.None) {
             null
         } else {
@@ -514,6 +521,8 @@ class TaskEditorViewModel @AssistedInject constructor(
         const val KEY_VERSION_UPDATED_AT = "draft_version_updated_at"
         const val KEY_VERSION_COMPLETED = "draft_version_completed"
         const val KEY_VERSION_COMPLETED_AT = "draft_version_completed_at"
+        const val KEY_VERSION_REMINDER_AT = "draft_version_reminder_at"
+        const val KEY_VERSION_REMINDER_STATUS = "draft_version_reminder_status"
         const val KEY_VERSION_RECURRENCE = "draft_version_recurrence"
         const val KEY_VERSION_MONTHLY_ANCHOR_DAY = "draft_version_monthly_anchor_day"
         const val KEY_VERSION_RECURRENCE_END_AT = "draft_version_recurrence_end_at"

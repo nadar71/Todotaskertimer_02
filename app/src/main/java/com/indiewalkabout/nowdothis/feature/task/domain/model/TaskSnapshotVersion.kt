@@ -7,6 +7,8 @@ data class TaskSnapshotVersion(
     val updatedAt: Long,
     val isCompleted: Boolean,
     val completedAt: Long?,
+    val reminderAt: Long?,
+    val reminderStatus: ReminderStatus,
     val recurrenceRule: RecurrenceRule,
     val recurrenceEndAt: Long?
 )
@@ -18,6 +20,8 @@ fun Task.snapshotVersion(): TaskSnapshotVersion = TaskSnapshotVersion(
     updatedAt = updatedAt,
     isCompleted = isCompleted,
     completedAt = completedAt,
+    reminderAt = reminderAt,
+    reminderStatus = reminderStatus,
     recurrenceRule = recurrenceRule,
     recurrenceEndAt = recurrenceEndAt
 )

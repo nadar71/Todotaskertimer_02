@@ -10,6 +10,8 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
 sealed interface CompleteTaskResult {
@@ -62,30 +64,53 @@ class CompleteTask(
             is AtomicCompletionResult.Completed -> Unit
         }
 
-        scheduler.cancel(result.completed.id)
-        val persistedNext = result.nextOccurrence
-        val finalNext = if (persistedNext?.reminderAt?.let { it > now } == true) {
-            val expectedVersion = persistedNext.snapshotVersion()
-            val isCurrent = repository.getTask(persistedNext.id)?.snapshotVersion() == expectedVersion
-            if (!isCurrent) {
-                persistedNext
-            } else {
-                val status = scheduler.schedule(
-                    persistedNext.id,
-                    requireNotNull(persistedNext.reminderAt)
-                ).toReminderStatus()
-                val statusUpdated = repository.updateReminderStatusIfCurrent(expectedVersion, status)
-                if (statusUpdated) {
-                    persistedNext.copy(reminderStatus = status)
-                } else {
-                    reconcileCurrentReminder(persistedNext.id, now)
+        return try {
+            scheduler.cancel(result.completed.id)
+            val persistedNext = result.nextOccurrence
+            val finalNext = if (persistedNext?.reminderAt?.let { it > now } == true) {
+                val expectedVersion = persistedNext.snapshotVersion()
+                val isCurrent = repository.getTask(persistedNext.id)?.snapshotVersion() == expectedVersion
+                if (!isCurrent) {
                     persistedNext
+                } else {
+                    val status = scheduler.schedule(
+                        persistedNext.id,
+                        requireNotNull(persistedNext.reminderAt)
+                    ).toReminderStatus()
+                    val statusUpdated = repository.updateReminderStatusIfCurrent(expectedVersion, status)
+                    if (statusUpdated) {
+                        persistedNext.copy(reminderStatus = status)
+                    } else {
+                        reconcileCurrentReminder(persistedNext.id, now)
+                        persistedNext
+                    }
                 }
+            } else {
+                persistedNext
             }
-        } else {
-            persistedNext
+            CompleteTaskResult.Completed(result.completed, finalNext)
+        } catch (failure: Exception) {
+            cleanupAfterPostCommitFailure(result)
+            throw failure
         }
-        return CompleteTaskResult.Completed(result.completed, finalNext)
+    }
+
+    private suspend fun cleanupAfterPostCommitFailure(result: AtomicCompletionResult.Completed) {
+        withContext(NonCancellable) {
+            runCleanupBestEffort { scheduler.cancel(result.completed.id) }
+            result.nextOccurrence?.id
+                ?.takeIf { it != result.completed.id }
+                ?.let { taskId -> runCleanupBestEffort { scheduler.cancel(taskId) } }
+            runCleanupBestEffort { scheduler.reconcile() }
+        }
+    }
+
+    private suspend fun runCleanupBestEffort(action: suspend () -> Unit) {
+        try {
+            action()
+        } catch (_: Exception) {
+            Unit
+        }
     }
 
     private suspend fun reconcileCurrentReminder(taskId: Int, now: Long) {

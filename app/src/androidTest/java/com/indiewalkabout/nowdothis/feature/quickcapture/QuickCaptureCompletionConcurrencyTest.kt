@@ -259,6 +259,45 @@ class QuickCaptureCompletionConcurrencyTest {
     }
 
     @Test
+    fun sameTokenReplaceAllAfterCommit_doesNotScheduleRemovedReminder() = runTest {
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Recurring with reminder",
+                dueAt = 2_000L,
+                reminderAt = 1_500L,
+                recurrence = RecurrenceType.DAILY
+            ).copy(seriesId = "same-token-series")
+        )
+        val coordinatedRepository = CoordinatedPostCompletionRepository(repository)
+        val scheduler = RecordingReminderScheduler()
+        val completion = async { completeTask(coordinatedRepository, scheduler)(currentId) }
+
+        val committed = coordinatedRepository.awaitCommit()
+        val successor = requireNotNull(committed.nextOccurrence)
+        replaceAllWithReusedTaskId(
+            taskId = successor.id,
+            title = "Same-token restored replacement",
+            reminderAt = null,
+            reminderStatus = ReminderStatus.NONE,
+            seriesId = requireNotNull(successor.seriesId),
+            createdAt = successor.createdAt,
+            updatedAt = successor.updatedAt,
+            isCompleted = successor.isCompleted,
+            completedAt = successor.completedAt,
+            recurrenceRule = successor.recurrenceRule,
+            recurrenceEndAt = successor.recurrenceEndAt
+        )
+        coordinatedRepository.release()
+        completion.await()
+
+        val restored = requireNotNull(repository.getTask(successor.id))
+        assertEquals("Same-token restored replacement", restored.title)
+        assertEquals(null, restored.reminderAt)
+        assertEquals(ReminderStatus.NONE, restored.reminderStatus)
+        assertTrue(scheduler.scheduled.isEmpty())
+    }
+
+    @Test
     fun replaceAllAfterSuccessorScheduling_cancelsStaleAlarmWithoutUpdatingReusedRow() = runTest {
         val currentId = repository.upsert(
             recurringTask(
@@ -376,7 +415,12 @@ class QuickCaptureCompletionConcurrencyTest {
         reminderAt: Long? = null,
         reminderStatus: ReminderStatus = ReminderStatus.NONE,
         seriesId: String = "restored-series",
-        updatedAt: Long = 500L
+        createdAt: Long = 400L,
+        updatedAt: Long = 500L,
+        isCompleted: Boolean = false,
+        completedAt: Long? = null,
+        recurrenceRule: RecurrenceRule = RecurrenceRule.None,
+        recurrenceEndAt: Long? = null
     ) {
         PlanningDataSource(database).replaceAll(
             PlanningBackup(
@@ -391,15 +435,15 @@ class QuickCaptureCompletionConcurrencyTest {
                         description = "Restored data must remain untouched",
                         priority = TaskPriority.HIGH.name,
                         categoryId = null,
-                        isCompleted = false,
-                        completedAt = null,
+                        isCompleted = isCompleted,
+                        completedAt = completedAt,
                         dueAt = 30_000L,
                         reminderAt = reminderAt,
                         reminderStatus = reminderStatus.name,
-                        recurrenceRule = RecurrenceRule.None,
-                        recurrenceEndAt = null,
+                        recurrenceRule = recurrenceRule,
+                        recurrenceEndAt = recurrenceEndAt,
                         seriesId = seriesId,
-                        createdAt = 400L,
+                        createdAt = createdAt,
                         updatedAt = updatedAt,
                         subtasks = emptyList()
                     )

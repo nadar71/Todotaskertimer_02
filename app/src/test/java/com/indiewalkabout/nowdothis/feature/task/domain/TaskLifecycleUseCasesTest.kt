@@ -38,6 +38,10 @@ import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ValidateTask
 import java.time.Instant
 import java.time.ZoneId
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -132,6 +136,26 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun snapshotVersion_changesWhenReminderOwnershipChanges() {
+        val original = task(
+            id = 3,
+            dueAt = 3_000,
+            reminderAt = 2_000,
+            reminderStatus = ReminderStatus.REQUESTED,
+            updatedAt = 100
+        )
+
+        assertTrue(
+            original.snapshotVersion() != original.copy(reminderAt = null).snapshotVersion()
+        )
+        assertTrue(
+            original.snapshotVersion() != original.copy(
+                reminderStatus = ReminderStatus.SCHEDULED
+            ).snapshotVersion()
+        )
+    }
+
+    @Test
     fun validate_acceptsEqualReminderDueEndAndNowBoundaries() {
         val boundary = 1_000L
 
@@ -202,6 +226,7 @@ class TaskLifecycleUseCasesTest {
 
         assertEquals(41, (result as SaveTaskResult.Saved).taskId)
         assertEquals(ReminderStatus.SCHEDULED, result.reminderStatus)
+        assertEquals(ReminderStatus.SCHEDULED, result.version.reminderStatus)
         val saved = repository.tasks.getValue(41)
         assertEquals(1_000L, saved.createdAt)
         assertEquals(1_000L, saved.updatedAt)
@@ -227,12 +252,13 @@ class TaskLifecycleUseCasesTest {
             events = events
         )
 
-        val result = saveUseCase(repository, scheduler)(
-            existing.copy(
+        val result = saveUseCase(repository, scheduler).invoke(
+            task = existing.copy(
                 title = "Updated",
                 reminderAt = 2_000,
                 updatedAt = 30
-            )
+            ),
+            expectedVersion = existing.snapshotVersion()
         )
 
         assertEquals(7, (result as SaveTaskResult.Saved).taskId)
@@ -631,6 +657,64 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun complete_cancellationAfterAlarmInstallCleansReusedIdBeforeRethrowing() = runTest {
+        val repository = FakeTaskRepository(
+            task(
+                id = 13,
+                dueAt = 2_000,
+                reminderAt = 1_500,
+                recurrenceRule = dailyRule,
+                seriesId = "series-13"
+            ),
+            nextId = 89
+        )
+        val scheduler = SuspendingOwnerChangingScheduler(repository)
+        val completion = async { completeUseCase(repository, scheduler)(13) }
+
+        assertEquals(89, scheduler.awaitInstalledAlarm())
+        completion.cancel(CancellationException("cancel after alarm install"))
+        completion.join()
+
+        assertTrue(completion.isCancelled)
+        assertTrue(completion.isCompleted)
+        assertEquals(null, repository.tasks.getValue(89).reminderAt)
+        assertEquals(ReminderStatus.NONE, repository.tasks.getValue(89).reminderStatus)
+        assertTrue(89 !in scheduler.activeAlarms)
+        assertTrue(89 in scheduler.cancelledIds)
+        assertEquals(1, scheduler.reconcileCalls)
+    }
+
+    @Test
+    fun complete_exceptionAfterAlarmInstallCleansReusedIdBeforeRethrowing() = runTest {
+        val repository = FakeTaskRepository(
+            task(
+                id = 14,
+                dueAt = 2_000,
+                reminderAt = 1_500,
+                recurrenceRule = dailyRule,
+                seriesId = "series-14"
+            ),
+            nextId = 90
+        )
+        val failure = IllegalStateException("status storage unavailable")
+        val scheduler = OwnerChangingThrowingScheduler(repository, failure)
+
+        var thrown: IllegalStateException? = null
+        try {
+            completeUseCase(repository, scheduler)(14)
+        } catch (exception: IllegalStateException) {
+            thrown = exception
+        }
+
+        assertTrue(thrown === failure)
+        assertEquals(null, repository.tasks.getValue(90).reminderAt)
+        assertEquals(ReminderStatus.NONE, repository.tasks.getValue(90).reminderStatus)
+        assertTrue(90 !in scheduler.activeAlarms)
+        assertTrue(90 in scheduler.cancelledIds)
+        assertEquals(1, scheduler.reconcileCalls)
+    }
+
+    @Test
     fun complete_perpetualReminderGenerationChurnStopsAtBoundAndReconciles() = runTest {
         val events = mutableListOf<String>()
         val current = task(
@@ -891,6 +975,67 @@ class TaskLifecycleUseCasesTest {
             }
             return false
         }
+    }
+
+    private class OwnerChangingThrowingScheduler(
+        private val repository: FakeTaskRepository,
+        private val failure: Exception
+    ) : ReminderScheduler {
+        val activeAlarms = mutableMapOf<Int, Long>()
+        val cancelledIds = mutableListOf<Int>()
+        var reconcileCalls = 0
+
+        override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+            activeAlarms[taskId] = triggerAt
+            repository.tasks[taskId]?.let { current ->
+                repository.tasks[taskId] = current.copy(
+                    reminderAt = null,
+                    reminderStatus = ReminderStatus.NONE
+                )
+            }
+            throw failure
+        }
+
+        override suspend fun cancel(taskId: Int) {
+            activeAlarms.remove(taskId)
+            cancelledIds += taskId
+        }
+
+        override suspend fun reconcile() {
+            reconcileCalls += 1
+        }
+    }
+
+    private class SuspendingOwnerChangingScheduler(
+        private val repository: FakeTaskRepository
+    ) : ReminderScheduler {
+        val activeAlarms = mutableMapOf<Int, Long>()
+        val cancelledIds = mutableListOf<Int>()
+        var reconcileCalls = 0
+        private val installedAlarm = CompletableDeferred<Int>()
+
+        override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+            activeAlarms[taskId] = triggerAt
+            repository.tasks[taskId]?.let { current ->
+                repository.tasks[taskId] = current.copy(
+                    reminderAt = null,
+                    reminderStatus = ReminderStatus.NONE
+                )
+            }
+            installedAlarm.complete(taskId)
+            awaitCancellation()
+        }
+
+        override suspend fun cancel(taskId: Int) {
+            activeAlarms.remove(taskId)
+            cancelledIds += taskId
+        }
+
+        override suspend fun reconcile() {
+            reconcileCalls += 1
+        }
+
+        suspend fun awaitInstalledAlarm(): Int = installedAlarm.await()
     }
 
     private class FakeTaskRepository(
