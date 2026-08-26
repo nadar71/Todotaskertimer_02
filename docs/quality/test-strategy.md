@@ -41,10 +41,13 @@ while connected journeys launch `MainActivity` and use production Navigation 3,
 TaskEditor, parser, Room repositories, `SaveTask`, and AlarmManager scheduling. The
 journey fixture seeds only deterministic category rows and restores locale, Room rows,
 nullable `sqlite_sequence` rows, and alarm state; it does not replace parser or
-persistence behavior. Save journeys correlate `dumpsys alarm` with `dumpsys activity
-intents` through `UiAutomation` to prove the registered alarm's package, receiver,
-request code, and trigger. Exact-alarm permission/fallback and delivery remain manual
-platform checks.
+persistence behavior. Its state snapshot precedes every mutation, preparation runs
+inside restoration `try/finally`, and a forced post-mutation setup failure proves exact
+row, sequence, and alarm restoration. Live alarm records are captured and re-queried
+through correlated `dumpsys alarm`/`dumpsys activity intents` evidence; restoration
+requires exact or fallback inexact scheduling success and asserts package, receiver,
+request code, trigger, and prior absence. Exact-alarm permission behavior and delivery
+remain manual platform checks.
 
 ## Local Gates
 

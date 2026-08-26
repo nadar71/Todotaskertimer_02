@@ -22,11 +22,13 @@ description, and invokes the existing `SaveTask`/Room/AlarmManager path.
 
 ## Product Journeys
 
-`NaturalLanguageEntryJourneyTest` launches production `MainActivity`, follows the
-Navigation 3 add path, renders the production `TaskEditorRoute`, parses through the
-injected production parser, and saves through the production ViewModel and use case.
-It does not use a test parser, in-memory task repository, direct task insert, or
-test-only persistence path.
+The three product journey methods in `NaturalLanguageEntryJourneyTest` launch
+production `MainActivity`, follow the Navigation 3 add path, render the production
+`TaskEditorRoute`, parse through the injected production parser, and save through the
+production ViewModel and use case. They do not use a test parser, in-memory task
+repository, direct task insert, or test-only persistence path. A separate fixture
+failure regression seeds test-only sentinel rows and alarms solely to verify cleanup;
+it is not a product journey or persistence substitute.
 
 The retained Italian and English journeys independently prove:
 
@@ -60,11 +62,13 @@ second wall-clock snapshot at midnight; the injected-clock JVM matrix separately
 proves the tomorrow calculation.
 
 Each test snapshots the pre-test Room categories/tasks/subtasks, the exact nullable
-`sqlite_sequence` rows for all three tables, and reminder `PendingIntent` identities.
-It clears and seeds deterministic category data before the activity starts, then
-cancels test alarms and restores all rows, each sequence's prior absence or value,
-and prior alarm identities after the activity closes. Teardown asserts the restored
-table rows, sequence map, and alarm identities against the snapshot. The locale rule
+`sqlite_sequence` rows for all three tables, and actual live AlarmManager registry
+records for those tasks before any mutation. Fixture preparation and the journey body
+both run inside restoration `try/finally` ownership. Cleanup restores all table rows
+and each sequence's prior absence or value. For each previously live alarm, it requires
+either exact or fallback inexact scheduling to succeed, then queries dumpsys again and
+asserts type, package, receiver component, request code, and trigger within 1,000 ms.
+Tasks with no prior live alarm are cancelled and asserted absent. The locale rule
 snapshots the exact per-app `LocaleList`, applies `it` or `en` before activity launch,
 and restores it in `finally`.
 
@@ -110,16 +114,35 @@ teardown, with nullable sequence maps proving the leak: Italian save expected
 `{categories=103, tasks=2, subtasks=null}`. Exact sequence replacement made the same
 focused journey class pass 3/3. The hardened core journey also passed 1/1.
 
+### Fix Round 2
+
+A deterministic setup-failure regression was added before the lifecycle and snapshot
+APIs. Its first RED run failed Android-test compilation on the missing mutation hook,
+state capture, and registered-alarm sentinel helpers, so 0 tests executed. The fixture
+then moved preparation under restoration `try/finally`, replaced the PendingIntent-only
+snapshot with structured live registry records, required successful exact-or-inexact
+restoration, and asserted restored registry identity and trigger. The focused class
+passed 4/4 in 47 seconds.
+
+The same regression was then strengthened with a preexisting task that intentionally
+had no live alarm and a stray alarm created after setup mutation. Its second RED run
+failed Android-test compilation on the two missing negative-sentinel helpers, so 0
+tests executed. After those test-only helpers were added, the focused class passed
+4/4 in 40 seconds. The regression proves that a forced setup exception restores exact
+rows and nullable sequence values, restores the prior live alarm, removes the stray
+alarm, does not run the journey body, and rethrows the expected setup exception.
+
 ## Automated Gates
 
 | Gate | Exact command | Result |
 | --- | --- | --- |
 | Alarm registry evidence parser | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.AlarmRegistryEvidenceTest` | 3 tests; 0 failures, 0 errors, 0 skipped |
-| Focused journey | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.NaturalLanguageEntryJourneyTest` | 3 tests; 0 failures, 0 errors, 0 skipped |
+| Focused journey and fixture cleanup | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.NaturalLanguageEntryJourneyTest` | 4 tests; 0 failures, 0 errors, 0 skipped |
 | Focused core journey | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.CoreTaskJourneyTest` | 1 test; 0 failures, 0 errors, 0 skipped |
 | Full JVM | `./gradlew --no-daemon :app:testDebugUnitTest` | 301 tests across 33 XML suites; 0 failures, 0 errors, 0 skipped |
-| Full connected | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest` | 104 tests; 0 failures, 0 errors, 0 skipped; XML time 141.224 s |
-| Lint and artifacts | `./gradlew --no-daemon :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease` | Passed |
+| Full connected | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest` | 105 tests; 0 failures, 0 errors, 0 skipped; XML time 146.077 s |
+| Lint | `./gradlew --no-daemon :app:lintDebug` | Passed; 0 errors and 68 warnings |
+| Prior Task 6 artifacts | `./gradlew --no-daemon :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease` | Fix round 1 result retained; no production or packaging input changed in fix round 2 |
 | Explicit R8 full mode | `./gradlew --no-daemon :app:assembleRelease -Pandroid.enableR8.fullMode=true` | Passed; R8 and release packaging were up to date from the preceding optimized build |
 | Diff whitespace | `git diff --check` | Passed with no output |
 

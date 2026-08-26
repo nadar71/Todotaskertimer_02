@@ -1,10 +1,8 @@
 package com.indiewalkabout.nowdothis.feature.naturallanguage
 
 import android.app.LocaleManager
-import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.os.LocaleList
 import android.text.format.DateUtils
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -50,6 +48,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -131,6 +131,61 @@ class NaturalLanguageEntryJourneyTest {
         assertNonTemporalPreview(fixture)
         assertScheduleControls(parsedSchedule)
         assertEquals(emptyList<TaskEntity>(), readTasks())
+    }
+
+    @Test
+    fun setupFailure_afterMutation_restoresRowsSequencesAndLiveAlarm() {
+        appStateRule.insertTaskWithRegisteredAlarm(SETUP_FAILURE_TASK)
+        appStateRule.insertTaskWithoutRegisteredAlarm(SETUP_FAILURE_NO_ALARM_TASK)
+        val before = appStateRule.captureState()
+        val beforeAlarm = requireNotNull(before.registeredAlarms[SETUP_FAILURE_TASK.id])
+        assertEquals(SETUP_FAILURE_TRIGGER_AT, beforeAlarm.triggerAt)
+        assertFalse(before.registeredAlarms.containsKey(SETUP_FAILURE_NO_ALARM_TASK.id))
+        var journeyBodyRan = false
+        val failingRule = AppStateRule(
+            fixtureForTest = { ITALIAN_SAVE },
+            afterFixtureMutation = {
+                appStateRule.registerAlarmForTest(
+                    SETUP_FAILURE_NO_ALARM_TASK.id,
+                    SETUP_FAILURE_UNEXPECTED_TRIGGER_AT
+                )
+                throw ExpectedFixtureSetupFailure()
+            }
+        )
+
+        val failure = assertThrows(ExpectedFixtureSetupFailure::class.java) {
+            failingRule.apply(
+                base = object : Statement() {
+                    override fun evaluate() {
+                        journeyBodyRan = true
+                    }
+                },
+                description = Description.createTestDescription(
+                    NaturalLanguageEntryJourneyTest::class.java,
+                    "nestedSetupFailure"
+                )
+            ).evaluate()
+        }
+
+        assertEquals(EXPECTED_SETUP_FAILURE_MESSAGE, failure.message)
+        assertFalse("Journey body ran after fixture setup failed", journeyBodyRan)
+        val after = appStateRule.captureState()
+        assertEquals(before.categories, after.categories)
+        assertEquals(before.tasks, after.tasks)
+        assertEquals(before.subtasks, after.subtasks)
+        assertEquals(before.sequences, after.sequences)
+        assertEquals(before.registeredAlarms.keys, after.registeredAlarms.keys)
+        val afterAlarm = requireNotNull(after.registeredAlarms[SETUP_FAILURE_TASK.id])
+        assertFalse(after.registeredAlarms.containsKey(SETUP_FAILURE_NO_ALARM_TASK.id))
+        assertEquals(beforeAlarm.type, afterAlarm.type)
+        assertEquals(beforeAlarm.packageName, afterAlarm.packageName)
+        assertEquals(beforeAlarm.receiverComponent, afterAlarm.receiverComponent)
+        assertEquals(beforeAlarm.requestCode, afterAlarm.requestCode)
+        assertTrue(
+            "Restored alarm trigger ${afterAlarm.triggerAt} differed from " +
+                "${beforeAlarm.triggerAt}",
+            abs(afterAlarm.triggerAt - beforeAlarm.triggerAt) <= ALARM_TRIGGER_TOLERANCE_MILLIS
+        )
     }
 
     private fun openNewTask() {
@@ -389,6 +444,7 @@ private fun journeyFixtureFor(testMethod: String): JourneyFixture = when (testMe
     "recreation_restoresRelativeDatePreview_withoutReparsingChangedInput" -> {
         ITALIAN_RECREATION
     }
+    "setupFailure_afterMutation_restoresRowsSequencesAndLiveAlarm" -> ITALIAN_RECREATION
     else -> error("No Natural-Language Entry fixture for $testMethod")
 }
 
@@ -415,7 +471,8 @@ private class ApplicationLocaleRule(
 }
 
 private class AppStateRule(
-    private val fixtureForTest: (String) -> JourneyFixture
+    private val fixtureForTest: (String) -> JourneyFixture,
+    private val afterFixtureMutation: () -> Unit = {}
 ) : TestRule {
     private val context: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
@@ -428,8 +485,8 @@ private class AppStateRule(
     override fun apply(base: Statement, description: Description): Statement = object : Statement() {
         override fun evaluate() {
             val snapshot = snapshotState()
-            prepareFixture(fixtureForTest(description.methodName))
             try {
+                prepareFixture(fixtureForTest(description.methodName))
                 base.evaluate()
             } finally {
                 restoreState(snapshot)
@@ -437,13 +494,36 @@ private class AppStateRule(
         }
     }
 
-    fun hasReminderOperation(taskId: Int): Boolean = reminderOperation(taskId) != null
-
     fun registeredReminders(): List<RegisteredAlarm> = AlarmRegistryEvidence.parse(
         alarmDump = shell("dumpsys alarm"),
         pendingIntentDump = shell("dumpsys activity intents"),
         packageName = context.packageName
     )
+
+    fun captureState(): AppStateSnapshot = snapshotState()
+
+    fun insertTaskWithRegisteredAlarm(task: TaskEntity) {
+        insertTask(task)
+        val triggerAt = requireNotNull(task.reminderAt)
+        registerAlarmForTest(task.id, triggerAt)
+    }
+
+    fun insertTaskWithoutRegisteredAlarm(task: TaskEntity) {
+        insertTask(task)
+        alarmGateway().cancel(task.id)
+        check(registeredAlarmsFor(listOf(task)).isEmpty()) {
+            "Setup-failure absence sentinel unexpectedly had a registered alarm"
+        }
+    }
+
+    fun registerAlarmForTest(taskId: Int, triggerAt: Long) {
+        check(scheduleReminder(taskId, triggerAt)) {
+            "Could not register setup-failure sentinel alarm for task $taskId"
+        }
+        check(registeredReminders().count { alarm -> alarm.requestCode == taskId } == 1) {
+            "Setup-failure sentinel alarm was absent from the device registry"
+        }
+    }
 
     private fun snapshotState(): AppStateSnapshot {
         val (categories, tasks, subtasks) = runBlocking(Dispatchers.IO) {
@@ -453,14 +533,13 @@ private class AppStateRule(
                 database.taskDao().getAllSubtaskEntities()
             )
         }
+        val registeredAlarms = registeredAlarmsFor(tasks)
         return AppStateSnapshot(
             categories = categories,
             tasks = tasks,
             subtasks = subtasks,
             sequences = readSequences(),
-            alarmTaskIds = tasks.mapNotNull { task ->
-                task.id.takeIf(::hasReminderOperation)
-            }.toSet()
+            registeredAlarms = registeredAlarms
         )
     }
 
@@ -473,6 +552,7 @@ private class AppStateRule(
             withContext(Dispatchers.IO) {
                 database.clearAllTables()
                 replaceSequences(SEQUENCE_TABLES.associateWith { null })
+                afterFixtureMutation()
                 database.categoryDao().insert(
                     CategoryEntity(
                         id = fixture.categoryId,
@@ -506,11 +586,14 @@ private class AppStateRule(
                 replaceSequences(snapshot.sequences)
             }
         }
-        snapshot.tasks.filter { it.id in snapshot.alarmTaskIds }.forEach { task ->
-            val reminderAt = task.reminderAt ?: return@forEach
-            val gateway = alarmGateway()
-            if (!gateway.setExact(task.id, reminderAt)) {
-                gateway.setInexact(task.id, reminderAt)
+        snapshot.tasks.forEach { task ->
+            val alarm = snapshot.registeredAlarms[task.id]
+            if (alarm == null) {
+                alarmGateway().cancel(task.id)
+            } else {
+                check(scheduleReminder(task.id, alarm.triggerAt)) {
+                    "Could not restore registered alarm for task ${task.id}"
+                }
             }
         }
         assertEquals(snapshot.categories, runBlocking(Dispatchers.IO) {
@@ -523,8 +606,46 @@ private class AppStateRule(
             database.taskDao().getAllSubtaskEntities()
         })
         assertEquals(snapshot.sequences, readSequences())
-        snapshot.tasks.forEach { task ->
-            assertEquals(task.id in snapshot.alarmTaskIds, hasReminderOperation(task.id))
+        assertRestoredAlarms(snapshot)
+    }
+
+    private fun assertRestoredAlarms(snapshot: AppStateSnapshot) {
+        val actual = registeredAlarmsFor(snapshot.tasks)
+        assertEquals(snapshot.registeredAlarms.keys, actual.keys)
+        snapshot.registeredAlarms.forEach { (taskId, expected) ->
+            val restored = requireNotNull(actual[taskId])
+            assertEquals(expected.type, restored.type)
+            assertEquals(expected.packageName, restored.packageName)
+            assertEquals(expected.receiverComponent, restored.receiverComponent)
+            assertEquals(expected.requestCode, restored.requestCode)
+            assertTrue(
+                "Restored alarm trigger ${restored.triggerAt} differed from " +
+                    "${expected.triggerAt} for task $taskId",
+                abs(restored.triggerAt - expected.triggerAt) <=
+                    ALARM_TRIGGER_TOLERANCE_MILLIS
+            )
+        }
+    }
+
+    private fun registeredAlarmsFor(tasks: List<TaskEntity>): Map<Int, RegisteredAlarm> {
+        val taskIds = tasks.mapTo(mutableSetOf(), TaskEntity::id)
+        val grouped = registeredReminders()
+            .filter { alarm -> alarm.requestCode in taskIds }
+            .groupBy(RegisteredAlarm::requestCode)
+        check(grouped.values.none { alarms -> alarms.size > 1 }) {
+            "Multiple registered alarms found for one restored task: $grouped"
+        }
+        return grouped.mapValues { (_, alarms) -> alarms.single() }
+    }
+
+    private fun scheduleReminder(taskId: Int, triggerAt: Long): Boolean {
+        val gateway = alarmGateway()
+        return gateway.setExact(taskId, triggerAt) || gateway.setInexact(taskId, triggerAt)
+    }
+
+    private fun insertTask(task: TaskEntity) {
+        runBlocking(Dispatchers.IO) {
+            database.taskDao().insertTask(task)
         }
     }
 
@@ -572,13 +693,6 @@ private class AppStateRule(
         alarmManager = context.getSystemService(android.app.AlarmManager::class.java)
     )
 
-    private fun reminderOperation(taskId: Int): PendingIntent? = PendingIntent.getBroadcast(
-        context,
-        taskId,
-        Intent(context, ReminderReceiver::class.java)
-            .putExtra(ReminderReceiver.EXTRA_TASK_ID, taskId),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_NO_CREATE
-    )
 }
 
 private data class AppStateSnapshot(
@@ -586,11 +700,42 @@ private data class AppStateSnapshot(
     val tasks: List<TaskEntity>,
     val subtasks: List<SubtaskEntity>,
     val sequences: Map<String, Long?>,
-    val alarmTaskIds: Set<Int>
+    val registeredAlarms: Map<Int, RegisteredAlarm>
+)
+
+private class ExpectedFixtureSetupFailure : RuntimeException(EXPECTED_SETUP_FAILURE_MESSAGE)
+
+private val SETUP_FAILURE_TASK = TaskEntity(
+    id = 701,
+    title = "Fixture restoration sentinel",
+    description = "Must survive setup failure",
+    priority = "LOW",
+    categoryId = ITALIAN_RECREATION.categoryId,
+    dueAt = SETUP_FAILURE_TRIGGER_AT + REMINDER_LEAD_MILLIS,
+    reminderAt = SETUP_FAILURE_TRIGGER_AT,
+    reminderStatus = "SCHEDULED",
+    createdAt = FIXTURE_CREATED_AT,
+    updatedAt = FIXTURE_CREATED_AT
+)
+
+private val SETUP_FAILURE_NO_ALARM_TASK = TaskEntity(
+    id = 702,
+    title = "Fixture alarm-absence sentinel",
+    description = "Must remain without a registered alarm",
+    priority = "LOW",
+    categoryId = ITALIAN_RECREATION.categoryId,
+    dueAt = SETUP_FAILURE_UNEXPECTED_TRIGGER_AT + REMINDER_LEAD_MILLIS,
+    reminderAt = SETUP_FAILURE_UNEXPECTED_TRIGGER_AT,
+    reminderStatus = "SCHEDULED",
+    createdAt = FIXTURE_CREATED_AT,
+    updatedAt = FIXTURE_CREATED_AT
 )
 
 private const val REMINDER_LEAD_MILLIS = 60 * 60 * 1_000L
 private const val ALARM_TRIGGER_TOLERANCE_MILLIS = 1_000L
 private const val WAIT_TIMEOUT_MILLIS = 10_000L
 private const val FIXTURE_CREATED_AT = 1_788_044_400_000L
+private const val SETUP_FAILURE_TRIGGER_AT = 2_145_990_600_000L
+private const val SETUP_FAILURE_UNEXPECTED_TRIGGER_AT = 2_145_994_200_000L
+private const val EXPECTED_SETUP_FAILURE_MESSAGE = "Expected failure after fixture mutation"
 private val SEQUENCE_TABLES = listOf("categories", "tasks", "subtasks")
