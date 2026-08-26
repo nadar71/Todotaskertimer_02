@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -209,6 +210,176 @@ class BackupCodecTest {
     }
 
     @Test
+    fun decode_rejectsCompleteInvalidRecurrenceMatrix() {
+        val cases = listOf(
+            InvalidRecurrence("missing kind", "{}"),
+            InvalidRecurrence("NONE forbidden explicit null", """{"kind":"NONE","basis":null}"""),
+            InvalidRecurrence(
+                "INTERVAL missing unit",
+                """{"kind":"INTERVAL","every":1,"basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL missing every",
+                """{"kind":"INTERVAL","unit":"DAYS","basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL missing basis",
+                """{"kind":"INTERVAL","unit":"DAYS","every":1}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL forbidden explicit null",
+                """{"kind":"INTERVAL","unit":"DAYS","every":1,"basis":"SCHEDULED_DATE","anchorDay":null}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL unknown unit",
+                """{"kind":"INTERVAL","unit":"MONTHS","every":1,"basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL unknown basis",
+                """{"kind":"INTERVAL","unit":"DAYS","every":1,"basis":"CREATED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL lower bound",
+                """{"kind":"INTERVAL","unit":"DAYS","every":0,"basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL upper bound",
+                """{"kind":"INTERVAL","unit":"WEEKS","every":1000,"basis":"COMPLETION_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS missing basis",
+                """{"kind":"SELECTED_WEEKDAYS","weekdays":["MONDAY"]}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS missing weekdays",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS forbidden explicit null",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":["MONDAY"],"every":null}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS empty",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":[]}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS duplicate",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":["MONDAY","MONDAY"]}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS unknown weekday",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":["FUNDAY"]}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS unknown basis",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"CREATED_DATE","weekdays":["MONDAY"]}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY missing basis",
+                """{"kind":"MONTHLY_DAY","anchorDay":1,"everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY missing anchorDay",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY missing everyMonths",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY forbidden explicit null",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1,"everyMonths":1,"ordinal":null}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY unknown basis",
+                """{"kind":"MONTHLY_DAY","basis":"CREATED_DATE","anchorDay":1,"everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY anchor lower bound",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":0,"everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY anchor upper bound",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":32,"everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY interval lower bound",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1,"everyMonths":0}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY interval upper bound",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1,"everyMonths":1000}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL missing basis",
+                """{"kind":"MONTHLY_ORDINAL","ordinal":"FIRST","weekday":"MONDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL missing ordinal",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","weekday":"MONDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL missing weekday",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL missing everyMonths",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"MONDAY"}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL forbidden explicit null",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"MONDAY","everyMonths":1,"anchorDay":null}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL unknown basis",
+                """{"kind":"MONTHLY_ORDINAL","basis":"CREATED_DATE","ordinal":"FIRST","weekday":"MONDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL unknown ordinal",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIFTH","weekday":"MONDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL unknown weekday",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"FUNDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL interval lower bound",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"MONDAY","everyMonths":0}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL interval upper bound",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"LAST","weekday":"SUNDAY","everyMonths":1000}"""
+            ),
+            InvalidRecurrence("unknown kind", """{"kind":"YEARLY"}""")
+        )
+
+        cases.forEach { case ->
+            val error = runCatching {
+                codec.decode(v2Fixture(case.recurrence).encodeToByteArray())
+            }.exceptionOrNull()
+            assertTrue("${case.name} did not fail as malformed recurrence", error is SerializationException)
+        }
+    }
+
+    @Test
+    fun decode_acceptsRecurrenceBoundaryControls() {
+        val recurrences = listOf(
+            """{"kind":"NONE"}""",
+            """{"kind":"INTERVAL","unit":"DAYS","every":1,"basis":"SCHEDULED_DATE"}""",
+            """{"kind":"INTERVAL","unit":"WEEKS","every":999,"basis":"COMPLETION_DATE"}""",
+            """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":["MONDAY","SUNDAY"]}""",
+            """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1,"everyMonths":1}""",
+            """{"kind":"MONTHLY_DAY","basis":"COMPLETION_DATE","anchorDay":31,"everyMonths":999}""",
+            """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"MONDAY","everyMonths":1}""",
+            """{"kind":"MONTHLY_ORDINAL","basis":"COMPLETION_DATE","ordinal":"LAST","weekday":"SUNDAY","everyMonths":999}"""
+        )
+
+        recurrences.forEach { recurrence ->
+            assertEquals(1, codec.decode(v2Fixture(recurrence).encodeToByteArray()).tasks.size)
+        }
+    }
+
+    @Test
     fun decode_rejectsMissingHeadersAndMalformedUtf8() {
         val encoded = codec.encode(sampleBackup()).decodeToString()
 
@@ -340,4 +511,24 @@ class BackupCodecTest {
              "categories":[],"tasks":[$tasks]}
         """.trimIndent()
     }
+
+    private fun v2Fixture(recurrence: String): String {
+        val isNone = recurrence.contains("\"kind\":\"NONE\"")
+        return """
+            {"format":"now-do-this-backup","version":2,"createdAtEpochMillis":1,
+             "categories":[],"tasks":[{
+               "id":1,"title":"Task","description":"","priority":"MEDIUM",
+               "categoryId":null,"isCompleted":false,"completedAt":null,
+               "dueAt":${if (isNone) "null" else "30"},"reminderAt":null,
+               "reminderStatus":"NONE","recurrence":$recurrence,
+               "recurrenceEndAt":${if (isNone) "null" else "40"},"seriesId":null,
+               "createdAt":1,"updatedAt":1,"subtasks":[]
+             }]}
+        """.trimIndent()
+    }
+
+    private data class InvalidRecurrence(
+        val name: String,
+        val recurrence: String
+    )
 }

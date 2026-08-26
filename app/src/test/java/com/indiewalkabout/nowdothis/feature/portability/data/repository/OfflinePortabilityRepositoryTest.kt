@@ -182,6 +182,49 @@ class OfflinePortabilityRepositoryTest {
     }
 
     @Test
+    fun inspectBackup_decodesNearLimitV2WithHighCardinalityUnknownMetadata() = runTest {
+        val bytes = adversarialV2Backup(BackupValidator.MAX_DOCUMENT_SIZE_BYTES.toInt())
+        val documents = FakeDocumentGateway(readBytes = bytes)
+        val repository = repository(FakePlanningDataStore(), documents)
+
+        val candidate = repository.inspectBackup(DocumentReference("source"))
+
+        assertEquals(validBackup(), candidate.backup)
+        assertEquals(BackupValidator.MAX_DOCUMENT_SIZE_BYTES.toInt(), bytes.size)
+        assertEquals(BackupValidator.MAX_DOCUMENT_SIZE_BYTES, documents.readLimits.single())
+    }
+
+    @Test
+    fun inspectBackup_rejectsHighCardinalityDocumentOneByteOverLimitBeforeDecode() = runTest {
+        val bytes = adversarialV2Backup(BackupValidator.MAX_DOCUMENT_SIZE_BYTES.toInt() + 1)
+        val repository = repository(
+            FakePlanningDataStore(),
+            FakeDocumentGateway(readBytes = bytes)
+        )
+
+        val error = runCatching { repository.inspectBackup(DocumentReference("source")) }
+            .exceptionOrNull() as PortabilityException
+
+        assertSame(DocumentTooLarge, error.error)
+    }
+
+    @Test
+    fun inspectBackup_mapsMalformedRecurrenceAtExactLimitToInvalidBackup() = runTest {
+        val store = FakePlanningDataStore()
+        val bytes = adversarialV2Backup(
+            targetSize = BackupValidator.MAX_DOCUMENT_SIZE_BYTES.toInt(),
+            recurrence = """{"kind":"NONE","basis":null}"""
+        )
+        val repository = repository(store, FakeDocumentGateway(readBytes = bytes))
+
+        val error = runCatching { repository.inspectBackup(DocumentReference("source")) }
+            .exceptionOrNull() as PortabilityException
+
+        assertSame(InvalidBackup, error.error)
+        assertTrue(store.replacementRequests.isEmpty())
+    }
+
+    @Test
     fun createBackup_mapsDestinationFailureToWriteFailed() = runTest {
         val repository = repository(
             FakePlanningDataStore(backup = validBackup()),
@@ -253,6 +296,7 @@ private class FakeDocumentGateway(
     override suspend fun read(reference: DocumentReference, maxBytes: Long): ByteArray {
         readLimits += maxBytes
         readFailure?.let { throw it }
+        if (readBytes.size.toLong() > maxBytes) throw DocumentSizeLimitExceededException()
         return readBytes
     }
 }
@@ -315,3 +359,31 @@ private fun v1ValidBackup() =
       }]
     }
     """.trimIndent()
+
+private fun adversarialV2Backup(
+    targetSize: Int,
+    recurrence: String = """{"kind":"NONE"}"""
+): ByteArray {
+    fun document(metadata: String, padding: String) =
+        """
+        {"unknownMetadata":[$metadata],"padding":"$padding","format":"now-do-this-backup","version":2,"createdAtEpochMillis":100,
+         "categories":[{"id":1,"customName":"Home","defaultKey":null,"colorToken":"GREEN","position":0,"createdAt":5}],
+         "tasks":[{
+           "id":13,"title":"Plan","description":"","priority":"HIGH","categoryId":1,
+           "isCompleted":false,"completedAt":null,"dueAt":null,"reminderAt":null,
+           "reminderStatus":"NONE","recurrence":$recurrence,"recurrenceEndAt":null,
+           "seriesId":null,"createdAt":10,"updatedAt":11,"subtasks":[]
+         }]}
+        """.trimIndent()
+
+    val emptySize = document(metadata = "{}", padding = "").length
+    require(targetSize >= emptySize)
+    val repeatedObject = "{\"x\":0},"
+    val objectCount = (targetSize - emptySize) / repeatedObject.length
+    val metadata = repeatedObject.repeat(objectCount) + "{}"
+    val withoutPadding = document(metadata, padding = "")
+    val padding = "x".repeat(targetSize - withoutPadding.length)
+    return document(metadata, padding).encodeToByteArray().also { bytes ->
+        check(bytes.size == targetSize)
+    }
+}

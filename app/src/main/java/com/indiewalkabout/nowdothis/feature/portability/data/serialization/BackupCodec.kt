@@ -5,9 +5,6 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 class BackupCodec(
     private val json: Json = Json {
@@ -28,37 +25,8 @@ class BackupCodec(
         require(envelope.format == SUPPORTED_FORMAT) { "Unsupported backup format" }
         return when (envelope.version) {
             BackupDocumentV1.VERSION -> json.decodeFromString<BackupDocumentV1>(document).toDomain()
-            BackupDocumentV2.VERSION -> {
-                validateV2RecurrenceShapes(document)
-                json.decodeFromString<BackupDocumentV2>(document).toDomain()
-            }
+            BackupDocumentV2.VERSION -> json.decodeFromString<BackupDocumentV2>(document).toDomain()
             else -> throw IllegalArgumentException("Unsupported backup version: ${envelope.version}")
-        }
-    }
-
-    private fun validateV2RecurrenceShapes(document: String) {
-        val root = json.parseToJsonElement(document).jsonObject
-        val tasks = root.getValue("tasks").jsonArray
-        tasks.forEach { taskElement ->
-            val recurrence = taskElement.jsonObject.getValue("recurrence").jsonObject
-            val kind = recurrence.getValue("kind").jsonPrimitive.content
-            val expectedKeys = when (kind) {
-                "NONE" -> setOf("kind")
-                "INTERVAL" -> setOf("kind", "unit", "every", "basis")
-                "SELECTED_WEEKDAYS" -> setOf("kind", "basis", "weekdays")
-                "MONTHLY_DAY" -> setOf("kind", "basis", "anchorDay", "everyMonths")
-                "MONTHLY_ORDINAL" -> setOf(
-                    "kind",
-                    "basis",
-                    "ordinal",
-                    "weekday",
-                    "everyMonths"
-                )
-                else -> throw IllegalArgumentException("Unsupported v2 recurrence kind: $kind")
-            }
-            require(recurrence.keys == expectedKeys) {
-                "V2 recurrence $kind must contain exactly $expectedKeys"
-            }
         }
     }
 

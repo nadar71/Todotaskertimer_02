@@ -12,7 +12,15 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import java.time.DayOfWeek
 import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 @Serializable
 internal data class BackupDocumentV2(
@@ -132,7 +140,7 @@ internal data class BackupTaskV2(
     }
 }
 
-@Serializable
+@Serializable(with = BackupRecurrenceV2Serializer::class)
 internal data class BackupRecurrenceV2(
     val kind: String,
     @EncodeDefault(EncodeDefault.Mode.NEVER)
@@ -214,6 +222,112 @@ internal data class BackupRecurrenceV2(
         }
     }
 }
+
+internal object BackupRecurrenceV2Serializer : KSerializer<BackupRecurrenceV2> {
+    override val descriptor: SerialDescriptor = BackupRecurrenceV2Surrogate.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: BackupRecurrenceV2) {
+        encoder.encodeSerializableValue(
+            BackupRecurrenceV2Surrogate.serializer(),
+            value.toSurrogate()
+        )
+    }
+
+    override fun deserialize(decoder: Decoder): BackupRecurrenceV2 {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("Backup recurrence must be decoded from JSON")
+        val recurrence = try {
+            jsonDecoder.decodeJsonElement().jsonObject
+        } catch (error: IllegalArgumentException) {
+            throw SerializationException("Backup recurrence must be a JSON object", error)
+        }
+        val kind = recurrence["kind"]?.jsonPrimitive?.content
+            ?: throw SerializationException("V2 recurrence field kind is required")
+        val expectedKeys = expectedKeys(kind)
+        if (recurrence.keys != expectedKeys) {
+            throw SerializationException(
+                "V2 recurrence $kind must contain exactly $expectedKeys"
+            )
+        }
+
+        val decoded = try {
+            jsonDecoder.json.decodeFromJsonElement(
+                BackupRecurrenceV2Surrogate.serializer(),
+                recurrence
+            ).toRecurrence()
+        } catch (error: SerializationException) {
+            throw error
+        } catch (error: IllegalArgumentException) {
+            throw SerializationException("Invalid v2 recurrence $kind", error)
+        }
+        try {
+            decoded.toDomain()
+        } catch (error: IllegalArgumentException) {
+            throw SerializationException("Invalid v2 recurrence $kind", error)
+        }
+        return decoded
+    }
+
+    private fun expectedKeys(kind: String): Set<String> = when (kind) {
+        "NONE" -> setOf("kind")
+        "INTERVAL" -> setOf("kind", "unit", "every", "basis")
+        "SELECTED_WEEKDAYS" -> setOf("kind", "basis", "weekdays")
+        "MONTHLY_DAY" -> setOf("kind", "basis", "anchorDay", "everyMonths")
+        "MONTHLY_ORDINAL" -> setOf(
+            "kind",
+            "basis",
+            "ordinal",
+            "weekday",
+            "everyMonths"
+        )
+        else -> throw SerializationException("Unsupported v2 recurrence kind: $kind")
+    }
+}
+
+@Serializable
+private data class BackupRecurrenceV2Surrogate(
+    val kind: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val unit: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val every: Int? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val basis: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val weekdays: List<String>? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val anchorDay: Int? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val everyMonths: Int? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val ordinal: String? = null,
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val weekday: String? = null
+)
+
+private fun BackupRecurrenceV2.toSurrogate() = BackupRecurrenceV2Surrogate(
+    kind = kind,
+    unit = unit,
+    every = every,
+    basis = basis,
+    weekdays = weekdays,
+    anchorDay = anchorDay,
+    everyMonths = everyMonths,
+    ordinal = ordinal,
+    weekday = weekday
+)
+
+private fun BackupRecurrenceV2Surrogate.toRecurrence() = BackupRecurrenceV2(
+    kind = kind,
+    unit = unit,
+    every = every,
+    basis = basis,
+    weekdays = weekdays,
+    anchorDay = anchorDay,
+    everyMonths = everyMonths,
+    ordinal = ordinal,
+    weekday = weekday
+)
 
 @Serializable
 internal data class BackupSubtaskV2(
