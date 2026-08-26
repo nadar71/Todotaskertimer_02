@@ -8,6 +8,7 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.di.QuickCaptureWidgetEn
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.CompleteQuickCaptureTask
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuickCaptureTasks
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
@@ -138,14 +139,19 @@ class QuickCaptureWidgetActionTest {
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
-            nextOccurrence: (Task) -> Task?
+            completionDecision: (Task, Long) -> AtomicCompletionDecision
         ): AtomicCompletionResult {
             requestedTaskIds += taskId
             val current = task?.takeIf { it.id == taskId } ?: return AtomicCompletionResult.NotFound
             if (current.isCompleted) return AtomicCompletionResult.AlreadyCompleted
+            val next = when (val decision = completionDecision(current, completedAt)) {
+                is AtomicCompletionDecision.Create -> decision.task
+                AtomicCompletionDecision.CompleteOnly -> null
+                is AtomicCompletionDecision.Invalid -> return AtomicCompletionResult.Invalid(decision.reason)
+            }
             val completed = current.copy(isCompleted = true, completedAt = completedAt)
             task = completed
-            return AtomicCompletionResult.Completed(completed, nextOccurrence(current))
+            return AtomicCompletionResult.Completed(completed, next)
         }
 
         override suspend fun upsert(task: Task): Int = error("Not used")

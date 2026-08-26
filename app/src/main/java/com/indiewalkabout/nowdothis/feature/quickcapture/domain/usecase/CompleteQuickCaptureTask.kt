@@ -56,6 +56,8 @@ class CompleteQuickCaptureTask(
                         CompleteTaskResult.NotFound,
                         CompleteTaskResult.AlreadyCompleted -> CompleteQuickCaptureResult.Ignored
 
+                        is CompleteTaskResult.Invalid -> CompleteQuickCaptureResult.Failed
+
                         is CompleteTaskResult.Completed -> CompleteQuickCaptureResult.Completed
                     }
                 } catch (exception: CancellationException) {

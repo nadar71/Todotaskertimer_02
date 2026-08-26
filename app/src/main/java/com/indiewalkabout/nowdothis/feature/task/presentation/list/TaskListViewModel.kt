@@ -104,7 +104,8 @@ class TaskListViewModel @Inject constructor(
             is TaskListEvent.CompleteTask -> launchMutation {
                 when (completeTask(event.taskId)) {
                     CompleteTaskResult.NotFound,
-                    CompleteTaskResult.AlreadyCompleted -> showMessage(R.string.task_list_complete_failed)
+                    CompleteTaskResult.AlreadyCompleted,
+                    is CompleteTaskResult.Invalid -> showMessage(R.string.task_list_complete_failed)
                     is CompleteTaskResult.Completed -> Unit
                 }
             }

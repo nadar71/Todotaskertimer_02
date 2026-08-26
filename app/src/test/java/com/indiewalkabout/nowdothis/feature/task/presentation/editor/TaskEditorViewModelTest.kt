@@ -26,6 +26,7 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.Parse
 import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.AndroidNaturalLanguageEnvironment
 import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.NaturalLanguageEnvironment
 import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.ParserEnvironment
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
@@ -1388,7 +1389,7 @@ private class EditorTaskRepository : TaskRepository {
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        nextOccurrence: (Task) -> Task?
+        completionDecision: (Task, Long) -> AtomicCompletionDecision
     ): AtomicCompletionResult = AtomicCompletionResult.NotFound
 
     override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot = error("unused")

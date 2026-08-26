@@ -29,6 +29,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assume.assumeTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -106,6 +109,19 @@ class CoreTaskJourneyTest {
         waitForText(text(R.string.task_section_completed_today))
 
         val nextOccurrence = waitForNextOccurrence(title)
+        val seriesRows = runBlocking(Dispatchers.IO) {
+            database.taskDao().observeAllTaskEntities().first().filter { it.title == title }
+        }
+        val completedOccurrence = seriesRows.single(TaskEntity::isCompleted)
+        assertEquals(2, seriesRows.size)
+        assertEquals(1, seriesRows.count(TaskEntity::isCompleted))
+        assertEquals(1, seriesRows.count { !it.isCompleted })
+        assertNotEquals(completedOccurrence.id, nextOccurrence.id)
+        assertNotNull(completedOccurrence.seriesId)
+        assertEquals(completedOccurrence.seriesId, nextOccurrence.seriesId)
+        assertEquals("MONTHLY_DAY", completedOccurrence.recurrenceKind)
+        assertEquals(completedOccurrence.recurrenceKind, nextOccurrence.recurrenceKind)
+        assertEquals(completedOccurrence.recurrenceEndAt, nextOccurrence.recurrenceEndAt)
         val nextDate = Instant.ofEpochMilli(requireNotNull(nextOccurrence.dueAt))
             .atZone(ZoneId.systemDefault())
             .toLocalDate()

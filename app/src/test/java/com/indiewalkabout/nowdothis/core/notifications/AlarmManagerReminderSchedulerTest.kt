@@ -2,6 +2,7 @@ package com.indiewalkabout.nowdothis.core.notifications
 
 import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.core.time.DayBounds
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
@@ -275,7 +276,7 @@ internal class FakeTaskRepository(
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        nextOccurrence: (Task) -> Task?
+        completionDecision: (Task, Long) -> AtomicCompletionDecision
     ): AtomicCompletionResult = AtomicCompletionResult.NotFound
 
     override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot =

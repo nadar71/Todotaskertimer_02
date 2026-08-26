@@ -8,6 +8,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import java.time.DateTimeException
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -81,9 +82,20 @@ class CalculateNextOccurrence(
         }
     }
 
-    operator fun invoke(task: Task): Long? {
+    fun nextReminderAt(task: Task, nextDueAt: Long): Long? {
+        val reminderAt = task.reminderAt ?: return null
         val dueAt = task.dueAt ?: return null
-        return (invoke(task, dueAt, dueAt) as? NextOccurrenceResult.Next)?.dueAt
+        val zone = zoneIdProvider.zoneId()
+        val localOffset = Duration.between(
+            reminderAt.asDateTime(zone).toLocalDateTime(),
+            dueAt.asDateTime(zone).toLocalDateTime()
+        )
+        return nextDueAt.asDateTime(zone)
+            .toLocalDateTime()
+            .minus(localOffset)
+            .atZone(zone)
+            .toInstant()
+            .toEpochMilli()
     }
 
     private fun RecurrenceRule.Interval.baseDateTime(

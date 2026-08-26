@@ -14,6 +14,7 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.Complete
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.CompleteQuickCaptureTask
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
@@ -434,12 +435,12 @@ class QuickCaptureCompletionConcurrencyTest {
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
-            nextOccurrence: (Task) -> Task?
+            completionDecision: (Task, Long) -> AtomicCompletionDecision
         ): AtomicCompletionResult {
             if (arrivals.incrementAndGet() == expectedArrivals) allArrived.complete(Unit)
             allArrived.await()
             if (expectedArrivals == 1) proceed.await()
-            return delegate.completeAtomically(taskId, completedAt, nextOccurrence)
+            return delegate.completeAtomically(taskId, completedAt, completionDecision)
         }
 
         suspend fun awaitArrivals() = allArrived.await()
@@ -474,9 +475,9 @@ class QuickCaptureCompletionConcurrencyTest {
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
-            nextOccurrence: (Task) -> Task?
+            completionDecision: (Task, Long) -> AtomicCompletionDecision
         ): AtomicCompletionResult {
-            val result = delegate.completeAtomically(taskId, completedAt, nextOccurrence)
+            val result = delegate.completeAtomically(taskId, completedAt, completionDecision)
             if (result is AtomicCompletionResult.Completed) committed.complete(result)
             proceed.await()
             return result

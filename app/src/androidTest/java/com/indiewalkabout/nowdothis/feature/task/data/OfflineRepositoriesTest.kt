@@ -17,7 +17,9 @@ import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryMutati
 import com.indiewalkabout.nowdothis.feature.task.data.repository.DataStoreTaskPreferencesRepository
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
 import com.indiewalkabout.nowdothis.feature.task.data.repository.dataStore
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
+import com.indiewalkabout.nowdothis.feature.task.domain.model.NextOccurrenceResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
@@ -164,7 +166,9 @@ class OfflineRepositoriesTest {
             )
         )
 
-        val result = tasks.completeAtomically(10, completedAt = 1_500) { next }
+        val result = tasks.completeAtomically(10, completedAt = 1_500) { _, _ ->
+            AtomicCompletionDecision.Create(next)
+        }
             as AtomicCompletionResult.Completed
 
         assertEquals(1_500L, result.completed.completedAt)
@@ -195,7 +199,9 @@ class OfflineRepositoriesTest {
         tasks.upsert(current)
         val copiedNext = current.copy(dueAt = 2_000)
 
-        tasks.completeAtomically(12, completedAt = 1_500) { copiedNext }
+        tasks.completeAtomically(12, completedAt = 1_500) { _, _ ->
+            AtomicCompletionDecision.Create(copiedNext)
+        }
 
         val completed = tasks.getTask(12)!!
         val next = tasks.observeDay(2_000, 2_001).first().single()
@@ -222,7 +228,11 @@ class OfflineRepositoriesTest {
             tasks.completeAtomically(
                 taskId = 11,
                 completedAt = 1_500
-            ) { task(id = 0, title = "Invalid next").copy(categoryId = 999) }
+            ) { _, _ ->
+                AtomicCompletionDecision.Create(
+                    task(id = 0, title = "Invalid next").copy(categoryId = 999)
+                )
+            }
         } catch (_: Exception) {
             failed = true
         }
@@ -232,6 +242,26 @@ class OfflineRepositoriesTest {
         assertFalse(unchanged.isCompleted)
         assertNull(unchanged.completedAt)
         assertFalse(unchanged.subtasks.single().isCompleted)
+    }
+
+    @Test
+    fun completeAtomically_invalidDecisionLeavesTaskAndChildrenUnchanged() = runTest {
+        val original = task(
+            id = 13,
+            title = "Invalid recurrence",
+            subtasks = listOf(Subtask(id = 32, taskId = 13, title = "Pending", position = 0))
+        )
+        tasks.upsert(original)
+
+        val result = tasks.completeAtomically(13, completedAt = 1_500) { _, _ ->
+            AtomicCompletionDecision.Invalid(NextOccurrenceResult.Reason.MISSING_DUE_DATE)
+        }
+
+        assertEquals(
+            AtomicCompletionResult.Invalid(NextOccurrenceResult.Reason.MISSING_DUE_DATE),
+            result
+        )
+        assertEquals(original, tasks.getTask(13))
     }
 
     @Test

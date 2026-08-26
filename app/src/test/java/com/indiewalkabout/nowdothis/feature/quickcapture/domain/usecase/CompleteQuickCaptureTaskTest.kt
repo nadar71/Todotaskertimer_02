@@ -4,6 +4,7 @@ import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.core.time.DayBounds
 import com.indiewalkabout.nowdothis.core.time.ZoneIdProvider
 import com.indiewalkabout.nowdothis.feature.quickcapture.domain.repository.QuickCaptureWidgetUpdater
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
@@ -63,6 +64,20 @@ class CompleteQuickCaptureTaskTest {
         assertEquals(CompleteQuickCaptureResult.Completed, result)
         assertEquals(1, repository.createdOccurrences)
         assertEquals(listOf(8), repository.completedIds)
+        assertEquals(2, updater.updateCount)
+    }
+
+    @Test
+    fun invalidRecurringCompletion_failsWithoutMutatingThroughDelegatedFlow() = runTest {
+        val current = task(id = 19, dueAt = null, recurrenceRule = dailyRule)
+        val repository = FakeTaskRepository(current)
+        val updater = RecordingUpdater()
+
+        val result = useCase(repository, updater)(19)
+
+        assertEquals(CompleteQuickCaptureResult.Failed, result)
+        assertEquals(current, repository.tasks.getValue(19))
+        assertTrue(repository.completedIds.isEmpty())
         assertEquals(2, updater.updateCount)
     }
 
@@ -350,7 +365,7 @@ class CompleteQuickCaptureTaskTest {
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
-            nextOccurrence: (Task) -> Task?
+            completionDecision: (Task, Long) -> AtomicCompletionDecision
         ): AtomicCompletionResult {
             completeAtomicallyCalls++
             if (suspendCompletion) awaitCancellation()
@@ -358,7 +373,11 @@ class CompleteQuickCaptureTaskTest {
             completionGate?.await()
             val current = tasks[taskId] ?: return AtomicCompletionResult.NotFound
             if (current.isCompleted) return AtomicCompletionResult.AlreadyCompleted
-            val next = nextOccurrence(current)
+            val next = when (val decision = completionDecision(current, completedAt)) {
+                is AtomicCompletionDecision.Create -> decision.task
+                AtomicCompletionDecision.CompleteOnly -> null
+                is AtomicCompletionDecision.Invalid -> return AtomicCompletionResult.Invalid(decision.reason)
+            }
             completedIds += taskId
             val completed = current.copy(isCompleted = true, completedAt = completedAt)
             tasks[taskId] = completed

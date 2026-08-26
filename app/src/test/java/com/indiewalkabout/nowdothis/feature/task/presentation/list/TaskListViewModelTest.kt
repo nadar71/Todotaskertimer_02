@@ -8,6 +8,7 @@ import com.indiewalkabout.nowdothis.feature.category.domain.model.Category
 import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryColor
 import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryMutationResult
 import com.indiewalkabout.nowdothis.feature.category.domain.repository.CategoryRepository
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
@@ -282,13 +283,18 @@ private class FakeTaskRepository(
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        nextOccurrence: (Task) -> Task?
+        completionDecision: (Task, Long) -> AtomicCompletionDecision
     ): AtomicCompletionResult {
         val task = tasks[taskId] ?: return AtomicCompletionResult.NotFound
         if (task.isCompleted) return AtomicCompletionResult.AlreadyCompleted
+        val next = when (val decision = completionDecision(task, completedAt)) {
+            is AtomicCompletionDecision.Create -> decision.task
+            AtomicCompletionDecision.CompleteOnly -> null
+            is AtomicCompletionDecision.Invalid -> return AtomicCompletionResult.Invalid(decision.reason)
+        }
         return AtomicCompletionResult.Completed(
             task.copy(isCompleted = true, completedAt = completedAt),
-            nextOccurrence(task)
+            next
         )
     }
 
