@@ -2,23 +2,28 @@ package com.indiewalkabout.nowdothis.feature.naturallanguage
 
 import android.app.LocaleManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.LocaleList
 import android.text.format.DateUtils
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
@@ -36,9 +41,11 @@ import com.indiewalkabout.nowdothis.feature.category.data.local.CategoryEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 import dagger.hilt.android.EntryPointAccessors
+import java.io.FileInputStream
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -81,7 +88,7 @@ class NaturalLanguageEntryJourneyTest {
 
         val task = waitForPersistedTask(fixture.expectedTitle)
         assertPersistedJourney(task, fixture)
-        waitForText(fixture.expectedTitle)
+        assertReturnedToTaskList(fixture.expectedTitle)
     }
 
     @Test
@@ -98,25 +105,18 @@ class NaturalLanguageEntryJourneyTest {
 
         val task = waitForPersistedTask(fixture.expectedTitle)
         assertPersistedJourney(task, fixture)
-        waitForText(fixture.expectedTitle)
+        assertReturnedToTaskList(fixture.expectedTitle)
     }
 
     @Test
     fun recreation_restoresRelativeDatePreview_withoutReparsingChangedInput() {
         val fixture = ITALIAN_RECREATION
-        val zoneId = ZoneId.systemDefault()
-        val parseDate = LocalDate.now(zoneId)
 
         assertActiveLocale(fixture)
         openNewTask()
         enterAndParse(fixture.phrase)
-        val expectedDueAt = parseDate.plusDays(1)
-            .atTime(LocalTime.of(18, 0))
-            .atZone(zoneId)
-            .toInstant()
-            .toEpochMilli()
-        assertEquals(parseDate, LocalDate.now(zoneId))
-        assertRestoredPreview(fixture, expectedDueAt)
+        assertNonTemporalPreview(fixture)
+        val parsedSchedule = captureScheduleControls()
 
         composeRule.onNodeWithTag("quick-entry-input")
             .performTextReplacement(fixture.changedWithoutParse)
@@ -128,7 +128,8 @@ class NaturalLanguageEntryJourneyTest {
         waitForTag("quick-entry-input")
         assertActiveLocale(fixture)
         assertEditableText("quick-entry-input", fixture.changedWithoutParse)
-        assertRestoredPreview(fixture, expectedDueAt)
+        assertNonTemporalPreview(fixture)
+        assertScheduleControls(parsedSchedule)
         assertEquals(emptyList<TaskEntity>(), readTasks())
     }
 
@@ -146,13 +147,15 @@ class NaturalLanguageEntryJourneyTest {
     }
 
     private fun assertInferredControls(fixture: JourneyFixture) {
-        assertRestoredPreview(fixture, fixture.expectedDueAt())
+        assertNonTemporalPreview(fixture)
+        val expectedDueAt = fixture.expectedDueAt()
+        assertDateTimeControl("task-due-section", expectedDueAt)
+        assertDateTimeControl("task-reminder-section", expectedDueAt - REMINDER_LEAD_MILLIS)
         scrollEditorTo("task-description")
         assertEditableText("task-description", "")
     }
 
-    private fun assertRestoredPreview(fixture: JourneyFixture, expectedDueAt: Long) {
-        val expectedReminderAt = expectedDueAt - REMINDER_LEAD_MILLIS
+    private fun assertNonTemporalPreview(fixture: JourneyFixture) {
         val summary = summaryText()
 
         composeRule.onNodeWithTag("quick-entry-summary")
@@ -165,11 +168,34 @@ class NaturalLanguageEntryJourneyTest {
         scrollEditorTo("task-category-field")
         composeRule.onNodeWithTag("task-category-field")
             .assertTextEquals(fixture.categoryName)
-        assertDateTimeControl("task-due-section", expectedDueAt)
-        assertDateTimeControl("task-reminder-section", expectedReminderAt)
         scrollEditorTo("task-recurrence-field")
         composeRule.onNodeWithTag("task-recurrence-field")
             .assertTextEquals(text(R.string.task_recurrence_weekly))
+    }
+
+    private fun captureScheduleControls(): ScheduleControlSnapshot {
+        val snapshot = ScheduleControlSnapshot(
+            dueText = controlTextSnapshot("task-due-section"),
+            reminderText = controlTextSnapshot("task-reminder-section")
+        )
+        assertTrue("Parsed due control did not expose text", snapshot.dueText.isNotEmpty())
+        assertTrue("Parsed reminder control did not expose text", snapshot.reminderText.isNotEmpty())
+        return snapshot
+    }
+
+    private fun assertScheduleControls(expected: ScheduleControlSnapshot) {
+        assertEquals(expected.dueText, controlTextSnapshot("task-due-section"))
+        assertEquals(expected.reminderText, controlTextSnapshot("task-reminder-section"))
+    }
+
+    private fun controlTextSnapshot(tag: String): List<String> {
+        scrollEditorTo(tag)
+        return composeRule.onAllNodes(
+            hasAnyAncestor(hasTestTag(tag)),
+            useUnmergedTree = true
+        ).fetchSemanticsNodes().flatMap { node ->
+            node.config.getOrNull(SemanticsProperties.Text).orEmpty().map(AnnotatedString::text)
+        }
     }
 
     private fun correctPriorityAndDescribe(description: String) {
@@ -201,7 +227,29 @@ class NaturalLanguageEntryJourneyTest {
         assertEquals(expectedDueAt - REMINDER_LEAD_MILLIS, task.reminderAt)
         assertEquals("WEEKLY", task.recurrence)
         assertEquals("SCHEDULED", task.reminderStatus)
-        assertTrue(appStateRule.hasReminderOperation(task.id))
+        assertRegisteredReminder(task)
+    }
+
+    private fun assertRegisteredReminder(task: TaskEntity) {
+        val expectedReminderAt = requireNotNull(task.reminderAt)
+        val candidates = appStateRule.registeredReminders()
+            .filter { alarm -> alarm.requestCode == task.id }
+        assertEquals("Expected one registered reminder alarm: $candidates", 1, candidates.size)
+        val alarm = candidates.single()
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val receiver = ComponentName(context, ReminderReceiver::class.java)
+        assertEquals(context.packageName, alarm.packageName)
+        assertTrue(
+            "Unexpected reminder receiver ${alarm.receiverComponent}",
+            alarm.receiverComponent == receiver.flattenToShortString() ||
+                alarm.receiverComponent == receiver.flattenToString()
+        )
+        assertEquals(task.id, alarm.requestCode)
+        assertEquals("RTC_WAKEUP", alarm.type)
+        assertTrue(
+            "Alarm trigger ${alarm.triggerAt} differed from $expectedReminderAt",
+            abs(alarm.triggerAt - expectedReminderAt) <= ALARM_TRIGGER_TOLERANCE_MILLIS
+        )
     }
 
     private fun waitForPersistedTask(title: String): TaskEntity {
@@ -209,12 +257,21 @@ class NaturalLanguageEntryJourneyTest {
         composeRule.waitUntil(timeoutMillis = WAIT_TIMEOUT_MILLIS) {
             persisted = readTasks().singleOrNull { task ->
                 task.title == title &&
-                    task.reminderStatus == "SCHEDULED" &&
-                    appStateRule.hasReminderOperation(task.id)
+                    task.reminderStatus == "SCHEDULED"
             }
             persisted != null
         }
         return requireNotNull(persisted)
+    }
+
+    private fun assertReturnedToTaskList(title: String) {
+        waitForTag("task-search")
+        composeRule.onNodeWithTag("task-search").assertIsDisplayed()
+        composeRule.onNodeWithTag("task-add").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("task-editor-form").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("quick-entry-input").assertCountEquals(0)
+        waitForText(title)
+        composeRule.onNodeWithText(title).assertIsDisplayed()
     }
 
     private fun readTasks(): List<TaskEntity> = runBlocking(Dispatchers.IO) {
@@ -290,6 +347,11 @@ private data class JourneyFixture(
         .toInstant()
         .toEpochMilli()
 }
+
+private data class ScheduleControlSnapshot(
+    val dueText: List<String>,
+    val reminderText: List<String>
+)
 
 private val ITALIAN_SAVE = JourneyFixture(
     languageTag = "it",
@@ -377,6 +439,12 @@ private class AppStateRule(
 
     fun hasReminderOperation(taskId: Int): Boolean = reminderOperation(taskId) != null
 
+    fun registeredReminders(): List<RegisteredAlarm> = AlarmRegistryEvidence.parse(
+        alarmDump = shell("dumpsys alarm"),
+        pendingIntentDump = shell("dumpsys activity intents"),
+        packageName = context.packageName
+    )
+
     private fun snapshotState(): AppStateSnapshot {
         val (categories, tasks, subtasks) = runBlocking(Dispatchers.IO) {
             Triple(
@@ -389,6 +457,7 @@ private class AppStateRule(
             categories = categories,
             tasks = tasks,
             subtasks = subtasks,
+            sequences = readSequences(),
             alarmTaskIds = tasks.mapNotNull { task ->
                 task.id.takeIf(::hasReminderOperation)
             }.toSet()
@@ -403,6 +472,7 @@ private class AppStateRule(
         runBlocking {
             withContext(Dispatchers.IO) {
                 database.clearAllTables()
+                replaceSequences(SEQUENCE_TABLES.associateWith { null })
                 database.categoryDao().insert(
                     CategoryEntity(
                         id = fixture.categoryId,
@@ -433,6 +503,7 @@ private class AppStateRule(
                 if (snapshot.subtasks.isNotEmpty()) {
                     database.taskDao().insertRestoredSubtasks(snapshot.subtasks)
                 }
+                replaceSequences(snapshot.sequences)
             }
         }
         snapshot.tasks.filter { it.id in snapshot.alarmTaskIds }.forEach { task ->
@@ -451,8 +522,48 @@ private class AppStateRule(
         assertEquals(snapshot.subtasks, runBlocking(Dispatchers.IO) {
             database.taskDao().getAllSubtaskEntities()
         })
+        assertEquals(snapshot.sequences, readSequences())
         snapshot.tasks.forEach { task ->
             assertEquals(task.id in snapshot.alarmTaskIds, hasReminderOperation(task.id))
+        }
+    }
+
+    private fun readSequences(): Map<String, Long?> = runBlocking(Dispatchers.IO) {
+        val observed = mutableMapOf<String, Long>()
+        database.openHelper.writableDatabase.query(
+            "SELECT name, seq FROM sqlite_sequence " +
+                "WHERE name IN ('categories', 'tasks', 'subtasks') ORDER BY name"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                observed[cursor.getString(0)] = cursor.getLong(1)
+            }
+        }
+        SEQUENCE_TABLES.associateWith(observed::get)
+    }
+
+    private fun replaceSequences(sequences: Map<String, Long?>) {
+        val sqlite = database.openHelper.writableDatabase
+        sqlite.beginTransaction()
+        try {
+            SEQUENCE_TABLES.forEach { table ->
+                sqlite.execSQL("DELETE FROM sqlite_sequence WHERE name = ?", arrayOf(table))
+                sequences[table]?.let { value ->
+                    sqlite.execSQL(
+                        "INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)",
+                        arrayOf<Any>(table, value)
+                    )
+                }
+            }
+            sqlite.setTransactionSuccessful()
+        } finally {
+            sqlite.endTransaction()
+        }
+    }
+
+    private fun shell(command: String): String {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        return instrumentation.uiAutomation.executeShellCommand(command).use { descriptor ->
+            FileInputStream(descriptor.fileDescriptor).bufferedReader().use { it.readText() }
         }
     }
 
@@ -474,9 +585,12 @@ private data class AppStateSnapshot(
     val categories: List<CategoryEntity>,
     val tasks: List<TaskEntity>,
     val subtasks: List<SubtaskEntity>,
+    val sequences: Map<String, Long?>,
     val alarmTaskIds: Set<Int>
 )
 
 private const val REMINDER_LEAD_MILLIS = 60 * 60 * 1_000L
+private const val ALARM_TRIGGER_TOLERANCE_MILLIS = 1_000L
 private const val WAIT_TIMEOUT_MILLIS = 10_000L
 private const val FIXTURE_CREATED_AT = 1_788_044_400_000L
+private val SEQUENCE_TABLES = listOf("categories", "tasks", "subtasks")

@@ -38,24 +38,35 @@ The retained Italian and English journeys independently prove:
 4. the normal Save action persists the corrected task through Room;
 5. the persisted row contains the expected title, description, due time, reminder
    time, category ID, `MEDIUM` priority, `WEEKLY` recurrence, and `SCHEDULED` reminder
-   status; and
-6. the production reminder `PendingIntent` identity exists for the saved task.
+   status;
+6. Save returns to the task list, proven by the list-only `task-search` and `task-add`
+   tags, absence of the editor and Quick entry tags, and then the persisted title; and
+7. the device AlarmManager registry contains exactly one `RTC_WAKEUP` alarm whose
+   package, receiver, request code, and trigger correspond to the persisted reminder.
 
-The recreation journey parses an Italian relative `domani` date, then changes only
-the raw Quick entry text to an unparsed `oggi` phrase with different time, priority,
+The alarm assertion reads `dumpsys alarm` and `dumpsys activity intents` through
+`UiAutomation`, correlates their `PendingIntentRecord` token, and compares the
+registry's numeric `origWhen` to `reminderAt` within 1,000 ms representation
+tolerance. A standalone parser contract rejects a PendingIntent identity without a
+registered alarm and rejects an alarm whose operation token cannot be correlated.
+
+The recreation journey parses an Italian relative `domani` date and immediately
+captures the exact production due and reminder control text. It then changes only the
+raw Quick entry text to an unparsed `oggi` phrase with different time, priority,
 recurrence, and reminder values. After `ActivityScenario.recreate()`, the changed raw
-text is restored while the original tomorrow due time, high priority, weekly
-recurrence, title, category, reminder, and recognized preview remain unchanged. This
-is a negative reparse oracle: recomputing the changed phrase would produce visibly
-different controls.
+text is restored while the exact captured schedule display, high priority, weekly
+recurrence, title, category, and recognized preview remain unchanged. This avoids a
+second wall-clock snapshot at midnight; the injected-clock JVM matrix separately
+proves the tomorrow calculation.
 
-Each test snapshots the pre-test Room categories/tasks/subtasks and reminder
-`PendingIntent` identities, clears and seeds deterministic category data before the
-activity starts, then cancels test alarms and restores database rows and prior alarm
-identities after the activity closes. The locale rule snapshots the exact per-app
-`LocaleList`, applies `it` or `en` before activity launch, and restores it in
-`finally`. Gradle's connected runner uninstalled the test APK after the suite, leaving
-no target package state on the emulator.
+Each test snapshots the pre-test Room categories/tasks/subtasks, the exact nullable
+`sqlite_sequence` rows for all three tables, and reminder `PendingIntent` identities.
+It clears and seeds deterministic category data before the activity starts, then
+cancels test alarms and restores all rows, each sequence's prior absence or value,
+and prior alarm identities after the activity closes. Teardown asserts the restored
+table rows, sequence map, and alarm identities against the snapshot. The locale rule
+snapshots the exact per-app `LocaleList`, applies `it` or `en` before activity launch,
+and restores it in `finally`.
 
 ## TDD Evidence
 
@@ -81,13 +92,33 @@ uncomposed category control. That RED run had 101 tests, 1 failure, 0 errors, an
 0 skipped. The test now scrolls the production LazyColumn by stable tags; its focused
 rerun passed 1/1 and the complete connected gate passed 101/101.
 
+### Fix Round 1
+
+The AlarmManager registry parser test was added before its helper. Its RED run failed
+Android-test compilation on the missing `AlarmRegistryEvidence` and `RegisteredAlarm`
+symbols, so 0 tests executed. After the test-only dump parser was implemented, its
+focused run passed 3/3: one positive correlation and two required rejection cases.
+
+The sequence before/after assertion was then added while teardown still restored only
+table rows. Its functional RED run executed all 3 journeys and failed all 3 in
+teardown, with nullable sequence maps proving the leak: Italian save expected
+`{categories=3, tasks=null, subtasks=null}` but observed
+`{categories=101, tasks=1, subtasks=null}`; English save expected
+`{categories=101, tasks=1, subtasks=null}` but observed
+`{categories=102, tasks=2, subtasks=null}`; recreation expected
+`{categories=102, tasks=2, subtasks=null}` but observed
+`{categories=103, tasks=2, subtasks=null}`. Exact sequence replacement made the same
+focused journey class pass 3/3. The hardened core journey also passed 1/1.
+
 ## Automated Gates
 
 | Gate | Exact command | Result |
 | --- | --- | --- |
+| Alarm registry evidence parser | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.AlarmRegistryEvidenceTest` | 3 tests; 0 failures, 0 errors, 0 skipped |
 | Focused journey | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.feature.naturallanguage.NaturalLanguageEntryJourneyTest` | 3 tests; 0 failures, 0 errors, 0 skipped |
+| Focused core journey | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.CoreTaskJourneyTest` | 1 test; 0 failures, 0 errors, 0 skipped |
 | Full JVM | `./gradlew --no-daemon :app:testDebugUnitTest` | 301 tests across 33 XML suites; 0 failures, 0 errors, 0 skipped |
-| Full connected | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest` | 101 tests; 0 failures, 0 errors, 0 skipped; XML time 140.994 s |
+| Full connected | `ANDROID_SERIAL=emulator-5554 ./gradlew --no-daemon :app:connectedDebugAndroidTest` | 104 tests; 0 failures, 0 errors, 0 skipped; XML time 141.224 s |
 | Lint and artifacts | `./gradlew --no-daemon :app:lintDebug :app:assembleDebug :app:assembleRelease :app:bundleRelease` | Passed |
 | Explicit R8 full mode | `./gradlew --no-daemon :app:assembleRelease -Pandroid.enableR8.fullMode=true` | Passed; R8 and release packaging were up to date from the preceding optimized build |
 | Diff whitespace | `git diff --check` | Passed with no output |
@@ -135,8 +166,8 @@ capture-time integrity records; a later build may replace the files.
 | Artifact | Size | SHA-256 |
 | --- | ---: | --- |
 | `app/build/outputs/apk/debug/app-debug.apk` | 18,084,634 bytes | `90fd749802088195fe7875d7bac7df6765c668d0a0f1de3130e61d9913245720` |
-| `app/build/outputs/apk/release/app-release-unsigned.apk` | 3,692,734 bytes | `7bb58cd14ef19a76a5dc3981f8c00429fc9ac0bbeb0fe4a35ff6a582a821e2d3` |
-| `app/build/outputs/bundle/release/app-release.aab` | 6,884,139 bytes | `7a245188ccc8f32c8883a1fe45bfacb58a5c5241d6e0865e4bd81c61507a7a4a` |
+| `app/build/outputs/apk/release/app-release-unsigned.apk` | 3,692,734 bytes | `ca507afb273d83088f0ab8c0b0c3b6efc25d1d0aa6537692622f22347c40f271` |
+| `app/build/outputs/bundle/release/app-release.aab` | 6,884,139 bytes | `1848b3023303036fe2b64836996d9ccfada565ca56d14ad52debf045018f0256` |
 | `app/build/outputs/mapping/release/mapping.txt` | 45,529,101 bytes | `611f03a3940fb5da7ee5e1491a35664e8b95db71da986ed3d4a017984956017c` |
 
 `apksigner verify --verbose` confirmed the debug APK uses v1 and v2 signatures.
@@ -153,6 +184,9 @@ overlap oracle. This Task 6 run did not perform physical-device TalkBack reading
 switch-access, contrast, notification permission, exact-alarm grant/fallback, reboot
 reconciliation, or API 23 smoke testing. Those rows remain pending in the quality and
 accessibility matrices. No physical-device accessibility validation is claimed.
+The registry assertion proves the alarm scheduled during each save journey; it does
+not prove that exact-alarm capability was granted, that the alarm was delivered, or
+that a notification was posted.
 
 Natural-Language Entry v1 intentionally accepts only the documented bilingual dates,
 times, priorities, current category markers, daily/weekly/monthly recurrence, and one

@@ -39,8 +39,12 @@ and category candidates. ViewModel tests prove atomic selective application and
 `SavedStateHandle` restoration. Compose tests cover localized semantics and 200% text,
 while connected journeys launch `MainActivity` and use production Navigation 3,
 TaskEditor, parser, Room repositories, `SaveTask`, and AlarmManager scheduling. The
-journey fixture seeds only deterministic category rows and restores locale, Room, and
-alarm state; it does not replace parser or persistence behavior.
+journey fixture seeds only deterministic category rows and restores locale, Room rows,
+nullable `sqlite_sequence` rows, and alarm state; it does not replace parser or
+persistence behavior. Save journeys correlate `dumpsys alarm` with `dumpsys activity
+intents` through `UiAutomation` to prove the registered alarm's package, receiver,
+request code, and trigger. Exact-alarm permission/fallback and delivery remain manual
+platform checks.
 
 ## Local Gates
 
