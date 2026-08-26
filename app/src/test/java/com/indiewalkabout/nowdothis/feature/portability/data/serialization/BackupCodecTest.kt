@@ -4,7 +4,13 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningBac
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCategory
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSubtask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
+import java.time.Instant
+import java.util.TimeZone
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -97,6 +103,42 @@ class BackupCodecTest {
         assertDecodeFails(encoded)
     }
 
+    @Test
+    fun encode_v1RejectsRetainedMonthlyAnchorInsteadOfEmittingLossyMonthlyToken() {
+        val previousTimeZone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+            val advanced = sampleBackup().copy(
+                tasks = listOf(
+                    task(id = 3).copy(
+                        dueAt = Instant.parse("2026-02-28T09:00:00Z").toEpochMilli(),
+                        recurrenceRule = RecurrenceRule.MonthlyDay(
+                            anchorDay = 31,
+                            everyMonths = 1,
+                            basis = RecurrenceBasis.SCHEDULED_DATE
+                        )
+                    )
+                )
+            )
+
+            assertThrows(UnrepresentableV1Recurrence::class.java) {
+                codec.encode(advanced)
+            }
+        } finally {
+            TimeZone.setDefault(previousTimeZone)
+        }
+    }
+
+    @Test
+    fun decode_v1RejectsUnknownLegacyRecurrence() {
+        val document = codec.encode(sampleBackup()).decodeToString()
+            .replace("\"recurrence\":\"WEEKLY\"", "\"recurrence\":\"YEARLY\"")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(document.encodeToByteArray())
+        }
+    }
+
     private fun assertDecodeFails(document: String) {
         assertDecodeFails(document.encodeToByteArray())
     }
@@ -161,7 +203,11 @@ class BackupCodecTest {
         dueAt = 30,
         reminderAt = 25,
         reminderStatus = "SCHEDULED",
-        recurrence = "WEEKLY",
+        recurrenceRule = RecurrenceRule.Interval(
+            IntervalUnit.WEEKS,
+            1,
+            RecurrenceBasis.SCHEDULED_DATE
+        ),
         recurrenceEndAt = 40,
         seriesId = "weekly-series",
         createdAt = 11,

@@ -366,7 +366,10 @@ class NaturalLanguageEntryJourneyTest {
         assertEquals(fixture.categoryId, task.categoryId)
         assertEquals(expectedDueAt, task.dueAt)
         assertEquals(expectedDueAt - REMINDER_LEAD_MILLIS, task.reminderAt)
-        assertEquals("WEEKLY", task.recurrence)
+        assertEquals("INTERVAL", task.recurrence)
+        assertEquals("INTERVAL", task.recurrenceKind)
+        assertEquals("WEEKS", task.recurrenceIntervalUnit)
+        assertEquals(1, task.recurrenceIntervalCount)
         assertEquals("SCHEDULED", task.reminderStatus)
         assertRegisteredReminder(task)
     }

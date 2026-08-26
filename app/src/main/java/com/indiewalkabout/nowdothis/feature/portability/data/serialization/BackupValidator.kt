@@ -12,7 +12,7 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSub
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PortabilityError
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.UnsupportedFutureVersion
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 
@@ -65,7 +65,7 @@ class BackupValidator {
                 task.categoryId != null && task.categoryId !in categoryIds ||
                 !task.priority.isStableName(TaskPriority.entries) ||
                 !task.reminderStatus.isStableName(ReminderStatus.entries) ||
-                !task.recurrence.isStableName(RecurrenceType.entries) ||
+                !recurrenceIsConsistent(task) ||
                 !completionIsConsistent(task.isCompleted, task.completedAt) ||
                 task.recurrenceEndAt != null && task.dueAt != null && task.recurrenceEndAt < task.dueAt
             ) {
@@ -96,6 +96,11 @@ class BackupValidator {
 
     private fun completionIsConsistent(isCompleted: Boolean, completedAt: Long?): Boolean =
         (isCompleted && completedAt != null) || (!isCompleted && completedAt == null)
+
+    private fun recurrenceIsConsistent(task: PlanningTask): Boolean = when (task.recurrenceRule) {
+        RecurrenceRule.None -> task.recurrenceEndAt == null
+        else -> task.dueAt != null
+    }
 
     private fun String.isStableName(values: Iterable<Enum<*>>): Boolean =
         values.any { value -> value.name == this }

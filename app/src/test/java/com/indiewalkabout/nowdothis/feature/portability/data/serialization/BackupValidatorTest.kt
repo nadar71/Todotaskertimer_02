@@ -8,6 +8,9 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCat
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSubtask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.UnsupportedFutureVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -71,7 +74,6 @@ class BackupValidatorTest {
         assertError<InvalidBackup>(validate(validBackup().copy(categories = listOf(category(defaultKey = "HOME")))))
         assertError<InvalidBackup>(validate(validBackup().copy(tasks = listOf(task(priority = "URGENT")))))
         assertError<InvalidBackup>(validate(validBackup().copy(tasks = listOf(task(reminderStatus = "BROKEN")))))
-        assertError<InvalidBackup>(validate(validBackup().copy(tasks = listOf(task(recurrence = "YEARLY")))))
     }
 
     @Test
@@ -84,6 +86,20 @@ class BackupValidatorTest {
         assertError<InvalidBackup>(validate(validBackup().copy(tasks = listOf(task(isCompleted = false, completedAt = 1)))))
         assertError<InvalidBackup>(validate(validBackup().copy(tasks = listOf(task(subtasks = listOf(subtask(isCompleted = true, completedAt = null)))))))
         assertError<InvalidBackup>(validate(validBackup().copy(tasks = listOf(task(dueAt = 20, recurrenceEndAt = 19)))))
+        assertError<InvalidBackup>(
+            validate(
+                validBackup().copy(
+                    tasks = listOf(task(recurrenceRule = weeklyRule, dueAt = null))
+                )
+            )
+        )
+        assertError<InvalidBackup>(
+            validate(
+                validBackup().copy(
+                    tasks = listOf(task(recurrenceRule = RecurrenceRule.None, recurrenceEndAt = 20))
+                )
+            )
+        )
     }
 
     private inline fun <reified T> assertError(result: BackupValidationResult) {
@@ -125,7 +141,7 @@ class BackupValidatorTest {
         isCompleted: Boolean = false,
         completedAt: Long? = null,
         reminderStatus: String = "NONE",
-        recurrence: String = "NONE",
+        recurrenceRule: RecurrenceRule = RecurrenceRule.None,
         dueAt: Long? = null,
         recurrenceEndAt: Long? = null,
         subtasks: List<PlanningSubtask> = emptyList()
@@ -140,7 +156,7 @@ class BackupValidatorTest {
         dueAt = dueAt,
         reminderAt = null,
         reminderStatus = reminderStatus,
-        recurrence = recurrence,
+        recurrenceRule = recurrenceRule,
         recurrenceEndAt = recurrenceEndAt,
         seriesId = null,
         createdAt = 1,
@@ -155,4 +171,10 @@ class BackupValidatorTest {
         isCompleted: Boolean = false,
         completedAt: Long? = null
     ) = PlanningSubtask(id, taskId, "Subtask", isCompleted, completedAt, position)
+
+    private val weeklyRule = RecurrenceRule.Interval(
+        IntervalUnit.WEEKS,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
 }

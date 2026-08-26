@@ -4,7 +4,14 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningBac
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCategory
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSubtask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
+import java.time.Instant
+import java.time.ZoneId
 import kotlinx.serialization.Serializable
+
+internal class UnrepresentableV1Recurrence(message: String) : IllegalArgumentException(message)
 
 @Serializable
 internal data class BackupDocumentV1(
@@ -93,7 +100,7 @@ internal data class BackupTaskV1(
         dueAt = dueAt,
         reminderAt = reminderAt,
         reminderStatus = reminderStatus,
-        recurrence = recurrence,
+        recurrenceRule = recurrence.toRecurrenceRule(dueAt),
         recurrenceEndAt = recurrenceEndAt,
         seriesId = seriesId,
         createdAt = createdAt,
@@ -113,7 +120,7 @@ internal data class BackupTaskV1(
             dueAt = task.dueAt,
             reminderAt = task.reminderAt,
             reminderStatus = task.reminderStatus,
-            recurrence = task.recurrence,
+            recurrence = task.recurrenceRule.toV1Token(task.dueAt),
             recurrenceEndAt = task.recurrenceEndAt,
             seriesId = task.seriesId,
             createdAt = task.createdAt,
@@ -147,3 +154,60 @@ internal data class BackupSubtaskV1(
         )
     }
 }
+
+private fun String.toRecurrenceRule(dueAt: Long?): RecurrenceRule = when (this) {
+    "NONE" -> RecurrenceRule.None
+    "DAILY" -> {
+        requireLegacyDueAt(dueAt, this)
+        RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE)
+    }
+    "WEEKLY" -> {
+        requireLegacyDueAt(dueAt, this)
+        RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE)
+    }
+    "MONTHLY" -> RecurrenceRule.MonthlyDay(
+        anchorDay = Instant.ofEpochMilli(requireLegacyDueAt(dueAt, this))
+            .atZone(ZoneId.systemDefault())
+            .dayOfMonth,
+        everyMonths = 1,
+        basis = RecurrenceBasis.SCHEDULED_DATE
+    )
+    else -> throw IllegalArgumentException("Unsupported v1 recurrence: $this")
+}
+
+private fun RecurrenceRule.toV1Token(dueAt: Long?): String = when (this) {
+    RecurrenceRule.None -> "NONE"
+    is RecurrenceRule.Interval -> when {
+        unit == IntervalUnit.DAYS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
+            "DAILY"
+        }
+        unit == IntervalUnit.WEEKS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
+            "WEEKLY"
+        }
+        else -> unrepresentableInV1()
+    }
+    is RecurrenceRule.MonthlyDay -> {
+        val dueDay = Instant.ofEpochMilli(requireLegacyDueAt(dueAt, "MONTHLY"))
+            .atZone(ZoneId.systemDefault())
+            .dayOfMonth
+        if (
+            everyMonths == 1 &&
+            basis == RecurrenceBasis.SCHEDULED_DATE &&
+            anchorDay == dueDay
+        ) {
+            "MONTHLY"
+        } else {
+            unrepresentableInV1()
+        }
+    }
+    is RecurrenceRule.SelectedWeekdays,
+    is RecurrenceRule.MonthlyOrdinal -> unrepresentableInV1()
+}
+
+private fun requireLegacyDueAt(dueAt: Long?, recurrence: String): Long =
+    requireNotNull(dueAt) { "V1 $recurrence recurrence requires dueAt" }
+
+private fun RecurrenceRule.unrepresentableInV1(): Nothing =
+    throw UnrepresentableV1Recurrence(
+        "Backup v1 cannot represent recurrence rule ${this::class.simpleName}"
+    )

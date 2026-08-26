@@ -1,5 +1,7 @@
 package com.indiewalkabout.nowdothis.feature.portability.domain.model
 
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
+
 data class PlanningBackup(
     val format: String,
     val version: Int,
@@ -28,7 +30,7 @@ data class PlanningTask(
     val dueAt: Long?,
     val reminderAt: Long?,
     val reminderStatus: String,
-    val recurrence: String,
+    val recurrenceRule: RecurrenceRule,
     val recurrenceEndAt: Long?,
     val seriesId: String?,
     val createdAt: Long,

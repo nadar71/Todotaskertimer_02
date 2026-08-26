@@ -32,7 +32,7 @@ object TaskEntityMapper {
             dueAt = task.dueAt,
             reminderAt = task.reminderAt,
             reminderStatus = task.reminderStatus.name,
-            recurrence = task.recurrenceRule.toLegacyProjection(),
+            recurrence = recurrence.kind,
             recurrenceKind = recurrence.kind,
             recurrenceIntervalUnit = recurrence.intervalUnit,
             recurrenceIntervalCount = recurrence.intervalCount,
@@ -251,28 +251,6 @@ private fun validateDomainRecurrence(task: Task) {
     require(task.recurrenceEndAt == null || task.recurrenceEndAt >= firstDueAt) {
         "A recurrence end cannot precede the first due time"
     }
-}
-
-private fun RecurrenceRule.toLegacyProjection(): String = when (this) {
-    RecurrenceRule.None -> "NONE"
-    is RecurrenceRule.Interval -> when {
-        unit == IntervalUnit.DAYS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
-            "DAILY"
-        }
-        unit == IntervalUnit.WEEKS && every == 1 && basis == RecurrenceBasis.SCHEDULED_DATE -> {
-            "WEEKLY"
-        }
-        else -> "NONE"
-    }
-    is RecurrenceRule.MonthlyDay -> if (
-        everyMonths == 1 && basis == RecurrenceBasis.SCHEDULED_DATE
-    ) {
-        "MONTHLY"
-    } else {
-        "NONE"
-    }
-    is RecurrenceRule.SelectedWeekdays,
-    is RecurrenceRule.MonthlyOrdinal -> "NONE"
 }
 
 private fun rejectPresent(vararg values: Any?) {

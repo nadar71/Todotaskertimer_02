@@ -26,6 +26,9 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.InspectBa
 import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.RestoreBackup
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
 import kotlinx.coroutines.Dispatchers
@@ -185,6 +188,10 @@ class DataPortabilityJourneyTest {
                     reminderAt = 1_786_896_400_000L,
                     reminderStatus = "SCHEDULED",
                     recurrence = "WEEKLY",
+                    recurrenceKind = "INTERVAL",
+                    recurrenceIntervalUnit = "WEEKS",
+                    recurrenceIntervalCount = 1,
+                    recurrenceBasis = "SCHEDULED_DATE",
                     recurrenceEndAt = 1_789_000_000_000L,
                     seriesId = "series-launch",
                     createdAt = 1_786_000_000_000L,
@@ -255,7 +262,11 @@ class DataPortabilityJourneyTest {
                 dueAt = 1_786_900_000_000L,
                 reminderAt = 1_786_896_400_000L,
                 reminderStatus = "SCHEDULED",
-                recurrence = "WEEKLY",
+                recurrenceRule = RecurrenceRule.Interval(
+                    IntervalUnit.WEEKS,
+                    1,
+                    RecurrenceBasis.SCHEDULED_DATE
+                ),
                 recurrenceEndAt = 1_789_000_000_000L,
                 seriesId = "series-launch",
                 createdAt = 1_786_000_000_000L,
@@ -276,7 +287,7 @@ class DataPortabilityJourneyTest {
                 dueAt = 1_786_190_000_000L,
                 reminderAt = null,
                 reminderStatus = "NONE",
-                recurrence = "NONE",
+                recurrenceRule = RecurrenceRule.None,
                 recurrenceEndAt = null,
                 seriesId = null,
                 createdAt = 1_786_000_000_001L,

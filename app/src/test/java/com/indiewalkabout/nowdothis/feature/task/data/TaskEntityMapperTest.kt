@@ -15,6 +15,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import java.time.DayOfWeek
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -57,6 +58,9 @@ class TaskEntityMapperTest {
             )
             val (entity, subtasks) = TaskEntityMapper.toEntities(original)
 
+            if (rule !is RecurrenceRule.None) {
+                assertNotEquals("NONE", entity.recurrence)
+            }
             assertEquals(
                 rule,
                 TaskEntityMapper.toDomain(TaskWithSubtasks(entity, subtasks)).recurrenceRule

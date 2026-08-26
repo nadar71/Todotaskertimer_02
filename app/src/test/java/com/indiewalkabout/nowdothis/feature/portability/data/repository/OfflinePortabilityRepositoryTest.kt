@@ -14,6 +14,7 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.Portability
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.RestoreFailed
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.UnsupportedFutureVersion
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.WriteFailed
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -240,7 +241,7 @@ private fun validBackup(createdAt: Long = 100L) = PlanningBackup(
             dueAt = null,
             reminderAt = null,
             reminderStatus = "NONE",
-            recurrence = "NONE",
+            recurrenceRule = RecurrenceRule.None,
             recurrenceEndAt = null,
             seriesId = null,
             createdAt = 10L,

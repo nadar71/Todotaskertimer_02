@@ -43,6 +43,7 @@ data class TaskEntity(
     val reminderAt: Long? = null,
     @ColumnInfo(name = "reminder_status", defaultValue = "'NONE'")
     val reminderStatus: String = "NONE",
+    // Schema-v2 compatibility only. New writes mirror recurrenceKind; live readers ignore this.
     @ColumnInfo(defaultValue = "'NONE'")
     val recurrence: String = "NONE",
     @ColumnInfo(name = "recurrence_kind", defaultValue = "'NONE'")

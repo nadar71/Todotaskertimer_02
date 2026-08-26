@@ -347,7 +347,7 @@ class QuickCaptureWidgetIntegrationTest {
                     dueAt = dueAt,
                     reminderAt = null,
                     reminderStatus = ReminderStatus.NONE.name,
-                    recurrence = RecurrenceType.NONE.name,
+                    recurrenceRule = RecurrenceRule.None,
                     recurrenceEndAt = null,
                     seriesId = null,
                     createdAt = now,
