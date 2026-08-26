@@ -46,7 +46,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.feature.category.domain.model.Category
 import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryColor
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import org.junit.Assert.assertEquals
@@ -311,7 +310,7 @@ class TaskEditorScreenTest {
                     recurrence = TaskEditorFieldError.DUE_REQUIRED,
                     recurrenceEnd = TaskEditorFieldError.END_BEFORE_DUE
                 ),
-                recurrence = RecurrenceType.DAILY
+                recurrence = RecurrenceEditorState.forKind(RecurrenceEditorKind.INTERVAL)
             )
         )
 
@@ -322,8 +321,9 @@ class TaskEditorScreenTest {
         scrollEditorTo("task-reminder-section")
         composeRule.onNodeWithText(context.getString(R.string.task_editor_error_reminder_after_due))
             .assertIsDisplayed()
-        scrollEditorTo("task-recurrence-field")
+        scrollEditorTo("task-recurrence-kind")
         composeRule.onNodeWithText(context.getString(R.string.task_editor_error_recurrence_due_required))
+            .performScrollTo()
             .assertIsDisplayed()
         composeRule.onNodeWithText(context.getString(R.string.task_editor_error_end_before_due))
             .performScrollTo()
@@ -370,18 +370,234 @@ class TaskEditorScreenTest {
 
         composeRule.onNodeWithTag("task-due-clear").performClick()
         composeRule.onNodeWithTag("task-reminder-clear").performClick()
-        scrollEditorTo("task-recurrence-field")
-        composeRule.onNodeWithTag("task-recurrence-field").performClick()
-        composeRule.onNodeWithText(context.getString(R.string.task_recurrence_weekly)).performClick()
+        scrollEditorTo("task-recurrence-kind")
+        composeRule.onNodeWithTag("task-recurrence-kind").performClick()
+        composeRule.onNodeWithTag("task-recurrence-kind-option-interval").performClick()
 
         assertEquals(
             listOf(
                 TaskEditorEvent.UpdateDueAt(null),
                 TaskEditorEvent.UpdateReminderAt(null),
-                TaskEditorEvent.SelectRecurrence(RecurrenceType.WEEKLY)
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
             ),
             events
         )
+    }
+
+    @Test
+    fun recurrenceKindMenu_dispatchesEveryRuleSelector() {
+        RecurrenceEditorKind.entries.forEach { kind ->
+            val events = mutableListOf<TaskEditorEvent>()
+            setScreen(onEvent = events::add)
+
+            scrollEditorTo("task-recurrence-kind")
+            composeRule.onNodeWithTag("task-recurrence-kind").performClick()
+            composeRule.onNodeWithTag(
+                "task-recurrence-kind-option-${kind.name.lowercase()}"
+            ).performClick()
+
+            assertEquals(listOf(TaskEditorEvent.SelectRecurrenceKind(kind)), events)
+        }
+    }
+
+    @Test
+    fun intervalEditor_usesNumericStepperAndUnitMenu() {
+        val events = mutableListOf<TaskEditorEvent>()
+        setRecurrenceEditorSurface(
+            state = RecurrenceEditorState(
+                kind = RecurrenceEditorKind.INTERVAL,
+                basis = RecurrenceEditorBasis.COMPLETION_DATE,
+                intervalUnit = RecurrenceEditorIntervalUnit.DAYS,
+                intervalEvery = 1
+            ),
+            onEvent = events::add
+        )
+
+        composeRule.onNodeWithTag("task-recurrence-interval-decrement")
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        composeRule.onNodeWithTag("task-recurrence-interval-value")
+            .performTextReplacement("999")
+        composeRule.onNodeWithTag("task-recurrence-interval-increment")
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        composeRule.onNodeWithTag("task-recurrence-interval-unit").performClick()
+        composeRule.onNodeWithTag("task-recurrence-interval-unit-weeks").performClick()
+
+        assertTrue(
+            TaskEditorEvent.UpdateRecurrenceIntervalEvery(null) in events
+        )
+        assertTrue(
+            TaskEditorEvent.UpdateRecurrenceIntervalEvery(999) in events
+        )
+        assertTrue(
+            TaskEditorEvent.UpdateRecurrenceIntervalEvery(2) in events
+        )
+        assertEquals(
+            listOf(
+                TaskEditorEvent.SelectRecurrenceIntervalUnit(
+                    RecurrenceEditorIntervalUnit.WEEKS
+                )
+            ),
+            events.filterNot { it is TaskEditorEvent.UpdateRecurrenceIntervalEvery }
+        )
+    }
+
+    @Test
+    fun recurrenceBasis_usesSegmentedRadioSemanticsAndDispatchesOverride() {
+        val events = mutableListOf<TaskEditorEvent>()
+        setRecurrenceEditorSurface(
+            state = RecurrenceEditorState(
+                kind = RecurrenceEditorKind.INTERVAL,
+                basis = RecurrenceEditorBasis.COMPLETION_DATE,
+                intervalUnit = RecurrenceEditorIntervalUnit.DAYS,
+                intervalEvery = 1
+            ),
+            onEvent = events::add
+        )
+
+        composeRule.onNodeWithTag("task-recurrence-basis-scheduled_date")
+            .assertHeightIsAtLeast(48.dp)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
+            .performClick()
+        composeRule.onNodeWithTag("task-recurrence-basis-completion_date")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+
+        assertEquals(
+            listOf(
+                TaskEditorEvent.SelectRecurrenceBasis(RecurrenceEditorBasis.SCHEDULED_DATE)
+            ),
+            events
+        )
+    }
+
+    @Test
+    fun weekdayEditor_exposesToggleSemanticsTargetsAndInlineError() {
+        val events = mutableListOf<TaskEditorEvent>()
+        setRecurrenceEditorSurface(
+            state = RecurrenceEditorState(
+                kind = RecurrenceEditorKind.SELECTED_WEEKDAYS,
+                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                selectedWeekdays = setOf(RecurrenceEditorWeekday.MONDAY)
+            ),
+            recurrenceError = TaskEditorFieldError.RECURRENCE_WEEKDAY_REQUIRED,
+            onEvent = events::add
+        )
+
+        composeRule.onNodeWithTag("task-recurrence-weekday-monday")
+            .assertHeightIsAtLeast(48.dp)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Selected, true))
+        composeRule.onNodeWithTag("task-recurrence-weekday-friday")
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        composeRule.onNodeWithText(
+            context.getString(R.string.task_editor_error_recurrence_weekday_required)
+        ).assertIsDisplayed()
+
+        assertEquals(
+            listOf(
+                TaskEditorEvent.ToggleRecurrenceWeekday(RecurrenceEditorWeekday.FRIDAY)
+            ),
+            events
+        )
+    }
+
+    @Test
+    fun monthlyDayEditor_dispatchesAnchorAndIntervalControls() {
+        val events = mutableListOf<TaskEditorEvent>()
+        setRecurrenceEditorSurface(
+            state = RecurrenceEditorState(
+                kind = RecurrenceEditorKind.MONTHLY_DAY,
+                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                monthlyEvery = 1,
+                monthlyAnchorDay = 31
+            ),
+            onEvent = events::add
+        )
+
+        composeRule.onNodeWithTag("task-recurrence-monthly-anchor-value")
+            .performTextReplacement("1")
+        composeRule.onNodeWithTag("task-recurrence-monthly-every-value")
+            .performTextReplacement("999")
+
+        assertTrue(
+            TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay(1) in events
+        )
+        assertTrue(
+            TaskEditorEvent.UpdateRecurrenceMonthlyEvery(999) in events
+        )
+    }
+
+    @Test
+    fun monthlyOrdinalEditor_dispatchesOrdinalAndWeekdayMenus() {
+        val events = mutableListOf<TaskEditorEvent>()
+        setRecurrenceEditorSurface(
+            state = RecurrenceEditorState(
+                kind = RecurrenceEditorKind.MONTHLY_ORDINAL,
+                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                monthlyEvery = 2,
+                ordinal = RecurrenceEditorOrdinal.FIRST,
+                ordinalWeekday = RecurrenceEditorWeekday.MONDAY
+            ),
+            onEvent = events::add
+        )
+        composeRule.onNodeWithTag("task-recurrence-ordinal").performClick()
+        composeRule.onNodeWithTag("task-recurrence-ordinal-last").performClick()
+        composeRule.onNodeWithTag("task-recurrence-ordinal-weekday").performClick()
+        composeRule.onNodeWithTag("task-recurrence-ordinal-weekday-sunday").performClick()
+
+        assertEquals(
+            listOf(
+                TaskEditorEvent.SelectRecurrenceOrdinal(RecurrenceEditorOrdinal.LAST),
+                TaskEditorEvent.SelectRecurrenceOrdinalWeekday(RecurrenceEditorWeekday.SUNDAY)
+            ),
+            events
+        )
+    }
+
+    @Test
+    fun recurrenceEditor_rendersItalianResources() {
+        assertActiveApplicationLocale(ITALIAN_QUICK_ENTRY)
+        setLocalizedRecurrenceEditorSurface()
+
+        composeRule.onNodeWithText("Giorni selezionati").assertIsDisplayed()
+        composeRule.onNodeWithText("Data programmata").assertIsDisplayed()
+        composeRule.onNodeWithText("Lun").assertIsDisplayed()
+        composeRule.onNodeWithText("Termina ripetizione").assertIsDisplayed()
+    }
+
+    @Test
+    fun recurrenceEditor_rendersEnglishResources() {
+        assertActiveApplicationLocale(ENGLISH_QUICK_ENTRY)
+        setLocalizedRecurrenceEditorSurface()
+
+        composeRule.onNodeWithText("Selected weekdays").assertIsDisplayed()
+        composeRule.onNodeWithText("Scheduled date").assertIsDisplayed()
+        composeRule.onNodeWithText("Mon").assertIsDisplayed()
+        composeRule.onNodeWithText("End repeat").assertIsDisplayed()
+    }
+
+    @Test
+    fun recurrenceEditor_largeItalianTextHasNoOverlapOrClipping() {
+        assertActiveApplicationLocale(ITALIAN_QUICK_ENTRY)
+        setLocalizedRecurrenceEditorSurface(fontScale = 2f)
+
+        val root = nodeBounds("recurrence-editor-layout-root")
+        val section = nodeBounds("task-recurrence-editor")
+        val kind = nodeBounds("task-recurrence-kind")
+        val weekdays = nodeBounds("task-recurrence-weekdays")
+        val basis = nodeBounds("task-recurrence-basis")
+        val end = nodeBounds("task-recurrence-end")
+
+        listOf(root, section, kind, weekdays, basis, end).forEach(::assertNotClipped)
+        assertContains(root.unclipped, section.unclipped)
+        listOf(kind, weekdays, basis, end).forEach { child ->
+            assertContains(section.unclipped, child.unclipped)
+        }
+        assertOrdered(kind.unclipped, weekdays.unclipped)
+        assertOrdered(weekdays.unclipped, basis.unclipped)
+        assertOrdered(basis.unclipped, end.unclipped)
     }
 
     @Test
@@ -548,6 +764,58 @@ class TaskEditorScreenTest {
         composeRule.waitForIdle()
     }
 
+    private fun setRecurrenceEditorSurface(
+        state: RecurrenceEditorState,
+        recurrenceError: TaskEditorFieldError? = null,
+        recurrenceEndError: TaskEditorFieldError? = null,
+        fontScale: Float = 1f,
+        onEvent: (TaskEditorEvent) -> Unit = {}
+    ) {
+        composeRule.runOnUiThread {
+            TaskEditorTestContent.content = {
+                val density = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density.density, fontScale)
+                ) {
+                    MaterialTheme {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clipToBounds()
+                                .padding(16.dp)
+                                .testTag("recurrence-editor-layout-root")
+                        ) {
+                            RecurrenceEditor(
+                                state = state,
+                                recurrenceError = recurrenceError,
+                                recurrenceEndError = recurrenceEndError,
+                                onEvent = onEvent,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+    }
+
+    private fun setLocalizedRecurrenceEditorSurface(fontScale: Float = 1f) {
+        setRecurrenceEditorSurface(
+            state = RecurrenceEditorState(
+                kind = RecurrenceEditorKind.SELECTED_WEEKDAYS,
+                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                selectedWeekdays = setOf(
+                    RecurrenceEditorWeekday.MONDAY,
+                    RecurrenceEditorWeekday.WEDNESDAY,
+                    RecurrenceEditorWeekday.FRIDAY
+                ),
+                endAt = 290_000L
+            ),
+            fontScale = fontScale
+        )
+    }
+
     private fun assertActiveApplicationLocale(expected: QuickEntryLocaleExpectation) {
         val localeManager = context.applicationContext.getSystemService(LocaleManager::class.java)
         assertEquals(expected.primaryLanguage, localeManager.applicationLocales[0].language)
@@ -642,6 +910,9 @@ private fun quickEntryLocaleFor(testMethod: String): QuickEntryLocaleExpectation
     "quickEntry_rendersItalianInProductionCompose",
     "quickEntry_largeTextFitsWithinOneSurfaceWithoutOverlapOrClipping",
     "quickEntry_clippingDetectorDetectsConstrainedSurface" -> ITALIAN_QUICK_ENTRY
+    "recurrenceEditor_rendersItalianResources",
+    "recurrenceEditor_largeItalianTextHasNoOverlapOrClipping" -> ITALIAN_QUICK_ENTRY
+    "recurrenceEditor_rendersEnglishResources" -> ENGLISH_QUICK_ENTRY
     "quickEntry_rendersEnglishInProductionCompose" -> ENGLISH_QUICK_ENTRY
     else -> null
 }

@@ -2,7 +2,6 @@ package com.indiewalkabout.nowdothis.feature.task.presentation.editor
 
 import androidx.annotation.StringRes
 import com.indiewalkabout.nowdothis.feature.category.domain.model.Category
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import kotlinx.serialization.Serializable
@@ -20,8 +19,7 @@ data class TaskEditorUiState(
     val reminderStatus: ReminderStatus = ReminderStatus.NONE,
     val notificationPermissionDenied: Boolean = false,
     val exactTimingUnavailable: Boolean = false,
-    val recurrence: RecurrenceType = RecurrenceType.NONE,
-    val recurrenceEndAt: Long? = null,
+    val recurrence: RecurrenceEditorState = RecurrenceEditorState(),
     val subtasks: List<TaskEditorSubtask> = emptyList(),
     val categories: List<Category> = emptyList(),
     val categoryReadiness: CategoryReadiness = CategoryReadiness.LOADING,
@@ -80,7 +78,11 @@ enum class TaskEditorFieldError {
     REMINDER_IN_PAST,
     DUE_REQUIRED,
     END_WITHOUT_RECURRENCE,
-    END_BEFORE_DUE
+    END_BEFORE_DUE,
+    RECURRENCE_INTERVAL_OUT_OF_RANGE,
+    RECURRENCE_ANCHOR_OUT_OF_RANGE,
+    RECURRENCE_WEEKDAY_REQUIRED,
+    RECURRENCE_INCOMPLETE
 }
 
 sealed interface TaskEditorEvent {
@@ -95,7 +97,19 @@ sealed interface TaskEditorEvent {
     data class UpdateReminderAt(val value: Long?) : TaskEditorEvent
     data class NotificationPermissionResult(val granted: Boolean) : TaskEditorEvent
     data object RefreshExactAlarmAccess : TaskEditorEvent
-    data class SelectRecurrence(val value: RecurrenceType) : TaskEditorEvent
+    data class SelectRecurrenceKind(val value: RecurrenceEditorKind) : TaskEditorEvent
+    data class SelectRecurrenceBasis(val value: RecurrenceEditorBasis) : TaskEditorEvent
+    data class SelectRecurrenceIntervalUnit(
+        val value: RecurrenceEditorIntervalUnit
+    ) : TaskEditorEvent
+    data class UpdateRecurrenceIntervalEvery(val value: Int?) : TaskEditorEvent
+    data class ToggleRecurrenceWeekday(val value: RecurrenceEditorWeekday) : TaskEditorEvent
+    data class UpdateRecurrenceMonthlyEvery(val value: Int?) : TaskEditorEvent
+    data class UpdateRecurrenceMonthlyAnchorDay(val value: Int?) : TaskEditorEvent
+    data class SelectRecurrenceOrdinal(val value: RecurrenceEditorOrdinal) : TaskEditorEvent
+    data class SelectRecurrenceOrdinalWeekday(
+        val value: RecurrenceEditorWeekday
+    ) : TaskEditorEvent
     data class UpdateRecurrenceEndAt(val value: Long?) : TaskEditorEvent
     data object AddSubtask : TaskEditorEvent
     data class RenameSubtask(val draftId: Long, val value: String) : TaskEditorEvent
