@@ -4,10 +4,10 @@ Tests are selected by risk and boundary rather than by a repository-wide coverag
 
 | Test type | Primary risks |
 | --- | --- |
-| Pure JVM | Recurrence calculation, task classification, backup codec/validation, use cases, and ViewModel reducers |
+| Pure JVM | Natural-language grammar and time-zone matrices, recurrence calculation, task classification, backup codec/validation, use cases, and ViewModel reducers |
 | Room instrumentation | DAOs, relations, migrations, atomic Replace All/rollback behavior, and deterministic fixtures |
 | Compose instrumentation | Semantics, layout contracts, and feature interaction |
-| Journey instrumentation | Production activity navigation, cross-feature behavior, and full backup/mutate/restore data flow |
+| Journey instrumentation | Production activity navigation, natural-language parse/correct/save/recreate behavior, cross-feature behavior, and full backup/mutate/restore data flow |
 | Direct Glance rendering instrumentation | Production `RemoteViews`, 3/5/8 capacities, states, locale/theme/large-font rendering, action targets, and non-overlap |
 | Bound AppWidget host instrumentation | Compact/default-font Room refresh through multiple `AppWidgetHostView` instances |
 | Benchmark process instrumentation | Update, recurring completion, add, and open while the optimized target process is absent |
@@ -34,12 +34,21 @@ trip, graph validation, the 10 MiB bound, atomic rollback, repeated restore, inv
 future-version no-mutation behavior, reminder ordering/warnings, UDF busy state, and
 Italian/English Compose semantics. Its normative contract is [documented here](../data-portability/backup-format-v1.md).
 
+Natural-Language Entry keeps grammar tests on the JVM with injected instants, zones,
+and category candidates. ViewModel tests prove atomic selective application and
+`SavedStateHandle` restoration. Compose tests cover localized semantics and 200% text,
+while connected journeys launch `MainActivity` and use production Navigation 3,
+TaskEditor, parser, Room repositories, `SaveTask`, and AlarmManager scheduling. The
+journey fixture seeds only deterministic category rows and restores locale, Room, and
+alarm state; it does not replace parser or persistence behavior.
+
 ## Local Gates
 
 ```bash
 ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ANDROID_SERIAL=<serial> ./gradlew :app:connectedDebugAndroidTest
 ./gradlew :app:assembleRelease :app:bundleRelease
+./gradlew :app:assembleRelease -Pandroid.enableR8.fullMode=true
 ```
 
 Performance runs must follow [the measurement contract](../performance/README.md) and keep device, API, build variant, source revision, and iteration count visible.

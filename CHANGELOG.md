@@ -6,6 +6,8 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Added
 
+- Explicit offline Italian/English Quick entry with deterministic parsing for supported dates, times, priorities, current categories, recurrence, and reminders before normal editor confirmation and save.
+- Real MainActivity/Navigation 3 bilingual parse-correct-describe-save journeys through Room and AlarmManager, plus relative-date recreation coverage without reparsing.
 - Responsive home-screen Quick Capture widget with overdue/today/upcoming ordering, 3/5/8-task layouts, localized add/open/complete actions, and empty/error/retry states.
 - Process-absent widget refresh and recurring-task completion coverage, plus production Navigation 3 add/open journey tests.
 - Verified English/light and Italian/dark Pixel Launcher screenshots with explicit automated-versus-manual host evidence.
@@ -19,6 +21,7 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Accessibility
 
+- Localized Quick entry labels and live parse feedback, a minimum 48 dp Parse target, and 200% text clipping/non-overlap regression coverage.
 - Quick Capture action descriptions, minimum 48 dp targets, direct large-font production `RemoteViews` rendering, and localized English/Italian semantics.
 - Explicit roles, states, labels, and minimum targets for primary workflows.
 

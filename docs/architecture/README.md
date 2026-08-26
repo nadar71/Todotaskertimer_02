@@ -1,7 +1,7 @@
 # Architecture
 
 This directory records the architecture that is implemented in Now Do This as of
-2026-08-24. The app deliberately remains a single Android application module with
+2026-08-26. The app deliberately remains a single Android application module with
 feature-first packages, Clean MVVM boundaries, and unidirectional data flow.
 ViewModels may consume domain repository contracts directly for screen-specific
 reads, mutations, and coordination. Use cases own reusable business rules, operations
@@ -30,6 +30,14 @@ running. A domain-owned invalidation port is implemented by the Glance adapter, 
 application configuration changes advance a presentation refresh signal before
 updating bound widgets so qualified resources are resolved live. No widget cache or
 app-authored `WorkManager` pipeline is introduced.
+
+The `feature/naturallanguage` boundary is a framework-free deterministic parser over
+explicit input values: raw text, parser language, instant, time zone, and current
+category candidates. `TaskEditorViewModel` adapts Android locale/default-category
+names, atomically applies only recognized fields, and persists the raw input and
+preview in `SavedStateHandle`. Existing editor correction, required-description,
+`SaveTask`, Room, and reminder flows remain the only save path. The parser is offline
+and intentionally bounded; it introduces no network, AI service, or Room schema.
 
 ## Documents
 
