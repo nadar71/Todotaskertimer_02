@@ -320,6 +320,199 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun unsupportedAndContradictoryContinuationsPreserveExactTitleWithoutConsumption() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every Monday or Friday"),
+            Pair(
+                ParserLanguage.ENGLISH,
+                "Task every 2 weeks from the scheduled date, from the completion date"
+            ),
+            Pair(ParserLanguage.ITALIAN, "Task ogni lunedì o venerdì"),
+            Pair(
+                ParserLanguage.ITALIAN,
+                "Task ogni 2 settimane dalla data programmata, dalla data di completamento"
+            )
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parse(raw, language)
+
+            assertEquals(raw, raw, result.draft.title)
+            assertNull(raw, result.draft.recurrenceRule)
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+            assertTrue(raw, result.consumed.isEmpty())
+            assertEquals(raw, setOf(RecognizedField.TITLE), result.recognized)
+        }
+    }
+
+    @Test
+    fun malformedOuterOrdinalsCannotBacktrackIntoNestedMonthlyRule() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task fifth Mondays of every month"),
+            Pair(ParserLanguage.ENGLISH, "Task sixth Monday of every month"),
+            Pair(ParserLanguage.ENGLISH, "Task eleventh Monday of every month"),
+            Pair(ParserLanguage.ITALIAN, "Task sesto lunedì di ogni mese"),
+            Pair(ParserLanguage.ITALIAN, "Task undicesimo lunedì di ogni mese")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parse(raw, language)
+
+            assertEquals(raw, raw, result.draft.title)
+            assertNull(raw, result.draft.recurrenceRule)
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+            assertTrue(raw, result.consumed.isEmpty())
+        }
+    }
+
+    @Test
+    fun normalizedItalianAcuteWeekdayConsumesTheOriginalSourceRange() {
+        val raw = "Task ogni lunedí e venerdì"
+
+        val result = parse(raw, ParserLanguage.ITALIAN)
+
+        assertEquals("Task", result.draft.title)
+        assertEquals(
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            result.draft.recurrenceRule
+        )
+        assertEquals(
+            listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+            result.consumed
+        )
+        assertTrue(result.issues.isEmpty())
+    }
+
+    @Test
+    fun malformedRecurrenceStopsBeforeIndependentPriorityCategoryAndPunctuation() {
+        val priorityRaw = "Task every nonsense !high"
+        val priority = parse(priorityRaw, ParserLanguage.ENGLISH)
+        assertEquals("Task every nonsense", priority.draft.title)
+        assertEquals(TaskPriority.HIGH, priority.draft.priority)
+        assertNull(priority.draft.recurrenceRule)
+        assertEquals(listOf(ParseIssue.AmbiguousRecurrence), priority.issues)
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    priorityRaw.indexOf("!high"),
+                    priorityRaw.length,
+                    RecognizedField.PRIORITY
+                )
+            ),
+            priority.consumed
+        )
+
+        val categoryRaw = "Task every nonsense #Home"
+        val category = parse(
+            categoryRaw,
+            ParserLanguage.ENGLISH,
+            listOf(CategoryCandidate(8, "Home"))
+        )
+        assertEquals("Task every nonsense", category.draft.title)
+        assertEquals(8, category.draft.categoryId)
+        assertNull(category.draft.recurrenceRule)
+        assertEquals(listOf(ParseIssue.AmbiguousRecurrence), category.issues)
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    categoryRaw.indexOf("#Home"),
+                    categoryRaw.length,
+                    RecognizedField.CATEGORY
+                )
+            ),
+            category.consumed
+        )
+
+        val punctuationRaw = "Task every nonsense, !high"
+        val punctuation = parse(punctuationRaw, ParserLanguage.ENGLISH)
+        assertEquals("Task every nonsense,", punctuation.draft.title)
+        assertEquals(TaskPriority.HIGH, punctuation.draft.priority)
+        assertNull(punctuation.draft.recurrenceRule)
+        assertEquals(listOf(ParseIssue.AmbiguousRecurrence), punctuation.issues)
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    punctuationRaw.indexOf("!high"),
+                    punctuationRaw.length,
+                    RecognizedField.PRIORITY
+                )
+            ),
+            punctuation.consumed
+        )
+    }
+
+    @Test
+    fun validCommaSeparatedWeekdaysStillConsumeRecurrenceAndIndependentPriority() {
+        val raw = "Task every Monday, Friday !high"
+
+        val result = parse(raw, ParserLanguage.ENGLISH)
+
+        assertEquals("Task", result.draft.title)
+        assertEquals(TaskPriority.HIGH, result.draft.priority)
+        assertEquals(
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            result.draft.recurrenceRule
+        )
+        assertEquals(
+            listOf(
+                SourceMatch(5, raw.indexOf(" !high"), RecognizedField.RECURRENCE),
+                SourceMatch(raw.indexOf("!high"), raw.length, RecognizedField.PRIORITY)
+            ),
+            result.consumed
+        )
+        assertTrue(result.issues.isEmpty())
+    }
+
+    @Test
+    fun validOrdinalAndOrdinaryTrailingPunctuationRemainCorrectable() {
+        val ordinalRaw = "Task fourth Monday of every month"
+        val ordinal = parse(ordinalRaw, ParserLanguage.ENGLISH)
+        assertEquals("Task", ordinal.draft.title)
+        assertEquals(
+            RecurrenceRule.MonthlyOrdinal(
+                MonthlyOrdinalValue.FOURTH,
+                DayOfWeek.MONDAY,
+                1,
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            ordinal.draft.recurrenceRule
+        )
+        assertEquals(
+            listOf(SourceMatch(5, ordinalRaw.length, RecognizedField.RECURRENCE)),
+            ordinal.consumed
+        )
+        assertTrue(ordinal.issues.isEmpty())
+
+        val punctuationRaw = "Task every Monday, notes"
+        val punctuation = parse(punctuationRaw, ParserLanguage.ENGLISH)
+        assertEquals("Task , notes", punctuation.draft.title)
+        assertEquals(
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.MONDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            punctuation.draft.recurrenceRule
+        )
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    5,
+                    punctuationRaw.indexOf(','),
+                    RecognizedField.RECURRENCE
+                )
+            ),
+            punctuation.consumed
+        )
+        assertTrue(punctuation.issues.isEmpty())
+    }
+
+    @Test
     fun categories_resolveCustomLocalizedQuotedAndNormalizedNames() {
         val cases = listOf(
             CategoryCase("Task #Casa", CategoryCandidate(7, "Casa")),
@@ -521,6 +714,11 @@ class ParseNaturalLanguageTaskTest {
                     case.markerEndExclusive,
                     RecognizedField.CATEGORY
                 )
+                val recurrenceIssues = if (case.blockedField == RecognizedField.RECURRENCE) {
+                    listOf(ParseIssue.AmbiguousRecurrence)
+                } else {
+                    emptyList()
+                }
 
                 assertEquals(
                     "$resolution ${case.raw}",
@@ -550,7 +748,7 @@ class ParseNaturalLanguageTaskTest {
                                 .sortedBy(SourceMatch::start),
                             result.consumed
                         )
-                        assertTrue(case.raw, result.issues.isEmpty())
+                        assertEquals(case.raw, recurrenceIssues, result.issues)
                     }
 
                     CategoryResolution.UNKNOWN -> {
@@ -563,7 +761,7 @@ class ParseNaturalLanguageTaskTest {
                         assertEquals(case.raw, case.additionalConsumed, result.consumed)
                         assertEquals(
                             case.raw,
-                            listOf(ParseIssue.UnknownCategory("#\"Home\"")),
+                            listOf(ParseIssue.UnknownCategory("#\"Home\"")) + recurrenceIssues,
                             result.issues
                         )
                     }
@@ -578,7 +776,7 @@ class ParseNaturalLanguageTaskTest {
                         assertEquals(case.raw, case.additionalConsumed, result.consumed)
                         assertEquals(
                             case.raw,
-                            listOf(ParseIssue.AmbiguousCategory("#\"Home\"")),
+                            listOf(ParseIssue.AmbiguousCategory("#\"Home\"")) + recurrenceIssues,
                             result.issues
                         )
                     }

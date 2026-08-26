@@ -274,6 +274,231 @@ class RecurrenceParserTest {
     }
 
     @Test
+    fun unsupportedAndPunctuationLedContradictoryContinuationsRejectTheWholeAttempt() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every Monday or Friday"),
+            Pair(
+                ParserLanguage.ENGLISH,
+                "Task every 2 weeks from the scheduled date, from the completion date"
+            ),
+            Pair(ParserLanguage.ITALIAN, "Task ogni lunedì o venerdì"),
+            Pair(
+                ParserLanguage.ITALIAN,
+                "Task ogni 2 settimane dalla data programmata, dalla data di completamento"
+            )
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.candidates.isEmpty())
+            assertTrue(raw, result.matches.isEmpty())
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.ownedRanges
+            )
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
+    }
+
+    @Test
+    fun supportedCommaListAndOrdinaryTrailingPunctuationRemainValid() {
+        val weekdayRaw = "Task every Monday, Friday"
+        val weekdays = parser.parse(input(weekdayRaw, ParserLanguage.ENGLISH), DUE_AT)
+
+        assertEquals(
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            weekdays.rule
+        )
+        assertEquals(
+            listOf(SourceMatch(5, weekdayRaw.length, RecognizedField.RECURRENCE)),
+            weekdays.matches
+        )
+        assertTrue(weekdays.issues.isEmpty())
+
+        val punctuationRaw = "Task every 2 weeks from the scheduled date, notes"
+        val punctuation = parser.parse(
+            input(punctuationRaw, ParserLanguage.ENGLISH),
+            DUE_AT
+        )
+
+        assertEquals(
+            RecurrenceRule.Interval(IntervalUnit.WEEKS, 2, RecurrenceBasis.SCHEDULED_DATE),
+            punctuation.rule
+        )
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    5,
+                    punctuationRaw.indexOf(','),
+                    RecognizedField.RECURRENCE
+                )
+            ),
+            punctuation.matches
+        )
+        assertTrue(punctuation.issues.isEmpty())
+
+        val weekdayPunctuationRaw = "Task every Monday, notes"
+        val weekdayPunctuation = parser.parse(
+            input(weekdayPunctuationRaw, ParserLanguage.ENGLISH),
+            DUE_AT
+        )
+        assertEquals(
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.MONDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            weekdayPunctuation.rule
+        )
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    5,
+                    weekdayPunctuationRaw.indexOf(','),
+                    RecognizedField.RECURRENCE
+                )
+            ),
+            weekdayPunctuation.matches
+        )
+        assertTrue(weekdayPunctuation.issues.isEmpty())
+    }
+
+    @Test
+    fun unsupportedOuterOrdinalsOwnNestedLegacyMonthlyPhrases() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task fifth Mondays of every month"),
+            Pair(ParserLanguage.ENGLISH, "Task sixth Monday of every month"),
+            Pair(ParserLanguage.ENGLISH, "Task eleventh Monday of every month"),
+            Pair(ParserLanguage.ITALIAN, "Task sesto lunedì di ogni mese"),
+            Pair(ParserLanguage.ITALIAN, "Task undicesimo lunedì di ogni mese"),
+            Pair(ParserLanguage.ITALIAN, "Task quinto lunedìs del mese")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.candidates.isEmpty())
+            assertTrue(raw, result.matches.isEmpty())
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.ownedRanges
+            )
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
+
+        val validRaw = "Task fourth Monday of every month"
+        val valid = parser.parse(input(validRaw, ParserLanguage.ENGLISH), DUE_AT)
+        assertEquals(
+            RecurrenceRule.MonthlyOrdinal(
+                MonthlyOrdinalValue.FOURTH,
+                DayOfWeek.MONDAY,
+                1,
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            valid.rule
+        )
+        assertEquals(
+            listOf(SourceMatch(5, validRaw.length, RecognizedField.RECURRENCE)),
+            valid.matches
+        )
+        assertTrue(valid.issues.isEmpty())
+    }
+
+    @Test
+    fun italianWeekdayCandidatesUseTextNormalizerAccentEquivalence() {
+        val mondayVariants = listOf(
+            "lunedì",
+            "lunedí",
+            "lunedî",
+            "lunedï",
+            "lunedi\u0300",
+            "lunedi\u0301",
+            "lunedi\u0302",
+            "lunedi\u0308"
+        )
+
+        mondayVariants.forEach { monday ->
+            val raw = "Task ogni $monday e venerdì"
+            val result = parser.parse(input(raw, ParserLanguage.ITALIAN), DUE_AT)
+
+            assertEquals(
+                raw,
+                RecurrenceRule.SelectedWeekdays(
+                    setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY),
+                    RecurrenceBasis.SCHEDULED_DATE
+                ),
+                result.rule
+            )
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.matches
+            )
+            assertTrue(raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun malformedOwnershipStopsBeforeIndependentMarkersAndPunctuation() {
+        val priorityRaw = "Task every nonsense !high"
+        val priority = parser.parse(input(priorityRaw, ParserLanguage.ENGLISH), DUE_AT)
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    5,
+                    priorityRaw.indexOf(" !high"),
+                    RecognizedField.RECURRENCE
+                )
+            ),
+            priority.ownedRanges
+        )
+        assertEquals(listOf(ParseIssue.AmbiguousRecurrence), priority.issues)
+
+        val categoryRaw = "Task every nonsense #Home"
+        val categoryStart = categoryRaw.indexOf("#Home")
+        val category = parser.parse(
+            input(categoryRaw, ParserLanguage.ENGLISH),
+            DUE_AT,
+            listOf(SourceMatch(categoryStart, categoryRaw.length, RecognizedField.CATEGORY))
+        )
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    5,
+                    categoryRaw.indexOf(" #Home"),
+                    RecognizedField.RECURRENCE
+                )
+            ),
+            category.ownedRanges
+        )
+        assertEquals(listOf(ParseIssue.AmbiguousRecurrence), category.issues)
+
+        val punctuationRaw = "Task every nonsense, notes"
+        val punctuation = parser.parse(
+            input(punctuationRaw, ParserLanguage.ENGLISH),
+            DUE_AT
+        )
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    5,
+                    punctuationRaw.indexOf(','),
+                    RecognizedField.RECURRENCE
+                )
+            ),
+            punctuation.ownedRanges
+        )
+        assertEquals(listOf(ParseIssue.AmbiguousRecurrence), punctuation.issues)
+    }
+
+    @Test
     fun excludedOwnershipRejectsIntersectingRecurrenceCandidate() {
         val raw = "Task every 2 weeks"
         val exclusion = SourceMatch(5, raw.length, RecognizedField.CATEGORY)

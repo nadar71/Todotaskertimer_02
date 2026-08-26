@@ -125,6 +125,7 @@ class RecurrenceParser {
         val malformed = starts.map { start ->
             val nextStart = starts.firstOrNull { it.range.first > start.range.first }?.range?.first
             val end = malformedAttemptEnd(input.rawText, start.range.first, nextStart)
+                .trimOwnershipEnd(input.rawText, start.range.first)
             Attempt(
                 candidate = null,
                 ownedRange = SourceMatch(start.range.first, end, RecognizedField.RECURRENCE),
@@ -186,14 +187,21 @@ class RecurrenceParser {
         val dayText = requireNotNull(match.groups["days"]).value
         val grammar = Grammar.forLanguage(language)
         val weekdays = grammar.weekdayTokenPattern.findAll(dayText)
-            .mapNotNull { token -> weekday(token.value, language) }
+            .map { token -> weekday(token.value, language) }
             .toList()
-        val rule = weekdays.takeIf { it.isNotEmpty() && it.size == it.distinct().size }?.let {
-            RecurrenceRule.SelectedWeekdays(
-                it.toSet(),
-                explicitBasis(match.value, language) ?: RecurrenceBasis.SCHEDULED_DATE
-            )
-        }
+        val rule = weekdays
+            .takeIf { days ->
+                days.isNotEmpty() &&
+                    days.none { it == null } &&
+                    days.size == days.distinct().size
+            }
+            ?.filterNotNull()
+            ?.let {
+                RecurrenceRule.SelectedWeekdays(
+                    it.toSet(),
+                    explicitBasis(match.value, language) ?: RecurrenceBasis.SCHEDULED_DATE
+                )
+            }
         return match.toAttempt(rule)
     }
 
@@ -264,8 +272,14 @@ class RecurrenceParser {
 
     private fun Attempt.rejectMalformedContinuation(raw: String, grammar: Grammar): Attempt {
         val tail = raw.substring(ownedRange.endExclusive)
-        if (!grammar.continuationPattern.containsMatchIn(tail)) return this
-        val extendedEnd = malformedAttemptEnd(raw, ownedRange.start, null)
+        val continuation = grammar.continuationPattern.find(tail) ?: return this
+        val continuationEnd = ownedRange.endExclusive + continuation.range.last + 1
+        val extendedEnd = malformedAttemptEnd(
+            raw = raw,
+            start = ownedRange.start,
+            nextStart = null,
+            searchStart = continuationEnd
+        ).trimOwnershipEnd(raw, ownedRange.start)
         return copy(
             candidate = null,
             ownedRange = ownedRange.copy(endExclusive = extendedEnd),
@@ -276,6 +290,7 @@ class RecurrenceParser {
     private fun Attempt.extendMalformedOwnership(raw: String): Attempt = copy(
         ownedRange = ownedRange.copy(
             endExclusive = malformedAttemptEnd(raw, ownedRange.start, null)
+                .trimOwnershipEnd(raw, ownedRange.start)
         )
     )
 
@@ -288,13 +303,24 @@ class RecurrenceParser {
         }
     }.distinctBy { it.ownedRange }
 
-    private fun malformedAttemptEnd(raw: String, start: Int, nextStart: Int?): Int {
-        val hardStop = raw.indexOfAny(MALFORMED_STOP_CHARACTERS, startIndex = start)
+    private fun malformedAttemptEnd(
+        raw: String,
+        start: Int,
+        nextStart: Int?,
+        searchStart: Int = start
+    ): Int {
+        val hardStop = raw.indexOfAny(MALFORMED_STOP_CHARACTERS, startIndex = searchStart)
             .takeIf { it >= 0 }
         return listOfNotNull(nextStart, hardStop, raw.length)
             .filter { it > start }
             .minOrNull()
             ?: raw.length
+    }
+
+    private fun Int.trimOwnershipEnd(raw: String, start: Int): Int {
+        var end = this
+        while (end > start && raw[end - 1].isWhitespace()) end--
+        return end
     }
 
     private fun SourceMatch.intersects(other: SourceMatch): Boolean =
@@ -327,13 +353,17 @@ class RecurrenceParser {
         const val MAX_INTERVAL = 999
         const val START_BOUNDARY = "(?<![\\p{L}\\p{M}\\p{N}_])"
         const val END_BOUNDARY = "(?![\\p{L}\\p{M}\\p{N}_])"
-        const val ITALIAN_ACCENTED_I = "(?:i\\p{M}*|ì)"
+        const val WORD_TOKEN = "[\\p{L}\\p{M}]+"
         const val ENGLISH_WEEKDAY =
             "(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
-        const val ITALIAN_WEEKDAY =
-            "(?:luned$ITALIAN_ACCENTED_I|marted$ITALIAN_ACCENTED_I|" +
-                "mercoled$ITALIAN_ACCENTED_I|gioved$ITALIAN_ACCENTED_I|" +
-                "venerd$ITALIAN_ACCENTED_I|sabato|domenica)"
+        const val ITALIAN_WEEKDAY_CANDIDATE =
+            "(?:luned\\p{L}\\p{M}*|marted\\p{L}\\p{M}*|mercoled\\p{L}\\p{M}*|" +
+                "gioved\\p{L}\\p{M}*|venerd\\p{L}\\p{M}*|sabato|domenica)"
+        const val ENGLISH_ORDINAL_ATTEMPT =
+            "(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|" +
+                "\\d+(?:st|nd|rd|th))"
+        const val ITALIAN_ORDINAL_ATTEMPT =
+            "(?:primo|secondo|terzo|quarto|quinto|sesto|settimo|ottavo|nono|decimo|ultimo)"
         const val ENGLISH_BASIS_SUFFIX =
             "(?:\\s+(?:(?:from|based\\s+on)\\s+(?:the\\s+)?" +
                 "(?:scheduled|completion)\\s+date))?"
@@ -343,7 +373,7 @@ class RecurrenceParser {
         val DAY_UNITS = setOf("day", "days", "giorno", "giorni")
         val WEEK_UNITS = setOf("week", "weeks", "settimana", "settimane")
         val MONTH_UNITS = setOf("month", "months", "mese", "mesi")
-        val MALFORMED_STOP_CHARACTERS = charArrayOf('.', ';', '?', '\n', '\r')
+        val MALFORMED_STOP_CHARACTERS = charArrayOf(',', '.', ';', ':', '?', '!', '#', '\n', '\r')
         val ENGLISH_SCHEDULED_BASIS = Regex("scheduled\\s+date", RegexOption.IGNORE_CASE)
         val ENGLISH_COMPLETION_BASIS = Regex("completion\\s+date", RegexOption.IGNORE_CASE)
         val ITALIAN_SCHEDULED_BASIS = Regex("data\\s+programmata", RegexOption.IGNORE_CASE)
@@ -383,19 +413,21 @@ class RecurrenceParser {
                     ENGLISH_BASIS_SUFFIX
             ),
             ordinalPattern = grammarRegex(
-                "(?<ordinal>first|second|third|fourth|fifth|last)\\s+" +
-                    "(?<weekday>$ENGLISH_WEEKDAY)\\s+of\\s+(?:every|the)\\s+month" +
+                "(?<ordinal>(?:$WORD_TOKEN|\\d+(?:st|nd|rd|th)))\\s+" +
+                    "(?<weekday>$WORD_TOKEN)\\s+of\\s+(?:every|the)\\s+month" +
                     ENGLISH_BASIS_SUFFIX
             ),
             weekdayTokenPattern = Regex(ENGLISH_WEEKDAY, RegexOption.IGNORE_CASE),
             attemptStartPattern = Regex(
                 START_BOUNDARY +
-                    "(?:every|(?:first|second|third|fourth|fifth|last)\\s+$ENGLISH_WEEKDAY)" +
+                    "(?:every|$ENGLISH_ORDINAL_ATTEMPT\\s+$WORD_TOKEN)" +
                     END_BOUNDARY,
                 RegexOption.IGNORE_CASE
             ),
             continuationPattern = Regex(
-                "^\\s+(?:and\\b|,|(?:from|based\\s+on)\\b|$ENGLISH_WEEKDAY\\b)",
+                "^\\s*(?:(?:and|or)\\b|(?:from|based\\s+on)\\b|" +
+                    "$ENGLISH_WEEKDAY\\b|" +
+                    ",\\s*(?=(?:(?:and|or|from|based\\s+on)\\b)))",
                 RegexOption.IGNORE_CASE
             )
         )
@@ -409,24 +441,25 @@ class RecurrenceParser {
                 "ogni\\s+(?<legacyUnit>giorno|settimana|mese)$ITALIAN_BASIS_SUFFIX"
             ),
             weekdayListPattern = grammarRegex(
-                "ogni\\s+(?<days>$ITALIAN_WEEKDAY(?:" +
-                    "(?:\\s*,\\s*(?:e\\s+)?|\\s+e\\s+)$ITALIAN_WEEKDAY)*)" +
+                "ogni\\s+(?<days>$ITALIAN_WEEKDAY_CANDIDATE(?:" +
+                    "(?:\\s*,\\s*(?:e\\s+)?|\\s+e\\s+)$ITALIAN_WEEKDAY_CANDIDATE)*)" +
                     ITALIAN_BASIS_SUFFIX
             ),
             ordinalPattern = grammarRegex(
-                "(?<ordinal>primo|secondo|terzo|quarto|quinto|ultimo)\\s+" +
-                    "(?<weekday>$ITALIAN_WEEKDAY)\\s+(?:del\\s+mese|di\\s+ogni\\s+mese)" +
+                "(?<ordinal>$WORD_TOKEN)\\s+" +
+                    "(?<weekday>$WORD_TOKEN)\\s+(?:del\\s+mese|di\\s+ogni\\s+mese)" +
                     ITALIAN_BASIS_SUFFIX
             ),
-            weekdayTokenPattern = Regex(ITALIAN_WEEKDAY, RegexOption.IGNORE_CASE),
+            weekdayTokenPattern = Regex(ITALIAN_WEEKDAY_CANDIDATE, RegexOption.IGNORE_CASE),
             attemptStartPattern = Regex(
                 START_BOUNDARY +
-                    "(?:ogni|(?:primo|secondo|terzo|quarto|quinto|ultimo)\\s+" +
-                    ITALIAN_WEEKDAY + ")" + END_BOUNDARY,
+                    "(?:ogni|$ITALIAN_ORDINAL_ATTEMPT\\s+$WORD_TOKEN)" + END_BOUNDARY,
                 RegexOption.IGNORE_CASE
             ),
             continuationPattern = Regex(
-                "^\\s+(?:e\\b|,|(?:dalla|in\\s+base\\s+alla)\\b|$ITALIAN_WEEKDAY\\b)",
+                "^\\s*(?:(?:e|o)\\b|(?:dalla|in\\s+base\\s+alla)\\b|" +
+                    "$ITALIAN_WEEKDAY_CANDIDATE\\b|" +
+                    ",\\s*(?=(?:(?:e|o|dalla|in\\s+base\\s+alla)\\b)))",
                 RegexOption.IGNORE_CASE
             )
         )
