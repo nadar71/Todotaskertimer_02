@@ -157,6 +157,18 @@ private fun EditorForm(
         ),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        if (state.taskId == null) {
+            item {
+                QuickEntrySection(
+                    input = state.quickEntryInput,
+                    summary = state.quickEntrySummary,
+                    issues = state.quickEntryIssues,
+                    onEvent = onEvent,
+                    categoryReadiness = state.categoryReadiness,
+                    enabled = !state.isSaving
+                )
+            }
+        }
         item {
             OutlinedTextField(
                 value = state.title,
@@ -199,6 +211,7 @@ private fun EditorForm(
             DateTimeControl(
                 label = stringResource(R.string.task_editor_due_label),
                 value = state.dueAt,
+                sectionTag = "task-due-section",
                 clearTag = "task-due-clear",
                 onValueChange = { onEvent(TaskEditorEvent.UpdateDueAt(it)) }
             )
@@ -207,6 +220,7 @@ private fun EditorForm(
             DateTimeControl(
                 label = stringResource(R.string.task_editor_reminder_label),
                 value = state.reminderAt,
+                sectionTag = "task-reminder-section",
                 clearTag = "task-reminder-clear",
                 error = reminderError(state.errors.reminder),
                 onValueChange = { onEvent(TaskEditorEvent.UpdateReminderAt(it)) }
@@ -387,6 +401,7 @@ private fun RecurrenceControl(
 private fun DateTimeControl(
     label: String,
     value: Long?,
+    sectionTag: String,
     clearTag: String,
     onValueChange: (Long?) -> Unit,
     error: String? = null
@@ -394,7 +409,7 @@ private fun DateTimeControl(
     var showDatePicker by remember { mutableStateOf(false) }
     var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
     val context = LocalContext.current
-    Column {
+    Column(modifier = Modifier.testTag(sectionTag)) {
         EditorSectionLabel(label)
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(

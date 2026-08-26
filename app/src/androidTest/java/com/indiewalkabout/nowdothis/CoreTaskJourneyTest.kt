@@ -4,12 +4,13 @@ import android.app.LocaleManager
 import android.os.Build
 import android.os.LocaleList
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.Espresso.closeSoftKeyboard
@@ -80,16 +81,17 @@ class CoreTaskJourneyTest {
         composeRule.onNodeWithTag("task-title").performTextReplacement(title)
         composeRule.onNodeWithTag("task-description")
             .performTextReplacement("Rapporto mensile")
+        scrollEditorTo("task-category-field")
         composeRule.onNodeWithTag("task-category-field").performClick()
         composeRule.onNodeWithText("Clienti").performClick()
         closeSoftKeyboard()
-        composeRule.onNodeWithTag("task-recurrence-field").performScrollTo()
+        scrollEditorTo("task-recurrence-field")
         composeRule.onNodeWithTag("task-recurrence-field").performClick()
         composeRule.onNodeWithTag(
             "task-recurrence-option-monthly",
             useUnmergedTree = true
         ).performClick()
-        composeRule.onNodeWithTag("subtask-add").performScrollTo()
+        scrollEditorTo("subtask-add")
         composeRule.onNodeWithTag("subtask-add").performClick()
         composeRule.onNodeWithTag("subtask-title--1")
             .performTextReplacement("Controlla dati")
@@ -126,6 +128,11 @@ class CoreTaskJourneyTest {
         composeRule.onNode(
             hasContentDescription(text(R.string.task_more_actions))
         ).performClick()
+    }
+
+    private fun scrollEditorTo(tag: String) {
+        composeRule.onNodeWithTag("task-editor-form")
+            .performScrollToNode(hasTestTag(tag))
     }
 
     private fun waitForText(value: String) {

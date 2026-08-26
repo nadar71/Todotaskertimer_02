@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             routeNavigationIntent(intent, deferConsumption = true)
         } else {
-            clearNavigationIntent(intent)
+            clearConsumedNavigationIntent(intent)
         }
     }
 
@@ -47,16 +47,16 @@ class MainActivity : ComponentActivity() {
             taskEditorRequests.trySend(request)
             if (deferConsumption) {
                 // Route through the buffered channel now, then clear after initial lifecycle dispatch.
-                window.decorView.post { clearNavigationIntent(intent) }
+                window.decorView.post { clearConsumedNavigationIntent(intent) }
             } else {
-                clearNavigationIntent(intent)
+                clearConsumedNavigationIntent(intent)
             }
         }
     }
 }
 
 fun consumeNavigationIntent(intent: Intent?): TaskEditorRequest? {
-    return navigationRequest(intent)?.also { clearNavigationIntent(intent) }
+    return navigationRequest(intent)?.also { clearConsumedNavigationIntent(intent) }
 }
 
 private fun navigationRequest(intent: Intent?): TaskEditorRequest? =
@@ -67,7 +67,8 @@ private fun navigationRequest(intent: Intent?): TaskEditorRequest? =
             taskId = intent?.getIntExtra(ReminderReceiver.EXTRA_TASK_ID, 0) ?: 0
         )?.let(TaskEditorRequest::Open)
 
-private fun clearNavigationIntent(intent: Intent?) {
+internal fun clearConsumedNavigationIntent(intent: Intent?) {
+    if (navigationRequest(intent) == null) return
     intent?.action = null
     intent?.data = null
     intent?.removeExtra(QuickCaptureWidgetIntents.EXTRA_TASK_ID)

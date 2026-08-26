@@ -1,6 +1,6 @@
 # Now Do This
 
-Now Do This is a local-first Android task manager built with Kotlin and Jetpack Compose. It supports task and subtask completion, categories, priorities, due dates, one reminder, recurrence, Calendar planning, completion History, home-screen Quick Capture, user-owned JSON backup/restore, and Android-native per-app language selection. Italian is the primary language and English is included.
+Now Do This is a local-first Android task manager built with Kotlin and Jetpack Compose. It supports explicit offline Italian/English natural-language task entry, task and subtask completion, categories, priorities, due dates, one reminder, recurrence, Calendar planning, completion History, home-screen Quick Capture, user-owned JSON backup/restore, and Android-native per-app language selection. Italian is the primary language and English is included.
 
 ## Product
 
@@ -16,18 +16,19 @@ Now Do This is a local-first Android task manager built with Kotlin and Jetpack 
 | --- | --- |
 | ![Quick Capture widget in English light theme at medium size](docs/images/quick-capture-en-light-medium.png) | ![Quick Capture widget in Italian dark theme at expanded size](docs/images/quick-capture-it-dark-expanded.png) |
 
-Core workflows include grouped pending tasks, completion and recurring occurrence generation, user-managed categories, task search and sorting, swipe-delete undo, a monthly Calendar, searchable read-only completion History, home-screen add/open/complete actions, and Storage Access Framework backup with confirmed Replace All restore.
+Core workflows include parse-preview-correct-save Quick entry, grouped pending tasks, completion and recurring occurrence generation, user-managed categories, task search and sorting, swipe-delete undo, a monthly Calendar, searchable read-only completion History, home-screen add/open/complete actions, and Storage Access Framework backup with confirmed Replace All restore.
 
 The [backup format v1 reference](docs/data-portability/backup-format-v1.md) documents the complete planning-data contract, compatibility policy, privacy scope, and restore semantics.
 
 ## Architectural Highlights
 
-- Single `:app` production module with feature-first packages for `task`, `category`, `calendar`, `history`, `quickcapture`, and `portability`.
+- Single `:app` production module with feature-first packages for `task`, `category`, `calendar`, `history`, `naturallanguage`, `quickcapture`, and `portability`.
 - Clean MVVM boundaries: Compose UI, ViewModel, reusable use cases, domain repository contracts, and offline implementations.
 - Unidirectional data flow with immutable UI state, UI events, `StateFlow`, and one-off effect flows.
 - Local-first persistence with Room and DataStore plus user-directed JSON documents; no account, backend, analytics SDK, or network synchronization.
 - Hilt dependency injection and coroutines/Flow across asynchronous boundaries.
 - Navigation 3 with serializable navigation keys and lifecycle-aware ViewModel stores.
+- Pure deterministic natural-language parsing with injected language/time/category input; the existing editor and SaveTask flow remain authoritative.
 
 The [architecture index](docs/architecture/README.md) links system context, data flow, platform boundaries, ADRs, and objective triggers for future modularization.
 
@@ -57,6 +58,7 @@ Pull requests and pushes to `develop` run compilation, JVM tests, lint, and debu
 - [Macrobenchmark and Baseline Profile procedure](docs/performance/README.md)
 - [Emulator performance results](docs/performance/results-2026-08.md)
 - [Release checklist](docs/release/checklist.md)
+- [Natural-Language Entry release evidence](docs/release/natural-language-entry-evidence-2026-08-26.md)
 
 Recorded emulator measurements validate repeatable benchmark infrastructure but are not presented as physical-device performance claims.
 
@@ -74,7 +76,7 @@ The release build remains unsigned unless all four `NOWDOTHIS_*` signing variabl
 
 ## Trade-offs And Revisit Triggers
 
-The single production module is deliberate for the current team size and domain. A new Gradle module requires separate ownership, enforceable dependency isolation, reusable infrastructure, isolated build/testing, or measured build-time benefit. Local-first storage avoids account and synchronization complexity. User-owned backup provides manual portability, but there is still no account-based synchronization, automatic cloud backup, merge import, or cross-device conflict resolution.
+The single production module is deliberate for the current team size and domain. A new Gradle module requires separate ownership, enforceable dependency isolation, reusable infrastructure, isolated build/testing, or measured build-time benefit. Local-first storage and deterministic offline parsing avoid account, network, and model-service complexity, while Natural-Language Entry deliberately supports a bounded grammar rather than open-ended interpretation. User-owned backup provides manual portability, but there is still no account-based synchronization, automatic cloud backup, merge import, or cross-device conflict resolution.
 
 The ADRs record rejected alternatives and concrete revisit triggers rather than treating current choices as permanent.
 

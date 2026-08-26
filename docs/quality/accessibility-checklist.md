@@ -16,6 +16,11 @@
 - The same direct render verifies English/Italian strings, light/dark palettes,
   3/5/8 capacities, and non-overlapping sibling text. Separate compact/default-font
   `AppWidgetHostView` coverage verifies two bound instances refresh from Room.
+- Natural-Language Entry exposes localized field and Parse labels, a minimum 48 dp
+  Parse target, and textual recognized/issue feedback with polite live-region
+  semantics in visual reading order. Its 200% test compares unclipped layout bounds,
+  parent containment, and adjacent vertical order; a constrained negative control
+  proves the clipping oracle fails when content is actually clipped.
 
 ## Non-Color Cues
 
@@ -26,6 +31,7 @@
 | Selected category color | Check icon, border, radio-button role, selected state, and color name |
 | Validation error | Inline localized error text and field error semantics |
 | Disabled action | Disabled semantic state |
+| Parse result and issue | Localized text summary/issue with polite live-region semantics |
 | Overdue task | Dedicated localized section heading and due date text |
 | Completed task | Checkbox state or completed icon and localized description |
 
@@ -37,6 +43,9 @@
 | Large font, `font_scale=2.0` | Medium Phone AVD, API 36 | 2026-08-13 | Passed: 39 feature tests |
 | Quick Capture direct production `RemoteViews` render at 200% text | Medium Phone AVD, API 36 | 2026-08-16 | Passed: automated 48 dp action-target and non-overlap assertions; not a bound-host claim |
 | Quick Capture English/light and Italian/dark visual smoke | Pixel Launcher, API 36 emulator | 2026-08-16 | Passed: operator-placed medium/expanded widget; screenshots retained |
+| Natural-Language Entry Italian/English production Compose | Medium Phone AVD, API 36 | 2026-08-26 | Passed: 14 focused tests cover localized rendering, semantics, 48 dp target, and 200% geometry/negative control |
+| Natural-Language Entry connected journey | Medium Phone AVD, API 36 | 2026-08-26 | Passed: 3 real MainActivity/Navigation 3/Room/reminder journeys |
+| Natural-Language Entry TalkBack parse/correct/save order | Pending physical-device review | - | Pending; automated labels/live regions are not a spoken-order claim |
 | Quick Capture TalkBack reading order | Pending physical-device review | - | Pending; content descriptions are automated, spoken order is not claimed |
 | Light and dark contrast review | Pending physical-device review | - | Pending |
 | TalkBack: create task | Pending physical-device review | - | Pending |
@@ -60,4 +69,6 @@ adb -s emulator-5554 shell settings put system font_scale 1.0
 ./gradlew :app:lintDebug
 ```
 
-The emulator checks are repeatable development evidence. Complete the pending contrast and TalkBack rows on a physical release candidate before claiming full manual accessibility validation.
+The emulator checks are repeatable development evidence. Complete the pending contrast,
+TalkBack, switch-access, notification-permission, and exact-alarm rows on a physical
+release candidate before claiming full manual accessibility validation.

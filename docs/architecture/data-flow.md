@@ -93,6 +93,36 @@ leaving persistent screen content in `UiState`.
 - App and core packages own composition, Navigation 3, database construction,
   notifications, alarms, time, and shared design primitives.
 
+## Natural-Language Entry
+
+```mermaid
+flowchart LR
+    Quick["Quick entry text + Parse event"] --> Editor["TaskEditorViewModel"]
+    Editor --> Env["Locale / clock / zone / current categories snapshot"]
+    Env --> Parser["Pure ParseNaturalLanguageTask"]
+    Parser --> Draft["Typed parsed draft + recognized fields + issues"]
+    Draft --> Editor
+    Editor --> State["Atomic TaskEditorUiState + SavedStateHandle"]
+    State --> Controls["Existing editor confirmation and correction controls"]
+    Controls --> Save["Existing SaveTask"]
+    Save --> Room["TaskRepository / Room"]
+    Save --> Alarm["ReminderScheduler / AlarmManager"]
+```
+
+The parser feature is framework-free: it receives explicit language, instant, time
+zone, and category candidates and returns typed values plus consumed ranges and
+nonfatal issues. Android locale and localized default-category names are adapted only
+at the presentation boundary. The ViewModel computes a complete parse result before
+one state update and changes only explicitly recognized fields. Raw input, summary,
+issues, and the existing editor draft are persisted in `SavedStateHandle`, so activity
+or process restoration renders the same preview without time-dependent reparsing.
+
+Parsing is an explicit command and never requests permissions or saves. The existing
+description validation, correction controls, `SaveTask`, Room repository, and reminder
+scheduler remain authoritative. The offline grammar is deliberately bounded to the
+documented Italian/English date, time, priority, current category, recurrence, and
+single-reminder forms; unsupported or ambiguous text remains recoverable and visible.
+
 ## Quick Capture Widget
 
 ```mermaid

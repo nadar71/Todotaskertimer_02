@@ -45,4 +45,14 @@ class MainActivityNavigationIntentTest {
         assertNull(consumeNavigationIntent(intent))
         assertFalse(intent.hasExtra(ReminderReceiver.EXTRA_TASK_ID))
     }
+
+    @Test
+    fun clearConsumedNavigationIntent_preservesUnrelatedLauncherIntent() {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+
+        clearConsumedNavigationIntent(intent)
+
+        assertEquals(Intent.ACTION_MAIN, intent.action)
+        assertEquals(setOf(Intent.CATEGORY_LAUNCHER), intent.categories)
+    }
 }

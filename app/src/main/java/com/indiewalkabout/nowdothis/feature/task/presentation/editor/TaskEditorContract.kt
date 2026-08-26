@@ -24,8 +24,38 @@ data class TaskEditorUiState(
     val recurrenceEndAt: Long? = null,
     val subtasks: List<TaskEditorSubtask> = emptyList(),
     val categories: List<Category> = emptyList(),
+    val categoryReadiness: CategoryReadiness = CategoryReadiness.LOADING,
+    val quickEntryInput: String = "",
+    val quickEntrySummary: List<QuickEntrySummaryField> = emptyList(),
+    val quickEntryIssues: List<QuickEntryIssue> = emptyList(),
     val errors: TaskEditorErrors = TaskEditorErrors()
 )
+
+enum class CategoryReadiness {
+    LOADING,
+    READY,
+    ERROR
+}
+
+@Serializable
+enum class QuickEntrySummaryField {
+    TITLE,
+    DUE_DATE,
+    REMINDER,
+    PRIORITY,
+    CATEGORY,
+    RECURRENCE
+}
+
+@Serializable
+enum class QuickEntryIssue {
+    EMPTY_INPUT,
+    UNKNOWN_CATEGORY,
+    AMBIGUOUS_CATEGORY,
+    DUPLICATE_FIELD,
+    RELATIVE_REMINDER_WITHOUT_DUE_DATE,
+    PARSE_FAILED
+}
 
 @Serializable
 data class TaskEditorSubtask(
@@ -53,6 +83,9 @@ enum class TaskEditorFieldError {
 }
 
 sealed interface TaskEditorEvent {
+    data class UpdateQuickEntry(val value: String) : TaskEditorEvent
+    data object ParseQuickEntry : TaskEditorEvent
+    data object RetryCategoryLoad : TaskEditorEvent
     data class UpdateTitle(val value: String) : TaskEditorEvent
     data class UpdateDescription(val value: String) : TaskEditorEvent
     data class SelectPriority(val value: TaskPriority) : TaskEditorEvent

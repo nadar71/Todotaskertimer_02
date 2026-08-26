@@ -4,10 +4,10 @@ Tests are selected by risk and boundary rather than by a repository-wide coverag
 
 | Test type | Primary risks |
 | --- | --- |
-| Pure JVM | Recurrence calculation, task classification, backup codec/validation, use cases, and ViewModel reducers |
+| Pure JVM | Natural-language grammar and time-zone matrices, recurrence calculation, task classification, backup codec/validation, use cases, and ViewModel reducers |
 | Room instrumentation | DAOs, relations, migrations, atomic Replace All/rollback behavior, and deterministic fixtures |
 | Compose instrumentation | Semantics, layout contracts, and feature interaction |
-| Journey instrumentation | Production activity navigation, cross-feature behavior, and full backup/mutate/restore data flow |
+| Journey instrumentation | Production activity navigation, natural-language parse/correct/save/recreate behavior, cross-feature behavior, and full backup/mutate/restore data flow |
 | Direct Glance rendering instrumentation | Production `RemoteViews`, 3/5/8 capacities, states, locale/theme/large-font rendering, action targets, and non-overlap |
 | Bound AppWidget host instrumentation | Compact/default-font Room refresh through multiple `AppWidgetHostView` instances |
 | Benchmark process instrumentation | Update, recurring completion, add, and open while the optimized target process is absent |
@@ -34,12 +34,35 @@ trip, graph validation, the 10 MiB bound, atomic rollback, repeated restore, inv
 future-version no-mutation behavior, reminder ordering/warnings, UDF busy state, and
 Italian/English Compose semantics. Its normative contract is [documented here](../data-portability/backup-format-v1.md).
 
+Natural-Language Entry keeps grammar tests on the JVM with injected instants, zones,
+and category candidates. ViewModel tests prove atomic selective application,
+category-snapshot readiness/retry, Save-boundary reminder access, saving-draft
+freezing, cancellation propagation, and `SavedStateHandle` restoration. Compose tests
+cover localized semantics, category loading/error/retry states, saving controls, and
+200% text. Connected journeys launch `MainActivity` and use production Navigation 3,
+TaskEditor, parser, Room repositories, `SaveTask`, and AlarmManager scheduling. API 36
+coverage separately proves fresh notification denial/grant state and real
+exact-alarm-settings return followed by inexact fallback.
+
+The journey fixture seeds only deterministic category rows and restores locale, Room
+rows, nullable `sqlite_sequence` rows, and every package/component-owned reminder
+alarm, including orphan request codes; it does not replace parser or persistence
+behavior. Its state snapshot precedes every mutation, preparation runs inside
+restoration `try/finally`, and a forced post-mutation setup failure proves exact row,
+sequence, and alarm-set restoration without extras. Live alarm records are captured
+and re-queried through correlated `dumpsys alarm`/`dumpsys activity intents` evidence;
+restoration requires exact or fallback inexact scheduling success and asserts package,
+receiver, request code, and trigger. Platform notification-dialog interaction, alarm
+delivery, notification posting, exact-alarm grant, and vendor-specific timing remain
+manual/device checks.
+
 ## Local Gates
 
 ```bash
 ./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ANDROID_SERIAL=<serial> ./gradlew :app:connectedDebugAndroidTest
 ./gradlew :app:assembleRelease :app:bundleRelease
+./gradlew :app:assembleRelease -Pandroid.enableR8.fullMode=true
 ```
 
 Performance runs must follow [the measurement contract](../performance/README.md) and keep device, API, build variant, source revision, and iteration count visible.

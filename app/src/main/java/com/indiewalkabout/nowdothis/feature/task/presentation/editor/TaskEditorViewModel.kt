@@ -6,6 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.feature.category.domain.repository.CategoryRepository
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.NaturalLanguageInput
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.NaturalLanguageParseResult
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParseIssue
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.RecognizedField
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
+import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.NaturalLanguageEnvironment
 import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
@@ -24,6 +30,7 @@ import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,7 +50,9 @@ class TaskEditorViewModel @AssistedInject constructor(
     private val categoryRepository: CategoryRepository,
     private val saveTask: SaveTask,
     private val permissionChecker: ReminderPermissionChecker,
-    private val clock: AppClock
+    private val clock: AppClock,
+    private val parseNaturalLanguageTask: ParseNaturalLanguageTask,
+    private val naturalLanguageEnvironment: NaturalLanguageEnvironment
 ) : ViewModel() {
     private val restoredDraft = savedStateHandle.hasDraft()
     private val _uiState = MutableStateFlow(savedStateHandle.restoreState(key, restoredDraft))
@@ -53,21 +62,34 @@ class TaskEditorViewModel @AssistedInject constructor(
     val effects = effectChannel.receiveAsFlow()
 
     private var loadedTask: Task? = null
-    private var draftVersion: TaskSnapshotVersion? = restoreDraftVersion()
+    private var draftVersion: TaskSnapshotVersion? = restoreDraftVersion()?.takeIf { version ->
+        version.id == _uiState.value.taskId
+    }
+    private var pendingSave: PendingSave? = null
+    private var categoryObservationJob: Job? = null
 
     init {
         observeCategories()
-        if (key.taskId == null) {
+        val taskId = _uiState.value.taskId
+        if (taskId == null) {
             _uiState.update { it.copy(isLoading = false) }
             persistDraft(_uiState.value)
             refreshReminderAccessState()
         } else {
-            loadExistingTask(key.taskId)
+            loadExistingTask(taskId)
         }
     }
 
     fun onEvent(event: TaskEditorEvent) {
+        if (_uiState.value.isSaving && event.changesDraft()) return
         when (event) {
+            is TaskEditorEvent.UpdateQuickEntry -> {
+                if (_uiState.value.taskId == null) {
+                    updateDraft { it.copy(quickEntryInput = event.value) }
+                }
+            }
+            TaskEditorEvent.ParseQuickEntry -> parseQuickEntry()
+            TaskEditorEvent.RetryCategoryLoad -> observeCategories()
             is TaskEditorEvent.UpdateTitle -> updateDraft {
                 it.copy(title = event.value, errors = it.errors.copy(title = null))
             }
@@ -89,11 +111,21 @@ class TaskEditorViewModel @AssistedInject constructor(
                 _uiState.update {
                     it.copy(notificationPermissionDenied = !event.granted)
                 }
+                if (pendingSave != null) {
+                    if (event.granted) {
+                        continueSaveAfterNotificationAccess()
+                    } else {
+                        pendingSave = null
+                        _uiState.update { it.copy(isSaving = false) }
+                    }
+                }
             }
             TaskEditorEvent.RefreshExactAlarmAccess -> {
+                val exactAlarmRequired = permissionChecker.needsExactAlarmAccess()
                 _uiState.update {
-                    it.copy(exactTimingUnavailable = permissionChecker.needsExactAlarmAccess())
+                    it.copy(exactTimingUnavailable = exactAlarmRequired)
                 }
+                if (pendingSave != null) performPendingSave()
             }
             is TaskEditorEvent.SelectRecurrence -> updateDraft {
                 it.copy(
@@ -129,15 +161,58 @@ class TaskEditorViewModel @AssistedInject constructor(
         }
     }
 
+    private fun parseQuickEntry() {
+        val state = _uiState.value
+        if (state.taskId != null || state.categoryReadiness != CategoryReadiness.READY) return
+        val result = try {
+            val environment = naturalLanguageEnvironment.snapshot(state.categories)
+            parseNaturalLanguageTask(
+                NaturalLanguageInput(
+                    rawText = state.quickEntryInput,
+                    language = environment.language,
+                    nowEpochMillis = environment.nowEpochMillis,
+                    zoneId = environment.zoneId,
+                    categories = environment.categories
+                )
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            updateDraft {
+                it.copy(
+                    quickEntrySummary = emptyList(),
+                    quickEntryIssues = listOf(QuickEntryIssue.PARSE_FAILED)
+                )
+            }
+            return
+        }
+        val summary = QuickEntrySummaryField.entries.filter { field ->
+            field.recognizedField in result.recognized
+        }
+        val issues = result.issues.map(ParseIssue::toQuickEntryIssue)
+
+        updateDraft { current ->
+            current.applyQuickEntryResult(result, summary, issues)
+        }
+    }
+
     private fun observeCategories() {
-        viewModelScope.launch {
+        categoryObservationJob?.cancel()
+        _uiState.update { it.copy(categoryReadiness = CategoryReadiness.LOADING) }
+        categoryObservationJob = viewModelScope.launch {
             categoryRepository.observeAll()
                 .catch { error ->
                     if (error is CancellationException) throw error
+                    _uiState.update { it.copy(categoryReadiness = CategoryReadiness.ERROR) }
                     effectChannel.send(TaskEditorEffect.ShowMessage(R.string.task_editor_load_failed))
                 }
                 .collect { categories ->
-                    _uiState.update { it.copy(categories = categories) }
+                    _uiState.update {
+                        it.copy(
+                            categories = categories,
+                            categoryReadiness = CategoryReadiness.READY
+                        )
+                    }
                 }
         }
     }
@@ -155,7 +230,10 @@ class TaskEditorViewModel @AssistedInject constructor(
                 loadedTask = task
                 if (!restoredDraft) {
                     draftVersion = task.snapshotVersion()
-                    _uiState.value = task.toEditorState(_uiState.value.categories)
+                    val current = _uiState.value
+                    _uiState.value = task.toEditorState(current.categories).copy(
+                        categoryReadiness = current.categoryReadiness
+                    )
                     persistDraft(_uiState.value)
                 } else {
                     _uiState.update { it.copy(isLoading = false, taskId = task.id) }
@@ -171,7 +249,6 @@ class TaskEditorViewModel @AssistedInject constructor(
     }
 
     private fun updateReminder(value: Long?) {
-        val wasDisabled = _uiState.value.reminderAt == null
         updateDraft {
             it.copy(
                 reminderAt = value,
@@ -184,18 +261,6 @@ class TaskEditorViewModel @AssistedInject constructor(
                 exactTimingUnavailable = it.exactTimingUnavailable && value != null,
                 errors = it.errors.copy(reminder = null)
             )
-        }
-        if (wasDisabled && value != null) {
-            viewModelScope.launch {
-                if (permissionChecker.needsNotificationPermission()) {
-                    effectChannel.send(TaskEditorEffect.RequestNotificationPermission)
-                }
-                val exactAlarmRequired = permissionChecker.needsExactAlarmAccess()
-                _uiState.update { it.copy(exactTimingUnavailable = exactAlarmRequired) }
-                if (exactAlarmRequired) {
-                    effectChannel.send(TaskEditorEffect.RequestExactAlarmAccess)
-                }
-            }
         }
     }
 
@@ -245,10 +310,48 @@ class TaskEditorViewModel @AssistedInject constructor(
     private fun save() {
         if (_uiState.value.isSaving) return
         _uiState.update { it.copy(isSaving = true, errors = TaskEditorErrors()) }
+        val save = PendingSave(
+            task = _uiState.value.toTask(loadedTask),
+            expectedVersion = draftVersion
+        )
+        if (save.task.reminderAt == null) {
+            performSave(save)
+            return
+        }
+
+        pendingSave = save
         viewModelScope.launch {
-            val draft = _uiState.value.toTask(loadedTask)
+            if (permissionChecker.needsNotificationPermission()) {
+                effectChannel.send(TaskEditorEffect.RequestNotificationPermission)
+            } else {
+                _uiState.update { it.copy(notificationPermissionDenied = false) }
+                continueSaveAfterNotificationAccess()
+            }
+        }
+    }
+
+    private fun continueSaveAfterNotificationAccess() {
+        viewModelScope.launch {
+            val exactAlarmRequired = permissionChecker.needsExactAlarmAccess()
+            _uiState.update { it.copy(exactTimingUnavailable = exactAlarmRequired) }
+            if (exactAlarmRequired) {
+                effectChannel.send(TaskEditorEffect.RequestExactAlarmAccess)
+            } else {
+                performPendingSave()
+            }
+        }
+    }
+
+    private fun performPendingSave() {
+        val save = pendingSave ?: return
+        pendingSave = null
+        performSave(save)
+    }
+
+    private fun performSave(save: PendingSave) {
+        viewModelScope.launch {
             try {
-                when (val result = saveTask(draft, draftVersion)) {
+                when (val result = saveTask(save.task, save.expectedVersion)) {
                     is SaveTaskResult.Invalid -> {
                         _uiState.update {
                             it.copy(isSaving = false, errors = result.errors.toEditorErrors())
@@ -260,7 +363,7 @@ class TaskEditorViewModel @AssistedInject constructor(
                             TaskEditorEffect.ShowMessage(R.string.task_editor_save_failed)
                         )
                     }
-                    is SaveTaskResult.Saved -> handleSaved(draft, result)
+                    is SaveTaskResult.Saved -> handleSaved(save.task, result)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -270,6 +373,11 @@ class TaskEditorViewModel @AssistedInject constructor(
             }
         }
     }
+
+    private data class PendingSave(
+        val task: Task,
+        val expectedVersion: TaskSnapshotVersion?
+    )
 
     private suspend fun handleSaved(task: Task, result: SaveTaskResult.Saved) {
         loadedTask = task.copy(
@@ -306,6 +414,8 @@ class TaskEditorViewModel @AssistedInject constructor(
 
     private fun persistDraft(state: TaskEditorUiState) {
         savedStateHandle[KEY_INITIALIZED] = true
+        savedStateHandle[KEY_TASK_ID_SET] = true
+        savedStateHandle.set<Int?>(KEY_TASK_ID, state.taskId)
         savedStateHandle[KEY_TITLE] = state.title
         savedStateHandle[KEY_DESCRIPTION] = state.description
         savedStateHandle[KEY_PRIORITY] = state.priority.name
@@ -319,6 +429,9 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle[KEY_RECURRENCE_END_SET] = true
         savedStateHandle.set<Long?>(KEY_RECURRENCE_END_AT, state.recurrenceEndAt)
         savedStateHandle[KEY_SUBTASKS] = Json.encodeToString(state.subtasks)
+        savedStateHandle[KEY_QUICK_ENTRY_INPUT] = state.quickEntryInput
+        savedStateHandle[KEY_QUICK_ENTRY_SUMMARY] = Json.encodeToString(state.quickEntrySummary)
+        savedStateHandle[KEY_QUICK_ENTRY_ISSUES] = Json.encodeToString(state.quickEntryIssues)
         persistDraftVersion()
     }
 
@@ -353,6 +466,8 @@ class TaskEditorViewModel @AssistedInject constructor(
 
     private companion object {
         const val KEY_INITIALIZED = "draft_initialized"
+        const val KEY_TASK_ID_SET = "task_id_set"
+        const val KEY_TASK_ID = "task_id"
         const val KEY_TITLE = "title"
         const val KEY_DESCRIPTION = "description"
         const val KEY_PRIORITY = "priority"
@@ -366,6 +481,9 @@ class TaskEditorViewModel @AssistedInject constructor(
         const val KEY_RECURRENCE_END_SET = "recurrence_end_at_set"
         const val KEY_RECURRENCE_END_AT = "recurrence_end_at"
         const val KEY_SUBTASKS = "subtasks"
+        const val KEY_QUICK_ENTRY_INPUT = "quick_entry_input"
+        const val KEY_QUICK_ENTRY_SUMMARY = "quick_entry_summary"
+        const val KEY_QUICK_ENTRY_ISSUES = "quick_entry_issues"
         const val KEY_VERSION_SET = "draft_version_set"
         const val KEY_VERSION_ID = "draft_version_id"
         const val KEY_VERSION_SERIES_ID = "draft_version_series_id"
@@ -387,7 +505,7 @@ private fun SavedStateHandle.restoreState(
         return TaskEditorUiState(taskId = key.taskId, dueAt = key.initialDueAt)
     }
     return TaskEditorUiState(
-        taskId = key.taskId,
+        taskId = if (get<Boolean>("task_id_set") == true) get("task_id") else key.taskId,
         title = get<String>("title").orEmpty(),
         description = get<String>("description").orEmpty(),
         priority = enumValueOrDefault(get("priority"), TaskPriority.LOW),
@@ -403,12 +521,85 @@ private fun SavedStateHandle.restoreState(
         },
         subtasks = get<String>("subtasks")?.let { encoded ->
             runCatching { Json.decodeFromString<List<TaskEditorSubtask>>(encoded) }.getOrDefault(emptyList())
+        }.orEmpty(),
+        quickEntryInput = get<String>("quick_entry_input").orEmpty(),
+        quickEntrySummary = get<String>("quick_entry_summary")?.let { encoded ->
+            runCatching {
+                Json.decodeFromString<List<QuickEntrySummaryField>>(encoded)
+            }.getOrDefault(emptyList())
+        }.orEmpty(),
+        quickEntryIssues = get<String>("quick_entry_issues")?.let { encoded ->
+            runCatching {
+                Json.decodeFromString<List<QuickEntryIssue>>(encoded)
+            }.getOrDefault(emptyList())
         }.orEmpty()
     )
 }
 
 private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, default: T): T =
     value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
+
+private val QuickEntrySummaryField.recognizedField: RecognizedField
+    get() = when (this) {
+        QuickEntrySummaryField.TITLE -> RecognizedField.TITLE
+        QuickEntrySummaryField.DUE_DATE -> RecognizedField.DUE_DATE
+        QuickEntrySummaryField.REMINDER -> RecognizedField.REMINDER
+        QuickEntrySummaryField.PRIORITY -> RecognizedField.PRIORITY
+        QuickEntrySummaryField.CATEGORY -> RecognizedField.CATEGORY
+        QuickEntrySummaryField.RECURRENCE -> RecognizedField.RECURRENCE
+    }
+
+private fun ParseIssue.toQuickEntryIssue(): QuickEntryIssue = when (this) {
+    ParseIssue.EmptyInput -> QuickEntryIssue.EMPTY_INPUT
+    is ParseIssue.UnknownCategory -> QuickEntryIssue.UNKNOWN_CATEGORY
+    is ParseIssue.AmbiguousCategory -> QuickEntryIssue.AMBIGUOUS_CATEGORY
+    is ParseIssue.DuplicateField -> QuickEntryIssue.DUPLICATE_FIELD
+    ParseIssue.RelativeReminderWithoutDueDate -> {
+        QuickEntryIssue.RELATIVE_REMINDER_WITHOUT_DUE_DATE
+    }
+}
+
+private fun TaskEditorUiState.applyQuickEntryResult(
+    result: NaturalLanguageParseResult,
+    summary: List<QuickEntrySummaryField>,
+    issues: List<QuickEntryIssue>
+): TaskEditorUiState {
+    val recognized = result.recognized
+    val draft = result.draft
+    val parsedTitle = draft.title?.takeIf(String::isNotBlank)
+    val reminderRecognized = RecognizedField.REMINDER in recognized
+    return copy(
+        title = if (RecognizedField.TITLE in recognized && parsedTitle != null) {
+            parsedTitle
+        } else {
+            title
+        },
+        dueAt = if (RecognizedField.DUE_DATE in recognized) draft.dueAt else dueAt,
+        reminderAt = if (reminderRecognized) draft.reminderAt else reminderAt,
+        reminderStatus = if (reminderRecognized) {
+            if (draft.reminderAt == null) ReminderStatus.NONE else ReminderStatus.REQUESTED
+        } else {
+            reminderStatus
+        },
+        priority = if (RecognizedField.PRIORITY in recognized) {
+            draft.priority ?: priority
+        } else {
+            priority
+        },
+        categoryId = if (RecognizedField.CATEGORY in recognized) {
+            draft.categoryId
+        } else {
+            categoryId
+        },
+        recurrence = if (RecognizedField.RECURRENCE in recognized) {
+            draft.recurrence ?: recurrence
+        } else {
+            recurrence
+        },
+        quickEntrySummary = summary,
+        quickEntryIssues = issues
+    )
+}
 
 private fun Task.toEditorState(categories: List<com.indiewalkabout.nowdothis.feature.category.domain.model.Category>) =
     TaskEditorUiState(
@@ -486,4 +677,27 @@ private fun List<TaskValidationError>.toEditorErrors(): TaskEditorErrors {
         }
     }
     return mapped
+}
+
+private fun TaskEditorEvent.changesDraft(): Boolean = when (this) {
+    is TaskEditorEvent.UpdateQuickEntry,
+    TaskEditorEvent.ParseQuickEntry,
+    is TaskEditorEvent.UpdateTitle,
+    is TaskEditorEvent.UpdateDescription,
+    is TaskEditorEvent.SelectPriority,
+    is TaskEditorEvent.SelectCategory,
+    is TaskEditorEvent.UpdateDueAt,
+    is TaskEditorEvent.UpdateReminderAt,
+    is TaskEditorEvent.SelectRecurrence,
+    is TaskEditorEvent.UpdateRecurrenceEndAt,
+    TaskEditorEvent.AddSubtask,
+    is TaskEditorEvent.RenameSubtask,
+    is TaskEditorEvent.ToggleSubtask,
+    is TaskEditorEvent.MoveSubtask,
+    is TaskEditorEvent.DeleteSubtask -> true
+
+    is TaskEditorEvent.NotificationPermissionResult,
+    TaskEditorEvent.RefreshExactAlarmAccess,
+    TaskEditorEvent.RetryCategoryLoad,
+    TaskEditorEvent.Save -> false
 }
