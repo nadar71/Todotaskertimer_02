@@ -20,9 +20,13 @@ class ParseNaturalLanguageTask(
     operator fun invoke(input: NaturalLanguageInput): NaturalLanguageParseResult {
         if (TextNormalizer.normalizeWhitespace(input.rawText).isBlank()) return emptyResult()
 
-        val reminderClaims = reminderParser.claimedRanges(input)
-        val temporal = temporalParser.parse(input.withMaskedRanges(reminderClaims))
-        val reminder = reminderParser.parse(input, temporal.dueAt)
+        val markerRanges = attributeParser.ownedMarkerRanges(input)
+        val markerShieldedInput = input.withMaskedRanges(markerRanges)
+        val reminderClaims = reminderParser.shieldingRanges(markerShieldedInput)
+        val temporal = temporalParser.parse(
+            input.withMaskedRanges(markerRanges + reminderClaims)
+        )
+        val reminder = reminderParser.parse(markerShieldedInput, temporal.dueAt)
         val attributes = attributeParser.parse(input)
         val consumed = buildList {
             addAll(temporal.matches)

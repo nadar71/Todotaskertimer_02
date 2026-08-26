@@ -35,22 +35,24 @@ data class ReminderParse private constructor(
 class ReminderParser {
 
     fun parse(input: NaturalLanguageInput, dueAt: Long?): ReminderParse {
-        val candidates = findCandidates(input)
+        val syntaxes = findSyntaxes(input)
         val successful = mutableListOf<ResolvedReminder>()
         var missingDueDate = false
 
-        candidates.forEach { candidate ->
-            when (candidate) {
-                is ReminderCandidate.Absolute -> successful += ResolvedReminder(
-                    reminderAt = candidate.reminderAt,
-                    match = candidate.match
-                )
+        syntaxes.forEach { syntax ->
+            when (syntax) {
+                is ReminderSyntax.Absolute -> resolveAbsoluteReminder(input, syntax.body)?.let { reminderAt ->
+                    successful += ResolvedReminder(reminderAt, syntax.match)
+                }
 
-                is ReminderCandidate.Relative -> if (dueAt == null) {
-                    missingDueDate = true
-                } else {
-                    subtractDuration(dueAt, candidate.durationMillis)?.let { reminderAt ->
-                        successful += ResolvedReminder(reminderAt, candidate.match)
+                is ReminderSyntax.Relative -> {
+                    val duration = parseDurationMillis(syntax.amountText, syntax.unitText)
+                    if (duration != null && dueAt == null) {
+                        missingDueDate = true
+                    } else if (duration != null && dueAt != null) {
+                        subtractDuration(dueAt, duration)?.let { reminderAt ->
+                            successful += ResolvedReminder(reminderAt, syntax.match)
+                        }
                     }
                 }
             }
@@ -68,25 +70,33 @@ class ReminderParser {
         )
     }
 
-    internal fun claimedRanges(input: NaturalLanguageInput): List<SourceMatch> =
-        findCandidates(input).map(ReminderCandidate::match)
+    internal fun shieldingRanges(input: NaturalLanguageInput): List<SourceMatch> =
+        findSyntaxes(input).map(ReminderSyntax::match)
 
-    private fun findCandidates(input: NaturalLanguageInput): List<ReminderCandidate> = buildList {
+    private fun findSyntaxes(input: NaturalLanguageInput): List<ReminderSyntax> = buildList {
         relativePattern(input.language).findAll(input.rawText).forEach { match ->
-            parseDurationMillis(match.groupValues[1], match.groupValues[2])?.let { duration ->
-                add(ReminderCandidate.Relative(duration, match.toSourceMatch()))
-            }
+            add(
+                ReminderSyntax.Relative(
+                    amountText = match.groupValues[1],
+                    unitText = match.groupValues[2],
+                    match = match.toSourceMatch()
+                )
+            )
         }
         absolutePattern(input.language).findAll(input.rawText).forEach { match ->
-            parseAbsoluteReminder(input, match)?.let(::add)
+            add(
+                ReminderSyntax.Absolute(
+                    body = match.groupValues[1],
+                    match = match.toSourceMatch()
+                )
+            )
         }
-    }.sortedBy { candidate -> candidate.match.start }
+    }.sortedBy { syntax -> syntax.match.start }
 
-    private fun parseAbsoluteReminder(
+    private fun resolveAbsoluteReminder(
         input: NaturalLanguageInput,
-        match: MatchResult
-    ): ReminderCandidate.Absolute? {
-        val body = match.groupValues[1]
+        body: String
+    ): Long? {
         val temporal = TemporalParser().parse(
             NaturalLanguageInput(
                 rawText = body,
@@ -98,7 +108,7 @@ class ReminderParser {
         )
         val reminderAt = temporal.dueAt ?: return null
         if (TextNormalizer.remainingTitle(body, temporal.matches).isNotBlank()) return null
-        return ReminderCandidate.Absolute(reminderAt, match.toSourceMatch())
+        return reminderAt
     }
 
     private fun parseDurationMillis(amountText: String, unitText: String): Long? {
@@ -127,18 +137,19 @@ class ReminderParser {
         field = RecognizedField.REMINDER
     )
 
-    private sealed interface ReminderCandidate {
+    private sealed interface ReminderSyntax {
         val match: SourceMatch
 
         data class Absolute(
-            val reminderAt: Long,
+            val body: String,
             override val match: SourceMatch
-        ) : ReminderCandidate
+        ) : ReminderSyntax
 
         data class Relative(
-            val durationMillis: Long,
+            val amountText: String,
+            val unitText: String,
             override val match: SourceMatch
-        ) : ReminderCandidate
+        ) : ReminderSyntax
     }
 
     private data class ResolvedReminder(
@@ -152,7 +163,7 @@ class ReminderParser {
         const val WORD_BOUNDARY_START = "(?<![\\p{L}\\p{N}_])"
         const val WORD_BOUNDARY_END = "(?![\\p{L}\\p{N}_])"
         const val NUMERIC_DATE =
-            "\\d{1,2}/\\d{1,2}(?:/\\d{4})?(?![\\p{L}\\p{N}_/]|[.:](?=\\d))"
+            "\\d{1,2}/\\d{1,2}(?:/[\\p{L}\\p{N}_/.:]+)?(?:[.:]\\d+)?"
         const val ITALIAN_DATE = "(?:oggi|domani|$NUMERIC_DATE)"
         const val ENGLISH_DATE = "(?:today|tomorrow|$NUMERIC_DATE)"
         const val ITALIAN_TIME = "alle\\s+\\d{1,2}(?::\\d{2})?"

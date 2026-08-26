@@ -5,6 +5,7 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.Natural
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParseIssue
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParserLanguage
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.RecognizedField
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.SourceMatch
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.AttributeParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.ReminderParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TemporalParser
@@ -15,6 +16,7 @@ import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -163,6 +165,66 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun categoryMarkers_ownGrammarBearingContentsForEveryResolutionOutcome() {
+        val contents = listOf(
+            CategoryCollision("#today", "today", RecognizedField.DUE_DATE),
+            CategoryCollision("#\"at 5 pm\"", "at 5 pm", RecognizedField.DUE_DATE),
+            CategoryCollision("#\"!high\"", "!high", RecognizedField.PRIORITY),
+            CategoryCollision("#\"every week\"", "every week", RecognizedField.RECURRENCE),
+            CategoryCollision(
+                "#\"remind tomorrow at 5 pm\"",
+                "remind tomorrow at 5 pm",
+                RecognizedField.REMINDER
+            )
+        )
+
+        contents.forEach { collision ->
+            CategoryResolution.entries.forEach { resolution ->
+                val raw = "Task ${collision.marker}"
+                val categories = when (resolution) {
+                    CategoryResolution.KNOWN -> listOf(CategoryCandidate(7, collision.displayName))
+                    CategoryResolution.UNKNOWN -> emptyList()
+                    CategoryResolution.AMBIGUOUS -> listOf(
+                        CategoryCandidate(7, collision.displayName),
+                        CategoryCandidate(8, collision.displayName.uppercase())
+                    )
+                }
+
+                val result = parse(raw, ParserLanguage.ENGLISH, categories)
+
+                assertFalse("$resolution $raw", collision.leakedField in result.recognized)
+                assertTrue(
+                    "$resolution $raw",
+                    result.consumed.none { it.field == collision.leakedField }
+                )
+                when (resolution) {
+                    CategoryResolution.KNOWN -> {
+                        assertEquals(raw, 7, result.draft.categoryId)
+                        assertEquals(raw, "Task", result.draft.title)
+                        assertTrue(raw, result.issues.isEmpty())
+                    }
+
+                    CategoryResolution.UNKNOWN -> {
+                        assertNull(raw, result.draft.categoryId)
+                        assertEquals(raw, raw, result.draft.title)
+                        assertEquals(raw, listOf(ParseIssue.UnknownCategory(collision.marker)), result.issues)
+                    }
+
+                    CategoryResolution.AMBIGUOUS -> {
+                        assertNull(raw, result.draft.categoryId)
+                        assertEquals(raw, raw, result.draft.title)
+                        assertEquals(
+                            raw,
+                            listOf(ParseIssue.AmbiguousCategory(collision.marker)),
+                            result.issues
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun localizedAbsoluteReminders_doNotBecomeDueDateTokens() {
         val cases = listOf(
             AbsoluteReminderCase(
@@ -223,6 +285,213 @@ class ParseNaturalLanguageTaskTest {
         assertNull(result.draft.reminderAt)
         assertTrue(result.consumed.isEmpty())
         assertTrue(result.issues.isEmpty())
+    }
+
+    @Test
+    fun invalidAbsoluteReminders_shieldValidInnerTemporalTokensWithoutConsumption() {
+        val cases = listOf(
+            InvalidReminderCase(
+                raw = "Task remind tomorrow at 25 pm",
+                expectedTitle = "Task remind tomorrow at 25 pm",
+                expectedDueAt = null,
+                expectedDueTokens = emptyList()
+            ),
+            InvalidReminderCase(
+                raw = "Task today remind tomorrow at 25 pm",
+                expectedTitle = "Task remind tomorrow at 25 pm",
+                expectedDueAt = epoch("2026-08-26T09:00:00+02:00"),
+                expectedDueTokens = listOf("today")
+            ),
+            InvalidReminderCase(
+                raw = "Task remind 13/40/2026 at 5 pm",
+                expectedTitle = "Task remind 13/40/2026 at 5 pm",
+                expectedDueAt = null,
+                expectedDueTokens = emptyList()
+            ),
+            InvalidReminderCase(
+                raw = "Task remind 13/40/2026.0 at 5 pm",
+                expectedTitle = "Task remind 13/40/2026.0 at 5 pm",
+                expectedDueAt = null,
+                expectedDueTokens = emptyList()
+            )
+        )
+
+        cases.forEach { case ->
+            val result = parse(case.raw, ParserLanguage.ENGLISH)
+
+            assertEquals(case.raw, case.expectedTitle, result.draft.title)
+            assertEquals(case.raw, case.expectedDueAt, result.draft.dueAt)
+            assertNull(case.raw, result.draft.reminderAt)
+            assertEquals(
+                case.raw,
+                case.expectedDueTokens,
+                consumedText(
+                    case.raw,
+                    result.consumed.filter { it.field == RecognizedField.DUE_DATE }
+                )
+            )
+            assertTrue(
+                case.raw,
+                result.consumed.none { it.field == RecognizedField.REMINDER }
+            )
+            assertTrue(case.raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun duplicateReminderOrders_consumeBothAndUseLastValidSourceValue() {
+        val cases = listOf(
+            ReminderOrderCase(
+                raw = "Task today at 6 pm remind tomorrow at 5 pm remind 1h before",
+                expectedReminderAt = epoch("2026-08-26T17:00:00+02:00")
+            ),
+            ReminderOrderCase(
+                raw = "Task today at 6 pm remind 1h before remind tomorrow at 5 pm",
+                expectedReminderAt = epoch("2026-08-27T17:00:00+02:00")
+            )
+        )
+
+        cases.forEach { case ->
+            val result = parse(case.raw, ParserLanguage.ENGLISH)
+
+            assertEquals(case.raw, "Task", result.draft.title)
+            assertEquals(case.raw, epoch("2026-08-26T18:00:00+02:00"), result.draft.dueAt)
+            assertEquals(case.raw, case.expectedReminderAt, result.draft.reminderAt)
+            assertEquals(
+                case.raw,
+                2,
+                result.consumed.count { it.field == RecognizedField.REMINDER }
+            )
+            assertEquals(
+                case.raw,
+                listOf(ParseIssue.DuplicateField(RecognizedField.REMINDER)),
+                result.issues
+            )
+        }
+    }
+
+    @Test
+    fun embeddedMalformedAndContinuedTokens_areNotRecognized() {
+        val cases = listOf(
+            "Task x!high !!high !highway",
+            "Task x#Home ##Home",
+            "Task #\"today",
+            "Task every weekdays every weeks",
+            "Task xremind 1h before reminder 1h before remindful"
+        )
+
+        cases.forEach { raw ->
+            val result = parse(
+                raw = raw,
+                language = ParserLanguage.ENGLISH,
+                categories = listOf(CategoryCandidate(7, "Home"))
+            )
+
+            assertEquals(raw, raw, result.draft.title)
+            assertNull(raw, result.draft.dueAt)
+            assertNull(raw, result.draft.reminderAt)
+            assertNull(raw, result.draft.priority)
+            assertNull(raw, result.draft.categoryId)
+            assertNull(raw, result.draft.recurrence)
+            assertTrue(raw, result.consumed.isEmpty())
+            assertTrue(raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun absoluteReminderDefaultsAndPastValues_passThroughAsTypedInstants() {
+        val cases = listOf(
+            AbsoluteEdgeCase(
+                raw = "Task remind tomorrow",
+                language = ParserLanguage.ENGLISH,
+                expectedReminderAt = epoch("2026-08-27T09:00:00+02:00")
+            ),
+            AbsoluteEdgeCase(
+                raw = "Task promemoria alle 8",
+                language = ParserLanguage.ITALIAN,
+                expectedReminderAt = epoch("2026-08-26T08:00:00+02:00")
+            ),
+            AbsoluteEdgeCase(
+                raw = "Task remind 08/25/2026 at 5 pm",
+                language = ParserLanguage.ENGLISH,
+                expectedReminderAt = epoch("2026-08-25T17:00:00+02:00")
+            )
+        )
+
+        cases.forEach { case ->
+            val result = parse(case.raw, case.language)
+
+            assertEquals(case.raw, "Task", result.draft.title)
+            assertNull(case.raw, result.draft.dueAt)
+            assertEquals(case.raw, case.expectedReminderAt, result.draft.reminderAt)
+            assertEquals(
+                case.raw,
+                1,
+                result.consumed.count { it.field == RecognizedField.REMINDER }
+            )
+            assertTrue(case.raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun reminderArithmeticOverflow_keepsReminderSyntaxVisible() {
+        val cases = listOf(
+            OverflowCase(
+                raw = "Task today remind 2562047788016h before",
+                expectedTitle = "Task remind 2562047788016h before"
+            ),
+            OverflowCase(
+                raw = "Task 01/01/0001 remind 153722867280912m before",
+                expectedTitle = "Task remind 153722867280912m before"
+            )
+        )
+
+        cases.forEach { case ->
+            val result = parse(case.raw, ParserLanguage.ENGLISH)
+
+            assertEquals(case.raw, case.expectedTitle, result.draft.title)
+            assertTrue(case.raw, RecognizedField.DUE_DATE in result.recognized)
+            assertNull(case.raw, result.draft.reminderAt)
+            assertTrue(
+                case.raw,
+                result.consumed.none { it.field == RecognizedField.REMINDER }
+            )
+            assertTrue(case.raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun parserStageAndOrchestrationResults_areUnmodifiable() {
+        val attributeResult = AttributeParser().parse(
+            input("Task !high", ParserLanguage.ENGLISH)
+        )
+        val reminderResult = ReminderParser().parse(
+            input("Task remind tomorrow", ParserLanguage.ENGLISH),
+            dueAt = null
+        )
+        val result = parse("Task today !high", ParserLanguage.ENGLISH)
+
+        assertThrows(UnsupportedOperationException::class.java) {
+            (attributeResult.matches as MutableList<SourceMatch>).clear()
+        }
+        assertThrows(UnsupportedOperationException::class.java) {
+            (attributeResult.issues as MutableList<ParseIssue>).clear()
+        }
+        assertThrows(UnsupportedOperationException::class.java) {
+            (reminderResult.matches as MutableList<SourceMatch>).clear()
+        }
+        assertThrows(UnsupportedOperationException::class.java) {
+            (reminderResult.issues as MutableList<ParseIssue>).clear()
+        }
+        assertThrows(UnsupportedOperationException::class.java) {
+            (result.consumed as MutableList<SourceMatch>).clear()
+        }
+        assertThrows(UnsupportedOperationException::class.java) {
+            (result.issues as MutableList<ParseIssue>).clear()
+        }
+        assertThrows(UnsupportedOperationException::class.java) {
+            (result.recognized as MutableSet<RecognizedField>).clear()
+        }
     }
 
     @Test
@@ -312,17 +581,21 @@ class ParseNaturalLanguageTaskTest {
         raw: String,
         language: ParserLanguage,
         categories: List<CategoryCandidate> = emptyList()
-    ) = parser(
-        NaturalLanguageInput(
-            rawText = raw,
-            language = language,
-            nowEpochMillis = NOW,
-            zoneId = ROME,
-            categories = categories
-        )
+    ) = parser(input(raw, language, categories))
+
+    private fun input(
+        raw: String,
+        language: ParserLanguage,
+        categories: List<CategoryCandidate> = emptyList()
+    ) = NaturalLanguageInput(
+        rawText = raw,
+        language = language,
+        nowEpochMillis = NOW,
+        zoneId = ROME,
+        categories = categories
     )
 
-    private fun consumedText(raw: String, matches: List<com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.SourceMatch>) =
+    private fun consumedText(raw: String, matches: List<SourceMatch>) =
         matches.sortedBy { it.start }.map { raw.substring(it.start, it.endExclusive) }
 
     private data class CategoryCase(
@@ -335,6 +608,41 @@ class ParseNaturalLanguageTaskTest {
         val raw: String,
         val reminderPhrase: String
     )
+
+    private data class InvalidReminderCase(
+        val raw: String,
+        val expectedTitle: String,
+        val expectedDueAt: Long?,
+        val expectedDueTokens: List<String>
+    )
+
+    private data class ReminderOrderCase(
+        val raw: String,
+        val expectedReminderAt: Long
+    )
+
+    private data class AbsoluteEdgeCase(
+        val raw: String,
+        val language: ParserLanguage,
+        val expectedReminderAt: Long
+    )
+
+    private data class OverflowCase(
+        val raw: String,
+        val expectedTitle: String
+    )
+
+    private data class CategoryCollision(
+        val marker: String,
+        val displayName: String,
+        val leakedField: RecognizedField
+    )
+
+    private enum class CategoryResolution {
+        KNOWN,
+        UNKNOWN,
+        AMBIGUOUS
+    }
 
     private companion object {
         val ROME: ZoneId = ZoneId.of("Europe/Rome")

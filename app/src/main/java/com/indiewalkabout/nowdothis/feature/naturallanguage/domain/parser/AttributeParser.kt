@@ -44,9 +44,10 @@ data class AttributeParse private constructor(
 class AttributeParser {
 
     fun parse(input: NaturalLanguageInput): AttributeParse {
-        val priorities = parsePriorities(input)
-        val recurrences = parseRecurrences(input)
         val categoryResult = parseCategories(input)
+        val attributeRaw = input.rawText.maskRanges(ownedMarkerRanges(input))
+        val priorities = parsePriorities(input, attributeRaw)
+        val recurrences = parseRecurrences(input, attributeRaw)
         val issues = buildList {
             addAll(categoryResult.issues)
             addDuplicateIssue(priorities, RecognizedField.PRIORITY)
@@ -68,7 +69,15 @@ class AttributeParser {
         )
     }
 
-    private fun parsePriorities(input: NaturalLanguageInput): List<AttributeCandidate<TaskPriority>> {
+    internal fun ownedMarkerRanges(input: NaturalLanguageInput): List<SourceMatch> =
+        categoryOwnershipPattern.findAll(input.rawText)
+            .map { match -> match.toSourceMatch(RecognizedField.CATEGORY) }
+            .toList()
+
+    private fun parsePriorities(
+        input: NaturalLanguageInput,
+        raw: String
+    ): List<AttributeCandidate<TaskPriority>> {
         val values = when (input.language) {
             ParserLanguage.ITALIAN -> mapOf(
                 "alta" to TaskPriority.HIGH,
@@ -82,7 +91,7 @@ class AttributeParser {
                 "low" to TaskPriority.LOW
             )
         }
-        return priorityPattern(input.language).findAll(input.rawText).map { match ->
+        return priorityPattern(input.language).findAll(raw).map { match ->
             AttributeCandidate(
                 value = requireNotNull(values[match.groupValues[1].lowercase(Locale.ROOT)]),
                 match = match.toSourceMatch(RecognizedField.PRIORITY)
@@ -91,9 +100,10 @@ class AttributeParser {
     }
 
     private fun parseRecurrences(
-        input: NaturalLanguageInput
+        input: NaturalLanguageInput,
+        raw: String
     ): List<AttributeCandidate<RecurrenceType>> = recurrencePattern(input.language)
-        .findAll(input.rawText)
+        .findAll(raw)
         .map { match ->
             val recurrence = when (match.groupValues[1].lowercase(Locale.ROOT)) {
                 "giorno", "day" -> RecurrenceType.DAILY
@@ -117,6 +127,7 @@ class AttributeParser {
 
         categoryPattern.findAll(input.rawText).forEach { match ->
             val marker = match.value
+            val sourceMatch = match.toSourceMatch(RecognizedField.CATEGORY)
             val markerValue = requireNotNull(TextNormalizer.categoryMarkerValue(marker))
             val matches = categoriesByKey[TextNormalizer.matchingKey(markerValue)].orEmpty()
             when (matches.size) {
@@ -124,7 +135,7 @@ class AttributeParser {
                 1 -> {
                     candidates += AttributeCandidate(
                         value = matches.single().id,
-                        match = match.toSourceMatch(RecognizedField.CATEGORY)
+                        match = sourceMatch
                     )
                 }
 
@@ -132,6 +143,14 @@ class AttributeParser {
             }
         }
         return CategoryParse(candidates = candidates, issues = issues)
+    }
+
+    private fun String.maskRanges(ranges: List<SourceMatch>): String {
+        val masked = toCharArray()
+        ranges.forEach { range ->
+            for (index in range.start until range.endExclusive) masked[index] = ' '
+        }
+        return masked.concatToString()
     }
 
     private fun <T> MutableList<ParseIssue>.addDuplicateIssue(
@@ -159,7 +178,10 @@ class AttributeParser {
 
     private companion object {
         val categoryPattern = Regex(
-            "(?<![\\p{L}\\p{N}_])#(?:\"[^\"\\r\\n]+\"|[^\\s#]+)"
+            "(?<![\\p{L}\\p{N}_#])#(?:\"[^\"\\r\\n]+\"|[^\\s#\"]+)"
+        )
+        val categoryOwnershipPattern = Regex(
+            "(?<![\\p{L}\\p{N}_#])#(?:\"[^\"\\r\\n]*(?:\"|$)|[^\\s#\"]+)"
         )
         val ITALIAN_PRIORITY_PATTERN = markerPattern("alta|media|bassa")
         val ENGLISH_PRIORITY_PATTERN = markerPattern("high|medium|low")
@@ -177,7 +199,7 @@ class AttributeParser {
         }
 
         fun markerPattern(values: String): Regex = Regex(
-            "(?<![\\p{L}\\p{N}_])!($values)(?![\\p{L}\\p{N}_])",
+            "(?<![\\p{L}\\p{N}_!])!($values)(?![\\p{L}\\p{N}_])",
             RegexOption.IGNORE_CASE
         )
 
