@@ -202,7 +202,13 @@ class RecurrenceParser {
                 )
             )
         }
-        if (invalidIndex == 0 && legacyUnit(tokens.first().value, language)) return null
+        if (invalidIndex == 0 && legacyUnit(tokens.first().value, language)) {
+            return if (tokens.drop(1).any { token -> weekdayLike(token.value, language) }) {
+                match.toAttempt(null).preserveMatchedOwnership()
+            } else {
+                null
+            }
+        }
         if (invalidIndex == 0 || weekdayLike(tokens[invalidIndex].value, language)) {
             return match.toAttempt(null)
         }
@@ -346,10 +352,20 @@ class RecurrenceParser {
         )
     }
 
+    private fun Attempt.preserveMatchedOwnership(): Attempt = copy(
+        preserveMatchedOwnership = true
+    )
+
     private fun Attempt.extendMalformedOwnership(raw: String): Attempt = copy(
         ownedRange = ownedRange.copy(
-            endExclusive = malformedAttemptEnd(raw, ownedRange.start, null)
-                .trimOwnershipEnd(raw, ownedRange.start)
+            endExclusive = malformedAttemptEnd(
+                raw,
+                ownedRange.start,
+                null,
+                if (preserveMatchedOwnership) ownedRange.endExclusive else ownedRange.start
+            ).trimOwnershipEnd(raw, ownedRange.start).let { end ->
+                if (preserveMatchedOwnership) maxOf(ownedRange.endExclusive, end) else end
+            }
         )
     )
 
@@ -388,7 +404,8 @@ class RecurrenceParser {
     private data class Attempt(
         val candidate: RecurrenceCandidate?,
         val ownedRange: SourceMatch,
-        val malformed: Boolean
+        val malformed: Boolean,
+        val preserveMatchedOwnership: Boolean = false
     )
 
     private data class Grammar(

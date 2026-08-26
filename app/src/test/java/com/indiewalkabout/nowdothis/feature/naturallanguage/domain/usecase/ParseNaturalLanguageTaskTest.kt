@@ -363,7 +363,9 @@ class ParseNaturalLanguageTaskTest {
 
         val malformedContinuations = listOf(
             Pair(ParserLanguage.ENGLISH, "Task every month / Friday"),
-            Pair(ParserLanguage.ITALIAN, "Task ogni mese / venerdì")
+            Pair(ParserLanguage.ITALIAN, "Task ogni mese / venerdì"),
+            Pair(ParserLanguage.ENGLISH, "Task every month, Mondays"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni mese, lunedìs")
         )
         malformedContinuations.forEach { (language, raw) ->
             val result = parse(raw, language)
