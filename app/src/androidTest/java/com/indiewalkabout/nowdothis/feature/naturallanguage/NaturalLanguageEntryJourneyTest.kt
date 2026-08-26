@@ -432,6 +432,8 @@ class NaturalLanguageEntryJourneyTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val localeManager = context.applicationContext.getSystemService(LocaleManager::class.java)
         assertEquals(fixture.primaryLanguage, localeManager.applicationLocales[0].language)
+        composeRule.activityRule.scenario.recreate()
+        composeRule.waitForIdle()
     }
 
     private fun summaryText(): String = text(
