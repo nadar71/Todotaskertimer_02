@@ -513,6 +513,108 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun punctuationWeekdayContinuationsPreserveExactTitleWithoutConsumption() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every Monday / Friday"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni lunedì / venerdì")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parse(raw, language)
+
+            assertEquals(raw, raw, result.draft.title)
+            assertNull(raw, result.draft.recurrenceRule)
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+            assertTrue(raw, result.consumed.isEmpty())
+            assertEquals(raw, setOf(RecognizedField.TITLE), result.recognized)
+        }
+
+        val ordinaryRaw = "Task every Monday / notes"
+        val ordinary = parse(ordinaryRaw, ParserLanguage.ENGLISH)
+        assertEquals("Task / notes", ordinary.draft.title)
+        assertEquals(
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.MONDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            ordinary.draft.recurrenceRule
+        )
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    5,
+                    ordinaryRaw.indexOf(" /"),
+                    RecognizedField.RECURRENCE
+                )
+            ),
+            ordinary.consumed
+        )
+        assertTrue(ordinary.issues.isEmpty())
+    }
+
+    @Test
+    fun unsuffixedNumericOrdinalShellsPreserveExactTitleAndBlockNestedMonth() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task 11 Monday of every month"),
+            Pair(ParserLanguage.ITALIAN, "Task 11 lunedì di ogni mese")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parse(raw, language)
+
+            assertEquals(raw, raw, result.draft.title)
+            assertNull(raw, result.draft.recurrenceRule)
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+            assertTrue(raw, result.consumed.isEmpty())
+            assertEquals(raw, setOf(RecognizedField.TITLE), result.recognized)
+        }
+    }
+
+    @Test
+    fun ordinaryMonthlyTitlesRemainIssueFree() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Best photo of the month"),
+            Pair(ParserLanguage.ITALIAN, "Foto preferita del mese")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parse(raw, language)
+
+            assertEquals(raw, raw, result.draft.title)
+            assertNull(raw, result.draft.recurrenceRule)
+            assertTrue(raw, result.issues.isEmpty())
+            assertTrue(raw, result.consumed.isEmpty())
+            assertEquals(raw, setOf(RecognizedField.TITLE), result.recognized)
+        }
+    }
+
+    @Test
+    fun normalizedWholeItalianWeekdayTokenRetainsExactConsumedRange() {
+        val variants = listOf("sábato", "sa\u0301bato")
+
+        variants.forEach { saturday ->
+            val raw = "Task ogni $saturday e domenica"
+            val result = parse(raw, ParserLanguage.ITALIAN)
+
+            assertEquals(raw, "Task", result.draft.title)
+            assertEquals(
+                raw,
+                RecurrenceRule.SelectedWeekdays(
+                    setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY),
+                    RecurrenceBasis.SCHEDULED_DATE
+                ),
+                result.draft.recurrenceRule
+            )
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.consumed
+            )
+            assertTrue(raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
     fun categories_resolveCustomLocalizedQuotedAndNormalizedNames() {
         val cases = listOf(
             CategoryCase("Task #Casa", CategoryCandidate(7, "Casa")),

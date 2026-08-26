@@ -499,6 +499,119 @@ class RecurrenceParserTest {
     }
 
     @Test
+    fun punctuationFollowedByAValidWeekdayRejectsTheWholeAttempt() {
+        val malformed = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task every Monday / Friday"),
+            Pair(ParserLanguage.ITALIAN, "Task ogni lunedì / venerdì")
+        )
+
+        malformed.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.candidates.isEmpty())
+            assertTrue(raw, result.matches.isEmpty())
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.ownedRanges
+            )
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
+
+        val ordinaryRaw = "Task every Monday / notes"
+        val ordinary = parser.parse(input(ordinaryRaw, ParserLanguage.ENGLISH), DUE_AT)
+        assertEquals(
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.MONDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            ordinary.rule
+        )
+        assertEquals(
+            listOf(
+                SourceMatch(
+                    5,
+                    ordinaryRaw.indexOf(" /"),
+                    RecognizedField.RECURRENCE
+                )
+            ),
+            ordinary.matches
+        )
+        assertTrue(ordinary.issues.isEmpty())
+    }
+
+    @Test
+    fun unsuffixedNumericOrdinalShellsOwnNestedMonthlyCandidates() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task 11 Monday of every month"),
+            Pair(ParserLanguage.ITALIAN, "Task 11 lunedì di ogni mese")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.candidates.isEmpty())
+            assertTrue(raw, result.matches.isEmpty())
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.ownedRanges
+            )
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
+    }
+
+    @Test
+    fun ordinaryMonthlyTitlesDoNotCreateOrdinalAttempts() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Best photo of the month"),
+            Pair(ParserLanguage.ITALIAN, "Foto preferita del mese")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.candidates.isEmpty())
+            assertTrue(raw, result.matches.isEmpty())
+            assertTrue(raw, result.ownedRanges.isEmpty())
+            assertTrue(raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun italianWeekdayMatchingNormalizesAccentsAcrossTheWholeToken() {
+        val saturdayVariants = listOf(
+            "sábato",
+            "sa\u0301bato",
+            "sabáto",
+            "saba\u0301to"
+        )
+
+        saturdayVariants.forEach { saturday ->
+            val raw = "Task ogni $saturday e domenica"
+            val result = parser.parse(input(raw, ParserLanguage.ITALIAN), DUE_AT)
+
+            assertEquals(
+                raw,
+                RecurrenceRule.SelectedWeekdays(
+                    setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY),
+                    RecurrenceBasis.SCHEDULED_DATE
+                ),
+                result.rule
+            )
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.matches
+            )
+            assertTrue(raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
     fun excludedOwnershipRejectsIntersectingRecurrenceCandidate() {
         val raw = "Task every 2 weeks"
         val exclusion = SourceMatch(5, raw.length, RecognizedField.CATEGORY)
