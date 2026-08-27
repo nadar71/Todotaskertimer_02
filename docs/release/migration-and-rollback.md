@@ -2,7 +2,7 @@
 
 Room schema versions move forward only. Destructive migration is prohibited because the application is local-first and the database is the user's source of truth. Every schema change requires an exported schema, an explicit migration, and migration tests.
 
-Installing a binary that expects an older Room schema is unsupported. Recovery after a faulty schema release requires a compatible forward app update. Data Portability v1 is now an additional user-directed recovery path for planning data, but it does not make an older binary compatible with a newer Room database.
+Installing a binary that expects an older Room schema is unsupported. Recovery after a faulty schema release requires a compatible forward app update. Data Portability v2 is an additional user-directed recovery path for planning data, but it does not make an older binary compatible with a newer Room database.
 
 Before a risky release, create and retain a JSON backup using the release candidate.
 Restore is Replace All: after complete decoding, graph validation, and explicit user
@@ -11,10 +11,18 @@ subtasks while preserving IDs. It does not restore UI preferences, app language,
 notification channels, or platform alarm registrations. Reminder alarms are
 reconciled from restored task data only after the database commit.
 
-Format version `1` is accepted; future versions are rejected before mutation. A Room
-schema change that adds planning fields must explicitly choose between an optional or
-defaulted v1 representation and a new backup format with a documented migration path.
-The exact contract and privacy limitations are in the [backup format reference](../data-portability/backup-format-v1.md).
+Room v3 adds flattened recurrence columns and migrates legacy `NONE`, `DAILY`,
+`WEEKLY`, and `MONTHLY` values into the typed-rule representation. For legacy monthly
+rows, the anchor is derived in the device zone at migration time; a user changing zones
+at exactly that upgrade boundary may therefore observe a different historical anchor,
+because the earlier schema stored no zone. The full `1→2→3` path is migration-tested
+and destructive migration remains prohibited.
+
+Format versions `1` and `2` are accepted; future versions are rejected before
+mutation. Version 2 is the export format and encodes structured recurrence losslessly;
+version 1 remains decode-only compatibility for legacy rules. The exact contracts and
+privacy limits are in the [v1](../data-portability/backup-format-v1.md) and
+[v2](../data-portability/backup-format-v2.md) references.
 
 For code-only regressions that do not change the schema, issue a corrected patch release. Preserve the affected AAB, mapping files, changelog, and verification record so the failure can be reproduced and symbolicated.
 

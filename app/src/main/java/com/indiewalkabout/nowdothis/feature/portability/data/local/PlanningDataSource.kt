@@ -3,13 +3,17 @@ package com.indiewalkabout.nowdothis.feature.portability.data.local
 import androidx.room.withTransaction
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.feature.category.data.local.CategoryEntity
-import com.indiewalkabout.nowdothis.feature.portability.data.serialization.BackupDocumentV1
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningBackup
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCategory
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSubtask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
-import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
+import com.indiewalkabout.nowdothis.feature.task.data.local.TaskWithSubtasks
+import com.indiewalkabout.nowdothis.feature.task.data.mapper.TaskEntityMapper
+import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
+import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
+import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 
 interface PlanningDataStore {
     suspend fun snapshot(createdAtEpochMillis: Long): PlanningBackup
@@ -20,44 +24,51 @@ interface PlanningDataStore {
 class PlanningDataSource(
     private val database: AppDatabase
 ) : PlanningDataStore {
-    override suspend fun snapshot(createdAtEpochMillis: Long): PlanningBackup = database.withTransaction {
-        val subtasksByTaskId = database.taskDao().getAllSubtaskEntities()
-            .groupBy(SubtaskEntity::taskId)
+    override suspend fun snapshot(createdAtEpochMillis: Long): PlanningBackup =
+        database.withTransaction {
+            val subtasksByTaskId = database.taskDao().getAllSubtaskEntities()
+                .groupBy(SubtaskEntity::taskId)
 
-        PlanningBackup(
-            format = BackupDocumentV1.FORMAT,
-            version = BackupDocumentV1.VERSION,
-            createdAtEpochMillis = createdAtEpochMillis,
-            categories = database.categoryDao().getAll().map(CategoryEntity::toPlanningCategory),
-            tasks = database.taskDao().getAllTaskEntities().map { task ->
-                task.toPlanningTask(
-                    subtasks = subtasksByTaskId[task.id].orEmpty().map(SubtaskEntity::toPlanningSubtask)
-                )
+            PlanningBackup(
+                format = PlanningBackup.FORMAT,
+                version = PlanningBackup.CURRENT_VERSION,
+                createdAtEpochMillis = createdAtEpochMillis,
+                categories = database.categoryDao().getAll()
+                    .map(CategoryEntity::toPlanningCategory),
+                tasks = database.taskDao().getAllTaskEntities().map { task ->
+                    TaskEntityMapper.toDomain(
+                        TaskWithSubtasks(task, subtasksByTaskId[task.id].orEmpty())
+                    ).toPlanningTask()
+                }
+            )
+        }
+
+    override suspend fun replaceAll(backup: PlanningBackup): Set<Int> =
+        database.withTransaction {
+            val taskDao = database.taskDao()
+            val categoryDao = database.categoryDao()
+            val preRestoreTaskIds = taskDao.getAllTaskIds().toSet()
+
+            val persistence = backup.tasks.map { task ->
+                TaskEntityMapper.toEntities(task.toDomain())
             }
-        )
-    }
 
-    override suspend fun replaceAll(backup: PlanningBackup): Set<Int> = database.withTransaction {
-        val taskDao = database.taskDao()
-        val categoryDao = database.categoryDao()
-        val preRestoreTaskIds = taskDao.getAllTaskIds().toSet()
+            taskDao.deleteAllTasks()
+            categoryDao.deleteAll()
 
-        taskDao.deleteAllTasks()
-        categoryDao.deleteAll()
+            if (backup.categories.isNotEmpty()) {
+                categoryDao.insertAll(backup.categories.map(PlanningCategory::toCategoryEntity))
+            }
+            if (persistence.isNotEmpty()) {
+                taskDao.insertTasks(persistence.map { (task, _) -> task })
+            }
+            val subtasks = persistence.flatMap { (_, subtasks) -> subtasks }
+            if (subtasks.isNotEmpty()) {
+                taskDao.insertRestoredSubtasks(subtasks)
+            }
 
-        if (backup.categories.isNotEmpty()) {
-            categoryDao.insertAll(backup.categories.map(PlanningCategory::toCategoryEntity))
+            preRestoreTaskIds
         }
-        if (backup.tasks.isNotEmpty()) {
-            taskDao.insertTasks(backup.tasks.map(PlanningTask::toTaskEntity))
-        }
-        val subtasks = backup.tasks.flatMap { task -> task.subtasks.map(PlanningSubtask::toSubtaskEntity) }
-        if (subtasks.isNotEmpty()) {
-            taskDao.insertRestoredSubtasks(subtasks)
-        }
-
-        preRestoreTaskIds
-    }
 }
 
 private fun CategoryEntity.toPlanningCategory() = PlanningCategory(
@@ -69,26 +80,26 @@ private fun CategoryEntity.toPlanningCategory() = PlanningCategory(
     createdAt = createdAt
 )
 
-private fun TaskEntity.toPlanningTask(subtasks: List<PlanningSubtask>) = PlanningTask(
+private fun Task.toPlanningTask() = PlanningTask(
     id = id,
     title = title,
     description = description,
-    priority = priority,
+    priority = priority.name,
     categoryId = categoryId,
     isCompleted = isCompleted,
     completedAt = completedAt,
     dueAt = dueAt,
     reminderAt = reminderAt,
-    reminderStatus = reminderStatus,
-    recurrence = recurrence,
+    reminderStatus = reminderStatus.name,
+    recurrenceRule = recurrenceRule,
     recurrenceEndAt = recurrenceEndAt,
     seriesId = seriesId,
     createdAt = createdAt,
     updatedAt = updatedAt,
-    subtasks = subtasks
+    subtasks = subtasks.map(Subtask::toPlanningSubtask)
 )
 
-private fun SubtaskEntity.toPlanningSubtask() = PlanningSubtask(
+private fun Subtask.toPlanningSubtask() = PlanningSubtask(
     id = id,
     taskId = taskId,
     title = title,
@@ -106,25 +117,26 @@ private fun PlanningCategory.toCategoryEntity() = CategoryEntity(
     createdAt = createdAt
 )
 
-private fun PlanningTask.toTaskEntity() = TaskEntity(
+private fun PlanningTask.toDomain() = Task(
     id = id,
     title = title,
     description = description,
-    priority = priority,
+    priority = enumValueOf<TaskPriority>(priority),
     categoryId = categoryId,
     isCompleted = isCompleted,
     completedAt = completedAt,
     dueAt = dueAt,
     reminderAt = reminderAt,
-    reminderStatus = reminderStatus,
-    recurrence = recurrence,
+    reminderStatus = enumValueOf<ReminderStatus>(reminderStatus),
+    recurrenceRule = recurrenceRule,
     recurrenceEndAt = recurrenceEndAt,
     seriesId = seriesId,
     createdAt = createdAt,
-    updatedAt = updatedAt
+    updatedAt = updatedAt,
+    subtasks = subtasks.map(PlanningSubtask::toDomain)
 )
 
-private fun PlanningSubtask.toSubtaskEntity() = SubtaskEntity(
+private fun PlanningSubtask.toDomain() = Subtask(
     id = id,
     taskId = taskId,
     title = title,

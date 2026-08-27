@@ -14,19 +14,25 @@ class BackupCodec(
     }
 ) {
     fun encode(backup: PlanningBackup): ByteArray =
-        json.encodeToString(BackupDocumentV1.fromDomain(backup)).encodeToByteArray()
+        json.encodeToString(BackupDocumentV2.fromDomain(backup)).encodeToByteArray()
 
     internal fun decodeEnvelope(bytes: ByteArray): BackupEnvelope =
         json.decodeFromString(bytes.decodeToString(throwOnInvalidSequence = true))
 
-    fun decode(bytes: ByteArray): PlanningBackup =
-        json.decodeFromString<BackupDocumentV1>(
-            bytes.decodeToString(throwOnInvalidSequence = true)
-        ).toDomain()
+    fun decode(bytes: ByteArray): PlanningBackup {
+        val document = bytes.decodeToString(throwOnInvalidSequence = true)
+        val envelope = json.decodeFromString<BackupEnvelope>(document)
+        require(envelope.format == SUPPORTED_FORMAT) { "Unsupported backup format" }
+        return when (envelope.version) {
+            BackupDocumentV1.VERSION -> json.decodeFromString<BackupDocumentV1>(document).toDomain()
+            BackupDocumentV2.VERSION -> json.decodeFromString<BackupDocumentV2>(document).toDomain()
+            else -> throw IllegalArgumentException("Unsupported backup version: ${envelope.version}")
+        }
+    }
 
     internal companion object {
-        const val SUPPORTED_FORMAT = BackupDocumentV1.FORMAT
-        const val SUPPORTED_VERSION = BackupDocumentV1.VERSION
+        const val SUPPORTED_FORMAT = PlanningBackup.FORMAT
+        const val SUPPORTED_VERSION = PlanningBackup.CURRENT_VERSION
     }
 }
 

@@ -4,51 +4,130 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningBac
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCategory
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSubtask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.MonthlyOrdinalValue
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
+import java.nio.charset.CharacterCodingException
+import java.time.DayOfWeek
+import java.time.Instant
+import java.util.TimeZone
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.int
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import java.nio.charset.CharacterCodingException
 
 class BackupCodecTest {
     private val codec = BackupCodec()
 
     @Test
-    fun encode_usesV1FormatAndPreservesEveryPersistedPlanningField() {
-        val backup = sampleBackup()
+    fun encode_usesV2AndRoundTripsEveryRecurrenceRuleWithoutLoss() {
+        val rules = listOf(
+            RecurrenceRule.None,
+            RecurrenceRule.Interval(IntervalUnit.DAYS, 3, RecurrenceBasis.COMPLETION_DATE),
+            RecurrenceRule.Interval(IntervalUnit.WEEKS, 2, RecurrenceBasis.SCHEDULED_DATE),
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.FRIDAY, DayOfWeek.MONDAY),
+                RecurrenceBasis.COMPLETION_DATE
+            ),
+            RecurrenceRule.MonthlyDay(
+                anchorDay = 31,
+                everyMonths = 4,
+                basis = RecurrenceBasis.SCHEDULED_DATE
+            ),
+            RecurrenceRule.MonthlyOrdinal(
+                ordinal = MonthlyOrdinalValue.LAST,
+                weekday = DayOfWeek.THURSDAY,
+                everyMonths = 6,
+                basis = RecurrenceBasis.COMPLETION_DATE
+            )
+        )
+        val backup = sampleBackup().copy(
+            tasks = rules.mapIndexed { index, rule ->
+                task(id = index + 1).copy(
+                    recurrenceRule = rule,
+                    dueAt = if (rule == RecurrenceRule.None) null else 30,
+                    recurrenceEndAt = if (rule == RecurrenceRule.None) null else 40
+                )
+            }
+        )
 
-        val encoded = codec.encode(backup).decodeToString()
-        val decoded = codec.decode(encoded.encodeToByteArray())
+        val encoded = codec.encode(backup)
+        val document = Json.parseToJsonElement(encoded.decodeToString()).jsonObject
+        val decoded = codec.decode(encoded)
 
-        assertTrue(encoded.contains("\"format\":\"now-do-this-backup\""))
-        assertTrue(encoded.contains("\"version\":1"))
-        assertTrue(encoded.contains("\"description\":\"Detailed description\""))
-        assertTrue(encoded.contains("\"reminderStatus\":\"SCHEDULED\""))
-        assertTrue(encoded.contains("\"recurrence\":\"WEEKLY\""))
-        assertTrue(encoded.contains("\"seriesId\":\"weekly-series\""))
-        assertEquals(backup.sorted(), decoded)
+        assertEquals(2, document.getValue("version").jsonPrimitive.int)
+        assertEquals(
+            listOf(
+                """{"kind":"NONE"}""",
+                """{"kind":"INTERVAL","unit":"DAYS","every":3,"basis":"COMPLETION_DATE"}""",
+                """{"kind":"INTERVAL","unit":"WEEKS","every":2,"basis":"SCHEDULED_DATE"}""",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"COMPLETION_DATE","weekdays":["MONDAY","FRIDAY"]}""",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":31,"everyMonths":4}""",
+                """{"kind":"MONTHLY_ORDINAL","basis":"COMPLETION_DATE","ordinal":"LAST","weekday":"THURSDAY","everyMonths":6}"""
+            ).map(Json::parseToJsonElement),
+            document.getValue("tasks").jsonArray.map { task ->
+                task.jsonObject.getValue("recurrence")
+            }
+        )
+        assertEquals(
+            backup.copy(format = "now-do-this-backup", version = 2).sorted(),
+            decoded
+        )
     }
 
     @Test
-    fun encode_sortsCategoriesTasksAndSubtasksDeterministically() {
+    fun encode_preservesFieldsWithExplicitNullsAndDeterministicOrdering() {
         val backup = sampleBackup().copy(
+            format = "untrusted-format",
+            version = 99,
             categories = listOf(
                 category(id = 9, position = 2, customName = "Later"),
                 category(id = 4, position = 0, defaultKey = "WORK")
             ),
             tasks = listOf(
-                task(id = 8, subtasks = listOf(subtask(id = 9, taskId = 8, position = 2), subtask(id = 7, taskId = 8, position = 0))),
+                task(
+                    id = 8,
+                    subtasks = listOf(
+                        subtask(id = 9, taskId = 8, position = 2),
+                        subtask(id = 7, taskId = 8, position = 0)
+                    )
+                ).copy(
+                    categoryId = null,
+                    isCompleted = false,
+                    completedAt = null,
+                    dueAt = null,
+                    reminderAt = null,
+                    reminderStatus = "NONE",
+                    recurrenceRule = RecurrenceRule.None,
+                    recurrenceEndAt = null,
+                    seriesId = null
+                ),
                 task(id = 3, subtasks = listOf(subtask(id = 6, taskId = 3, position = 0)))
             )
         )
 
-        val decoded = codec.decode(codec.encode(backup))
+        val encoded = codec.encode(backup)
+        val document = Json.parseToJsonElement(encoded.decodeToString()).jsonObject
+        val decoded = codec.decode(encoded)
+        val nullableTask = document.getValue("tasks").jsonArray.last().jsonObject
 
+        assertEquals("now-do-this-backup", document.getValue("format").jsonPrimitive.content)
+        assertEquals(2, document.getValue("version").jsonPrimitive.int)
+        assertEquals(JsonNull, nullableTask.getValue("categoryId"))
+        assertEquals(JsonNull, nullableTask.getValue("completedAt"))
+        assertEquals(JsonNull, nullableTask.getValue("dueAt"))
+        assertEquals(JsonNull, nullableTask.getValue("reminderAt"))
+        assertEquals(JsonNull, nullableTask.getValue("recurrenceEndAt"))
+        assertEquals(JsonNull, nullableTask.getValue("seriesId"))
         assertEquals(listOf(4, 9), decoded.categories.map(PlanningCategory::id))
         assertEquals(listOf(3, 8), decoded.tasks.map(PlanningTask::id))
         assertEquals(listOf(7, 9), decoded.tasks.last().subtasks.map(PlanningSubtask::id))
@@ -56,45 +135,271 @@ class BackupCodecTest {
     }
 
     @Test
-    fun encode_alwaysWritesTheExactV1Headers() {
-        val backup = sampleBackup().copy(format = "untrusted-format", version = 99)
-
-        val document = Json.parseToJsonElement(codec.encode(backup).decodeToString()).jsonObject
-        val decoded = codec.decode(codec.encode(backup))
-
-        assertEquals(BackupDocumentV1.FORMAT, document.getValue("format").jsonPrimitive.content)
-        assertEquals(BackupDocumentV1.VERSION, document.getValue("version").jsonPrimitive.int)
-        assertEquals(
-            backup.copy(format = BackupDocumentV1.FORMAT, version = BackupDocumentV1.VERSION).sorted(),
-            decoded
-        )
-    }
-
-    @Test
-    fun decode_ignoresUnknownRootAndNestedKeys() {
+    fun decode_ignoresUnknownOuterKeysButRejectsUnusedRecurrenceParameters() {
         val encoded = codec.encode(sampleBackup()).decodeToString()
             .replace("\"format\":", "\"futureRootField\":true,\"format\":")
             .replace("\"title\":\"Task\"", "\"futureTaskField\":42,\"title\":\"Task\"")
             .replace("\"title\":\"First\"", "\"futureSubtaskField\":\"value\",\"title\":\"First\"")
 
-        assertEquals(sampleBackup().sorted(), codec.decode(encoded.encodeToByteArray()))
+        assertEquals(
+            sampleBackup().copy(version = 2).sorted(),
+            codec.decode(encoded.encodeToByteArray())
+        )
+
+        val unusedParameter = encoded.replace(
+            "\"kind\":\"INTERVAL\"",
+            "\"kind\":\"INTERVAL\",\"anchorDay\":12"
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(unusedParameter.encodeToByteArray())
+        }
     }
 
     @Test
-    fun decode_rejectsDocumentsMissingRequiredHeaders() {
+    fun decodeV1_convertsEveryLegacyRecurrenceToTypedRules() {
+        val previousTimeZone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+            val dueAt = Instant.parse("2026-01-31T09:00:00Z").toEpochMilli()
+            val decoded = codec.decode(v1Fixture(dueAt).encodeToByteArray())
+
+            assertEquals(
+                listOf(
+                    RecurrenceRule.None,
+                    RecurrenceRule.Interval(IntervalUnit.DAYS, 1, RecurrenceBasis.SCHEDULED_DATE),
+                    RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE),
+                    RecurrenceRule.MonthlyDay(
+                        anchorDay = 31,
+                        everyMonths = 1,
+                        basis = RecurrenceBasis.SCHEDULED_DATE
+                    )
+                ),
+                decoded.tasks.map(PlanningTask::recurrenceRule)
+            )
+            assertEquals(1, decoded.version)
+        } finally {
+            TimeZone.setDefault(previousTimeZone)
+        }
+    }
+
+    @Test
+    fun decode_dispatchesOnlyVersionsOneAndTwoAfterReadingEnvelope() {
+        val v2 = codec.encode(sampleBackup()).decodeToString()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(
+                """{"format":"now-do-this-backup","version":3,"items":"future-shape"}"""
+                    .encodeToByteArray()
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(v2.replace("\"version\":2", "\"version\":0").encodeToByteArray())
+        }
+    }
+
+    @Test
+    fun decode_rejectsUnknownKindsInvalidParametersAndTruncatedInput() {
+        val encoded = codec.encode(sampleBackup()).decodeToString()
+
+        listOf(
+            encoded.replace("\"kind\":\"INTERVAL\"", "\"kind\":\"YEARLY\""),
+            encoded.replace("\"every\":1", "\"every\":0"),
+            encoded.replace("\"basis\":\"SCHEDULED_DATE\"", "\"basis\":\"CREATED_DATE\""),
+            encoded.dropLast(1)
+        ).forEach(::assertDecodeFails)
+    }
+
+    @Test
+    fun decode_rejectsCompleteInvalidRecurrenceMatrix() {
+        val cases = listOf(
+            InvalidRecurrence("missing kind", "{}"),
+            InvalidRecurrence("NONE forbidden explicit null", """{"kind":"NONE","basis":null}"""),
+            InvalidRecurrence(
+                "INTERVAL missing unit",
+                """{"kind":"INTERVAL","every":1,"basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL missing every",
+                """{"kind":"INTERVAL","unit":"DAYS","basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL missing basis",
+                """{"kind":"INTERVAL","unit":"DAYS","every":1}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL forbidden explicit null",
+                """{"kind":"INTERVAL","unit":"DAYS","every":1,"basis":"SCHEDULED_DATE","anchorDay":null}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL unknown unit",
+                """{"kind":"INTERVAL","unit":"MONTHS","every":1,"basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL unknown basis",
+                """{"kind":"INTERVAL","unit":"DAYS","every":1,"basis":"CREATED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL lower bound",
+                """{"kind":"INTERVAL","unit":"DAYS","every":0,"basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "INTERVAL upper bound",
+                """{"kind":"INTERVAL","unit":"WEEKS","every":1000,"basis":"COMPLETION_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS missing basis",
+                """{"kind":"SELECTED_WEEKDAYS","weekdays":["MONDAY"]}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS missing weekdays",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE"}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS forbidden explicit null",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":["MONDAY"],"every":null}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS empty",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":[]}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS duplicate",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":["MONDAY","MONDAY"]}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS unknown weekday",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":["FUNDAY"]}"""
+            ),
+            InvalidRecurrence(
+                "SELECTED_WEEKDAYS unknown basis",
+                """{"kind":"SELECTED_WEEKDAYS","basis":"CREATED_DATE","weekdays":["MONDAY"]}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY missing basis",
+                """{"kind":"MONTHLY_DAY","anchorDay":1,"everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY missing anchorDay",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY missing everyMonths",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY forbidden explicit null",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1,"everyMonths":1,"ordinal":null}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY unknown basis",
+                """{"kind":"MONTHLY_DAY","basis":"CREATED_DATE","anchorDay":1,"everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY anchor lower bound",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":0,"everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY anchor upper bound",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":32,"everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY interval lower bound",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1,"everyMonths":0}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_DAY interval upper bound",
+                """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1,"everyMonths":1000}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL missing basis",
+                """{"kind":"MONTHLY_ORDINAL","ordinal":"FIRST","weekday":"MONDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL missing ordinal",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","weekday":"MONDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL missing weekday",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL missing everyMonths",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"MONDAY"}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL forbidden explicit null",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"MONDAY","everyMonths":1,"anchorDay":null}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL unknown basis",
+                """{"kind":"MONTHLY_ORDINAL","basis":"CREATED_DATE","ordinal":"FIRST","weekday":"MONDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL unknown ordinal",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIFTH","weekday":"MONDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL unknown weekday",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"FUNDAY","everyMonths":1}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL interval lower bound",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"MONDAY","everyMonths":0}"""
+            ),
+            InvalidRecurrence(
+                "MONTHLY_ORDINAL interval upper bound",
+                """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"LAST","weekday":"SUNDAY","everyMonths":1000}"""
+            ),
+            InvalidRecurrence("unknown kind", """{"kind":"YEARLY"}""")
+        )
+
+        cases.forEach { case ->
+            val error = runCatching {
+                codec.decode(v2Fixture(case.recurrence).encodeToByteArray())
+            }.exceptionOrNull()
+            assertTrue("${case.name} did not fail as malformed recurrence", error is SerializationException)
+        }
+    }
+
+    @Test
+    fun decode_acceptsRecurrenceBoundaryControls() {
+        val recurrences = listOf(
+            """{"kind":"NONE"}""",
+            """{"kind":"INTERVAL","unit":"DAYS","every":1,"basis":"SCHEDULED_DATE"}""",
+            """{"kind":"INTERVAL","unit":"WEEKS","every":999,"basis":"COMPLETION_DATE"}""",
+            """{"kind":"SELECTED_WEEKDAYS","basis":"SCHEDULED_DATE","weekdays":["MONDAY","SUNDAY"]}""",
+            """{"kind":"MONTHLY_DAY","basis":"SCHEDULED_DATE","anchorDay":1,"everyMonths":1}""",
+            """{"kind":"MONTHLY_DAY","basis":"COMPLETION_DATE","anchorDay":31,"everyMonths":999}""",
+            """{"kind":"MONTHLY_ORDINAL","basis":"SCHEDULED_DATE","ordinal":"FIRST","weekday":"MONDAY","everyMonths":1}""",
+            """{"kind":"MONTHLY_ORDINAL","basis":"COMPLETION_DATE","ordinal":"LAST","weekday":"SUNDAY","everyMonths":999}"""
+        )
+
+        recurrences.forEach { recurrence ->
+            assertEquals(1, codec.decode(v2Fixture(recurrence).encodeToByteArray()).tasks.size)
+        }
+    }
+
+    @Test
+    fun decode_rejectsMissingHeadersAndMalformedUtf8() {
         val encoded = codec.encode(sampleBackup()).decodeToString()
 
         assertDecodeFails(encoded.replaceFirst("\"format\":\"now-do-this-backup\",", ""))
-        assertDecodeFails(encoded.replaceFirst("\"version\":1,", ""))
+        assertDecodeFails(encoded.replaceFirst("\"version\":2,", ""))
+
+        val malformed = codec.encode(sampleBackup())
+        val titleStart = malformed.indexOfSubsequence("Task".encodeToByteArray())
+        malformed[titleStart] = 0xC3.toByte()
+        assertDecodeFails(malformed)
     }
 
     @Test
-    fun decode_rejectsMalformedUtf8InsteadOfReplacingInvalidBytes() {
-        val encoded = codec.encode(sampleBackup())
-        val titleStart = encoded.indexOfSubsequence("Task".encodeToByteArray())
-        encoded[titleStart] = 0xC3.toByte()
+    fun decode_v1RejectsUnknownLegacyRecurrence() {
+        val document = v1Fixture(dueAt = 30)
+            .replace("\"recurrence\":\"WEEKLY\"", "\"recurrence\":\"YEARLY\"")
 
-        assertDecodeFails(encoded)
+        assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(document.encodeToByteArray())
+        }
     }
 
     private fun assertDecodeFails(document: String) {
@@ -107,6 +412,7 @@ class BackupCodecTest {
             fail("Expected document decoding to fail")
         } catch (_: SerializationException) {
         } catch (_: CharacterCodingException) {
+        } catch (_: IllegalArgumentException) {
         }
     }
 
@@ -117,7 +423,7 @@ class BackupCodecTest {
 
     private fun sampleBackup() = PlanningBackup(
         format = "now-do-this-backup",
-        version = 1,
+        version = 2,
         createdAtEpochMillis = 1_726_000_000_000,
         categories = listOf(category(id = 4, position = 0, defaultKey = "WORK")),
         tasks = listOf(
@@ -137,14 +443,7 @@ class BackupCodecTest {
         position: Int,
         customName: String? = null,
         defaultKey: String? = null
-    ) = PlanningCategory(
-        id = id,
-        customName = customName,
-        defaultKey = defaultKey,
-        colorToken = "BLUE",
-        position = position,
-        createdAt = 10
-    )
+    ) = PlanningCategory(id, customName, defaultKey, "BLUE", position, createdAt = 10)
 
     private fun task(
         id: Int,
@@ -161,7 +460,11 @@ class BackupCodecTest {
         dueAt = 30,
         reminderAt = 25,
         reminderStatus = "SCHEDULED",
-        recurrence = "WEEKLY",
+        recurrenceRule = RecurrenceRule.Interval(
+            IntervalUnit.WEEKS,
+            1,
+            RecurrenceBasis.SCHEDULED_DATE
+        ),
         recurrenceEndAt = 40,
         seriesId = "weekly-series",
         createdAt = 11,
@@ -188,5 +491,44 @@ class BackupCodecTest {
         tasks = tasks.sortedBy(PlanningTask::id).map { task ->
             task.copy(subtasks = task.subtasks.sortedWith(compareBy(PlanningSubtask::position, PlanningSubtask::id)))
         }
+    )
+
+    private fun v1Fixture(dueAt: Long): String {
+        val recurrences = listOf("NONE", "DAILY", "WEEKLY", "MONTHLY")
+        val tasks = recurrences.mapIndexed { index, recurrence ->
+            val activeDueAt = if (recurrence == "NONE") "null" else dueAt.toString()
+            """
+            {
+              "id":${index + 1},"title":"$recurrence","description":"","priority":"MEDIUM",
+              "categoryId":null,"isCompleted":false,"completedAt":null,"dueAt":$activeDueAt,
+              "reminderAt":null,"reminderStatus":"NONE","recurrence":"$recurrence",
+              "recurrenceEndAt":null,"seriesId":null,"createdAt":1,"updatedAt":1,"subtasks":[]
+            }
+            """.trimIndent()
+        }.joinToString(",")
+        return """
+            {"format":"now-do-this-backup","version":1,"createdAtEpochMillis":1,
+             "categories":[],"tasks":[$tasks]}
+        """.trimIndent()
+    }
+
+    private fun v2Fixture(recurrence: String): String {
+        val isNone = recurrence.contains("\"kind\":\"NONE\"")
+        return """
+            {"format":"now-do-this-backup","version":2,"createdAtEpochMillis":1,
+             "categories":[],"tasks":[{
+               "id":1,"title":"Task","description":"","priority":"MEDIUM",
+               "categoryId":null,"isCompleted":false,"completedAt":null,
+               "dueAt":${if (isNone) "null" else "30"},"reminderAt":null,
+               "reminderStatus":"NONE","recurrence":$recurrence,
+               "recurrenceEndAt":${if (isNone) "null" else "40"},"seriesId":null,
+               "createdAt":1,"updatedAt":1,"subtasks":[]
+             }]}
+        """.trimIndent()
+    }
+
+    private data class InvalidRecurrence(
+        val name: String,
+        val recurrence: String
     )
 }

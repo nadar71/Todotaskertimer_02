@@ -5,6 +5,7 @@
 - [ ] Clean JVM tests, compilation, lint, debug assembly, release APK, and release AAB pass.
 - [ ] Connected smoke tests pass on each recorded device/API.
 - [ ] Room schema export and migration diff are reviewed; no destructive migration exists.
+- [ ] Advanced recurrence Room v3 migration and `1→2→3` path preserve legacy rows.
 - [ ] Notification permission, reminder delivery, exact-alarm fallback, and reboot reconciliation are checked.
 - [ ] Localization smoke tests pass in Italian and English.
 - [ ] Quick Capture direct production Glance rendering covers 3/5/8 responsive
@@ -18,6 +19,8 @@
   and release artifacts exclude benchmark fixture classes and methods.
 - [ ] Create backup, preview, confirmation, Replace All restore, cancellation, and invalid/future rejection are checked against [format v1](../data-portability/backup-format-v1.md).
 - [ ] A backup from the release candidate restores category/task/subtask IDs, completion state, recurrence, and reminder metadata on a clean test install.
+- [ ] Backup v2 losslessly round trips every typed recurrence rule; backup v1 remains importable.
+- [ ] Critical recurrence journey records capture/parse/save/remind/complete/recur/export/restore evidence and registered-alarm continuity.
 - [ ] Backup privacy wording remains clear: JSON is local, user-directed, and unencrypted.
 - [ ] Large-font, light/dark contrast, and TalkBack matrix is complete.
 - [ ] AAB contains code, resources, and the generated Baseline Profile.

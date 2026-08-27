@@ -43,8 +43,25 @@ data class TaskEntity(
     val reminderAt: Long? = null,
     @ColumnInfo(name = "reminder_status", defaultValue = "'NONE'")
     val reminderStatus: String = "NONE",
+    // Schema-v2 compatibility only. New writes mirror recurrenceKind; live readers ignore this.
     @ColumnInfo(defaultValue = "'NONE'")
     val recurrence: String = "NONE",
+    @ColumnInfo(name = "recurrence_kind", defaultValue = "'NONE'")
+    val recurrenceKind: String = "NONE",
+    @ColumnInfo(name = "recurrence_interval_unit", defaultValue = "NULL")
+    val recurrenceIntervalUnit: String? = null,
+    @ColumnInfo(name = "recurrence_interval_count", defaultValue = "NULL")
+    val recurrenceIntervalCount: Int? = null,
+    @ColumnInfo(name = "recurrence_basis", defaultValue = "NULL")
+    val recurrenceBasis: String? = null,
+    @ColumnInfo(name = "recurrence_weekday_mask", defaultValue = "NULL")
+    val recurrenceWeekdayMask: Int? = null,
+    @ColumnInfo(name = "recurrence_anchor_day", defaultValue = "NULL")
+    val recurrenceAnchorDay: Int? = null,
+    @ColumnInfo(name = "recurrence_ordinal", defaultValue = "NULL")
+    val recurrenceOrdinal: String? = null,
+    @ColumnInfo(name = "recurrence_ordinal_weekday", defaultValue = "NULL")
+    val recurrenceOrdinalWeekday: String? = null,
     @ColumnInfo(name = "recurrence_end_at", defaultValue = "NULL")
     val recurrenceEndAt: Long? = null,
     @ColumnInfo(name = "series_id", defaultValue = "NULL")

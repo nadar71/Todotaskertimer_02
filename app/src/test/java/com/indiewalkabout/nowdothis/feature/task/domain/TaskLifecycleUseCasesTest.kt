@@ -3,9 +3,13 @@ package com.indiewalkabout.nowdothis.feature.task.domain
 import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.core.time.DayBounds
 import com.indiewalkabout.nowdothis.core.time.ZoneIdProvider
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.NextOccurrenceResult
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -34,6 +38,10 @@ import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ValidateTask
 import java.time.Instant
 import java.time.ZoneId
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -53,7 +61,7 @@ class TaskLifecycleUseCasesTest {
                 description = "\t",
                 dueAt = 1_000,
                 reminderAt = 1_001,
-                recurrence = RecurrenceType.DAILY,
+                recurrenceRule = dailyRule,
                 recurrenceEndAt = 999
             ),
             now = 2_000
@@ -75,7 +83,75 @@ class TaskLifecycleUseCasesTest {
     fun validate_rejectsRecurrenceWithoutDueTime() {
         assertEquals(
             listOf(TaskValidationError.RECURRENCE_WITHOUT_DUE_TIME),
-            ValidateTask().invoke(task(recurrence = RecurrenceType.WEEKLY), now = 500)
+            ValidateTask().invoke(task(recurrenceRule = weeklyRule), now = 500)
+        )
+    }
+
+    @Test
+    fun validate_rejectsRecurrenceEndWithoutAnActiveRule() {
+        assertEquals(
+            listOf(TaskValidationError.RECURRENCE_END_WITHOUT_RECURRENCE),
+            ValidateTask().invoke(task(dueAt = 1_000, recurrenceEndAt = 2_000), now = 0)
+        )
+    }
+
+    @Test
+    fun activeRule_withoutDueDate_isRejected() {
+        val errors = ValidateTask()(task(
+            dueAt = null,
+            recurrenceRule = RecurrenceRule.Interval(
+                IntervalUnit.DAYS,
+                2,
+                RecurrenceBasis.COMPLETION_DATE
+            )
+        ), now = 0L)
+
+        assertTrue(TaskValidationError.RECURRENCE_WITHOUT_DUE_TIME in errors)
+    }
+
+    @Test
+    fun snapshotVersion_changesWhenRecurrenceFieldsChange() {
+        val original = task(
+            dueAt = 1_000,
+            recurrenceRule = RecurrenceRule.Interval(
+                IntervalUnit.DAYS,
+                1,
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            recurrenceEndAt = 2_000
+        )
+
+        assertTrue(
+            original.snapshotVersion() != original.copy(
+                recurrenceRule = RecurrenceRule.Interval(
+                    IntervalUnit.WEEKS,
+                    1,
+                    RecurrenceBasis.SCHEDULED_DATE
+                )
+            ).snapshotVersion()
+        )
+        assertTrue(
+            original.snapshotVersion() != original.copy(recurrenceEndAt = 2_001).snapshotVersion()
+        )
+    }
+
+    @Test
+    fun snapshotVersion_changesWhenReminderOwnershipChanges() {
+        val original = task(
+            id = 3,
+            dueAt = 3_000,
+            reminderAt = 2_000,
+            reminderStatus = ReminderStatus.REQUESTED,
+            updatedAt = 100
+        )
+
+        assertTrue(
+            original.snapshotVersion() != original.copy(reminderAt = null).snapshotVersion()
+        )
+        assertTrue(
+            original.snapshotVersion() != original.copy(
+                reminderStatus = ReminderStatus.SCHEDULED
+            ).snapshotVersion()
         )
     }
 
@@ -87,7 +163,7 @@ class TaskLifecycleUseCasesTest {
             task(
                 dueAt = boundary,
                 reminderAt = boundary,
-                recurrence = RecurrenceType.MONTHLY,
+                recurrenceRule = monthlyRule,
                 recurrenceEndAt = boundary
             ),
             now = boundary
@@ -144,12 +220,13 @@ class TaskLifecycleUseCasesTest {
             task(
                 dueAt = 3_000,
                 reminderAt = 2_000,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = dailyRule
             )
         )
 
         assertEquals(41, (result as SaveTaskResult.Saved).taskId)
         assertEquals(ReminderStatus.SCHEDULED, result.reminderStatus)
+        assertEquals(ReminderStatus.SCHEDULED, result.version.reminderStatus)
         val saved = repository.tasks.getValue(41)
         assertEquals(1_000L, saved.createdAt)
         assertEquals(1_000L, saved.updatedAt)
@@ -164,7 +241,7 @@ class TaskLifecycleUseCasesTest {
         val existing = task(
             id = 7,
             dueAt = 3_000,
-            recurrence = RecurrenceType.WEEKLY,
+            recurrenceRule = weeklyRule,
             seriesId = "existing-series",
             createdAt = 25,
             updatedAt = 30
@@ -175,12 +252,13 @@ class TaskLifecycleUseCasesTest {
             events = events
         )
 
-        val result = saveUseCase(repository, scheduler)(
-            existing.copy(
+        val result = saveUseCase(repository, scheduler).invoke(
+            task = existing.copy(
                 title = "Updated",
                 reminderAt = 2_000,
                 updatedAt = 30
-            )
+            ),
+            expectedVersion = existing.snapshotVersion()
         )
 
         assertEquals(7, (result as SaveTaskResult.Saved).taskId)
@@ -339,7 +417,7 @@ class TaskLifecycleUseCasesTest {
             dueAt = due,
             reminderAt = due - 3_600_000,
             reminderStatus = ReminderStatus.SCHEDULED,
-            recurrence = RecurrenceType.DAILY,
+            recurrenceRule = dailyRule,
             recurrenceEndAt = nextDue,
             seriesId = "series-4",
             createdAt = 50,
@@ -372,12 +450,19 @@ class TaskLifecycleUseCasesTest {
         assertEquals("series-4", next.seriesId)
         assertEquals(9, next.categoryId)
         assertEquals(TaskPriority.HIGH, next.priority)
+        assertEquals(current.recurrenceRule, next.recurrenceRule)
+        assertEquals(current.recurrenceEndAt, next.recurrenceEndAt)
+        assertTrue(!next.isCompleted)
+        assertEquals(null, next.completedAt)
+        assertEquals(1_000L, next.createdAt)
+        assertEquals(1_000L, next.updatedAt)
         assertEquals(listOf("First", "Second"), next.subtasks.map(Subtask::title))
         assertTrue(next.subtasks.all { it.id > 0 && it.taskId == 77 && !it.isCompleted })
+        assertEquals(2, repository.tasks.size)
         assertEquals(current.title, result.completed.title)
         assertEquals(current.dueAt, result.completed.dueAt)
         assertEquals(current.reminderAt, result.completed.reminderAt)
-        assertEquals(current.recurrence, result.completed.recurrence)
+        assertEquals(current.recurrenceRule, result.completed.recurrenceRule)
         assertEquals(current.recurrenceEndAt, result.completed.recurrenceEndAt)
         assertEquals(current.seriesId, result.completed.seriesId)
         assertEquals(current.createdAt, result.completed.createdAt)
@@ -394,10 +479,62 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun complete_completionDateIntervalAnchorsToTransactionCompletionTime() = runTest {
+        val dueAt = epoch("2025-01-01T09:00:00Z")
+        val completedAt = epoch("2025-01-10T12:00:00Z")
+        val repository = FakeTaskRepository(
+            task(
+                id = 5,
+                dueAt = dueAt,
+                recurrenceRule = RecurrenceRule.Interval(
+                    unit = IntervalUnit.DAYS,
+                    every = 2,
+                    basis = RecurrenceBasis.COMPLETION_DATE
+                ),
+                seriesId = "series-5"
+            )
+        )
+
+        val result = completeUseCase(
+            repository = repository,
+            scheduler = FakeReminderScheduler(),
+            now = completedAt
+        )(5) as CompleteTaskResult.Completed
+
+        assertEquals(epoch("2025-01-12T09:00:00Z"), result.nextOccurrence?.dueAt)
+        assertEquals(completedAt, result.completed.completedAt)
+        assertEquals("series-5", result.nextOccurrence?.seriesId)
+    }
+
+    @Test
+    fun complete_overdueScheduledIntervalCreatesOnlyFirstFutureOccurrence() = runTest {
+        val repository = FakeTaskRepository(
+            task(
+                id = 12,
+                dueAt = epoch("2025-01-01T09:00:00Z"),
+                recurrenceRule = RecurrenceRule.Interval(
+                    unit = IntervalUnit.DAYS,
+                    every = 2,
+                    basis = RecurrenceBasis.SCHEDULED_DATE
+                )
+            )
+        )
+
+        val result = completeUseCase(
+            repository = repository,
+            scheduler = FakeReminderScheduler(),
+            now = epoch("2025-01-10T12:00:00Z")
+        )(12) as CompleteTaskResult.Completed
+
+        assertEquals(epoch("2025-01-11T09:00:00Z"), result.nextOccurrence?.dueAt)
+        assertEquals(2, repository.tasks.size)
+    }
+
+    @Test
     fun complete_weeklyTaskAdvancesOneWeek() = runTest {
         val due = epoch("2025-01-01T09:00:00Z")
         val repository = FakeTaskRepository(
-            task(id = 6, dueAt = due, recurrence = RecurrenceType.WEEKLY)
+            task(id = 6, dueAt = due, recurrenceRule = weeklyRule)
         )
 
         val result = completeUseCase(repository, FakeReminderScheduler())(6)
@@ -412,7 +549,7 @@ class TaskLifecycleUseCasesTest {
             task(
                 id = 7,
                 dueAt = epoch("2025-01-31T09:00:00Z"),
-                recurrence = RecurrenceType.MONTHLY
+                recurrenceRule = monthlyRule
             )
         )
 
@@ -429,7 +566,7 @@ class TaskLifecycleUseCasesTest {
             task(
                 id = 8,
                 dueAt = due,
-                recurrence = RecurrenceType.DAILY,
+                recurrenceRule = dailyRule,
                 recurrenceEndAt = epoch("2025-01-02T08:59:59Z")
             )
         )
@@ -444,6 +581,59 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun complete_invalidRecurrenceDoesNotMutateTaskOrScheduler() = runTest {
+        val events = mutableListOf<String>()
+        val current = task(
+            id = 9,
+            dueAt = null,
+            recurrenceRule = dailyRule,
+            updatedAt = 321
+        )
+        val repository = FakeTaskRepository(current, events = events)
+        val scheduler = FakeReminderScheduler(events = events)
+
+        val result = completeUseCase(repository, scheduler)(9)
+
+        assertEquals(
+            CompleteTaskResult.Invalid(NextOccurrenceResult.Reason.MISSING_DUE_DATE),
+            result
+        )
+        assertEquals(current, repository.tasks.getValue(9))
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun complete_reminderOffsetPreservesLocalCalendarTimeAcrossDst() = runTest {
+        val dueAt = epoch("2025-03-30T07:00:00Z")
+        val reminderAt = epoch("2025-03-29T08:00:00Z")
+        val completedAt = epoch("2025-03-30T06:00:00Z")
+        val expectedNextDueAt = epoch("2025-03-31T07:00:00Z")
+        val expectedNextReminderAt = epoch("2025-03-30T07:00:00Z")
+        val repository = FakeTaskRepository(
+            task(
+                id = 11,
+                dueAt = dueAt,
+                reminderAt = reminderAt,
+                reminderStatus = ReminderStatus.SCHEDULED,
+                recurrenceRule = dailyRule
+            ),
+            nextId = 81
+        )
+        val scheduler = FakeReminderScheduler()
+
+        val result = completeUseCase(
+            repository = repository,
+            scheduler = scheduler,
+            now = completedAt,
+            zone = ZoneId.of("Europe/Rome")
+        )(11) as CompleteTaskResult.Completed
+
+        assertEquals(expectedNextDueAt, result.nextOccurrence?.dueAt)
+        assertEquals(expectedNextReminderAt, result.nextOccurrence?.reminderAt)
+        assertEquals(listOf(81 to expectedNextReminderAt), scheduler.scheduled)
+    }
+
+    @Test
     fun complete_failedNextSchedulingRecordsUnavailableOnPersistedIdentity() = runTest {
         val due = epoch("2025-01-01T09:00:00Z")
         val events = mutableListOf<String>()
@@ -452,7 +642,7 @@ class TaskLifecycleUseCasesTest {
                 id = 10,
                 dueAt = due,
                 reminderAt = due - 1_000,
-                recurrence = RecurrenceType.DAILY
+                recurrenceRule = dailyRule
             ),
             nextId = 88,
             events = events
@@ -467,13 +657,71 @@ class TaskLifecycleUseCasesTest {
     }
 
     @Test
+    fun complete_cancellationAfterAlarmInstallCleansReusedIdBeforeRethrowing() = runTest {
+        val repository = FakeTaskRepository(
+            task(
+                id = 13,
+                dueAt = 2_000,
+                reminderAt = 1_500,
+                recurrenceRule = dailyRule,
+                seriesId = "series-13"
+            ),
+            nextId = 89
+        )
+        val scheduler = SuspendingOwnerChangingScheduler(repository)
+        val completion = async { completeUseCase(repository, scheduler)(13) }
+
+        assertEquals(89, scheduler.awaitInstalledAlarm())
+        completion.cancel(CancellationException("cancel after alarm install"))
+        completion.join()
+
+        assertTrue(completion.isCancelled)
+        assertTrue(completion.isCompleted)
+        assertEquals(null, repository.tasks.getValue(89).reminderAt)
+        assertEquals(ReminderStatus.NONE, repository.tasks.getValue(89).reminderStatus)
+        assertTrue(89 !in scheduler.activeAlarms)
+        assertTrue(89 in scheduler.cancelledIds)
+        assertEquals(1, scheduler.reconcileCalls)
+    }
+
+    @Test
+    fun complete_exceptionAfterAlarmInstallCleansReusedIdBeforeRethrowing() = runTest {
+        val repository = FakeTaskRepository(
+            task(
+                id = 14,
+                dueAt = 2_000,
+                reminderAt = 1_500,
+                recurrenceRule = dailyRule,
+                seriesId = "series-14"
+            ),
+            nextId = 90
+        )
+        val failure = IllegalStateException("status storage unavailable")
+        val scheduler = OwnerChangingThrowingScheduler(repository, failure)
+
+        var thrown: IllegalStateException? = null
+        try {
+            completeUseCase(repository, scheduler)(14)
+        } catch (exception: IllegalStateException) {
+            thrown = exception
+        }
+
+        assertTrue(thrown === failure)
+        assertEquals(null, repository.tasks.getValue(90).reminderAt)
+        assertEquals(ReminderStatus.NONE, repository.tasks.getValue(90).reminderStatus)
+        assertTrue(90 !in scheduler.activeAlarms)
+        assertTrue(90 in scheduler.cancelledIds)
+        assertEquals(1, scheduler.reconcileCalls)
+    }
+
+    @Test
     fun complete_perpetualReminderGenerationChurnStopsAtBoundAndReconciles() = runTest {
         val events = mutableListOf<String>()
         val current = task(
             id = 4,
             dueAt = 10_000L,
             reminderAt = 9_000L,
-            recurrence = RecurrenceType.DAILY,
+            recurrenceRule = dailyRule,
             seriesId = "series-4"
         )
         val delegate = FakeTaskRepository(current, nextId = 77, events = events)
@@ -487,6 +735,31 @@ class TaskLifecycleUseCasesTest {
         assertEquals(9, scheduler.scheduled.count { it.first == successorId })
         assertEquals(listOf("cancel:$successorId", "reconcile"), events.takeLast(2))
     }
+
+    @Test
+    fun complete_reconciliationConvergesOnSuccessfulPostUpdateTokenWithoutDuplicateSchedule() =
+        runTest {
+            val current = task(
+                id = 5,
+                dueAt = 10_000L,
+                reminderAt = 9_000L,
+                recurrenceRule = dailyRule,
+                seriesId = "series-5"
+            )
+            val delegate = FakeTaskRepository(current, nextId = 78)
+            val repository = OneTimeOwnerChangeReminderRepository(delegate)
+            val scheduler = FakeReminderScheduler()
+
+            val result = completeUseCase(repository, scheduler)(5) as CompleteTaskResult.Completed
+
+            val successorId = requireNotNull(result.nextOccurrence).id
+            assertEquals(2, repository.statusAttempts)
+            assertEquals(2, scheduler.scheduled.count { it.first == successorId })
+            assertEquals(
+                ReminderStatus.SCHEDULED,
+                delegate.tasks.getValue(successorId).reminderStatus
+            )
+        }
 
     @Test
     fun delete_returnsCompleteSnapshotBeforeCancellingStableAlarm() = runTest {
@@ -618,7 +891,7 @@ class TaskLifecycleUseCasesTest {
         dueAt: Long? = null,
         reminderAt: Long? = null,
         reminderStatus: ReminderStatus = ReminderStatus.NONE,
-        recurrence: RecurrenceType = RecurrenceType.NONE,
+        recurrenceRule: RecurrenceRule = RecurrenceRule.None,
         recurrenceEndAt: Long? = null,
         seriesId: String? = null,
         createdAt: Long = 0,
@@ -631,7 +904,7 @@ class TaskLifecycleUseCasesTest {
         dueAt = dueAt,
         reminderAt = reminderAt,
         reminderStatus = reminderStatus,
-        recurrence = recurrence,
+        recurrenceRule = recurrenceRule,
         recurrenceEndAt = recurrenceEndAt,
         seriesId = seriesId,
         createdAt = createdAt,
@@ -640,6 +913,24 @@ class TaskLifecycleUseCasesTest {
 
     private fun epoch(value: String): Long = Instant.parse(value).toEpochMilli()
 
+    private val dailyRule = RecurrenceRule.Interval(
+        IntervalUnit.DAYS,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
+
+    private val weeklyRule = RecurrenceRule.Interval(
+        IntervalUnit.WEEKS,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
+
+    private val monthlyRule = RecurrenceRule.MonthlyDay(
+        31,
+        1,
+        RecurrenceBasis.SCHEDULED_DATE
+    )
+
     private fun saveUseCase(
         repository: TaskRepository,
         scheduler: ReminderScheduler
@@ -647,12 +938,14 @@ class TaskLifecycleUseCasesTest {
 
     private fun completeUseCase(
         repository: TaskRepository,
-        scheduler: ReminderScheduler
+        scheduler: ReminderScheduler,
+        now: Long = 1_000,
+        zone: ZoneId = ZoneId.of("UTC")
     ) = CompleteTask(
         repository,
         scheduler,
-        CalculateNextOccurrence { ZoneId.of("UTC") },
-        AppClock { 1_000 }
+        CalculateNextOccurrence { zone },
+        AppClock { now }
     )
 
     private class FakeTaskPreferencesRepository(initialSort: TaskSort) :
@@ -709,6 +1002,91 @@ class TaskLifecycleUseCasesTest {
         }
     }
 
+    private class OneTimeOwnerChangeReminderRepository(
+        private val delegate: FakeTaskRepository
+    ) : TaskRepository by delegate {
+        var statusAttempts = 0
+            private set
+
+        override suspend fun updateReminderStatusIfCurrent(
+            expectedVersion: TaskSnapshotVersion,
+            status: ReminderStatus
+        ): Boolean {
+            statusAttempts += 1
+            if (statusAttempts == 1) {
+                delegate.tasks[expectedVersion.id]?.let { current ->
+                    delegate.tasks[expectedVersion.id] = current.copy(
+                        seriesId = "replacement-owner",
+                        updatedAt = current.updatedAt + 1
+                    )
+                }
+                return false
+            }
+            return delegate.updateReminderStatusIfCurrent(expectedVersion, status)
+        }
+    }
+
+    private class OwnerChangingThrowingScheduler(
+        private val repository: FakeTaskRepository,
+        private val failure: Exception
+    ) : ReminderScheduler {
+        val activeAlarms = mutableMapOf<Int, Long>()
+        val cancelledIds = mutableListOf<Int>()
+        var reconcileCalls = 0
+
+        override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+            activeAlarms[taskId] = triggerAt
+            repository.tasks[taskId]?.let { current ->
+                repository.tasks[taskId] = current.copy(
+                    reminderAt = null,
+                    reminderStatus = ReminderStatus.NONE
+                )
+            }
+            throw failure
+        }
+
+        override suspend fun cancel(taskId: Int) {
+            activeAlarms.remove(taskId)
+            cancelledIds += taskId
+        }
+
+        override suspend fun reconcile() {
+            reconcileCalls += 1
+        }
+    }
+
+    private class SuspendingOwnerChangingScheduler(
+        private val repository: FakeTaskRepository
+    ) : ReminderScheduler {
+        val activeAlarms = mutableMapOf<Int, Long>()
+        val cancelledIds = mutableListOf<Int>()
+        var reconcileCalls = 0
+        private val installedAlarm = CompletableDeferred<Int>()
+
+        override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+            activeAlarms[taskId] = triggerAt
+            repository.tasks[taskId]?.let { current ->
+                repository.tasks[taskId] = current.copy(
+                    reminderAt = null,
+                    reminderStatus = ReminderStatus.NONE
+                )
+            }
+            installedAlarm.complete(taskId)
+            awaitCancellation()
+        }
+
+        override suspend fun cancel(taskId: Int) {
+            activeAlarms.remove(taskId)
+            cancelledIds += taskId
+        }
+
+        override suspend fun reconcile() {
+            reconcileCalls += 1
+        }
+
+        suspend fun awaitInstalledAlarm(): Int = installedAlarm.await()
+    }
+
     private class FakeTaskRepository(
         initialTask: Task? = null,
         private var nextId: Int = 100,
@@ -763,11 +1141,17 @@ class TaskLifecycleUseCasesTest {
         override suspend fun completeAtomically(
             taskId: Int,
             completedAt: Long,
-            nextOccurrence: (Task) -> Task?
+            completionDecision: (Task, Long) -> AtomicCompletionDecision
         ): AtomicCompletionResult {
             val current = tasks[taskId] ?: return AtomicCompletionResult.NotFound
             if (current.isCompleted) return AtomicCompletionResult.AlreadyCompleted
-            val next = nextOccurrence(current)
+            val next = when (val decision = completionDecision(current, completedAt)) {
+                is AtomicCompletionDecision.Create -> decision.task
+                AtomicCompletionDecision.CompleteOnly -> null
+                is AtomicCompletionDecision.Invalid -> {
+                    return AtomicCompletionResult.Invalid(decision.reason)
+                }
+            }
             suppliedNext = next
             events += "complete:$taskId"
             val completed = current.copy(

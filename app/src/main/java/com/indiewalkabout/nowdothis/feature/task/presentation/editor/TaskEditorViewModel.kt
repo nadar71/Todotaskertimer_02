@@ -12,7 +12,7 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParseIs
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.RecognizedField
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
 import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.NaturalLanguageEnvironment
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -29,6 +29,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
 import dagger.assisted.AssistedInject
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -127,20 +128,68 @@ class TaskEditorViewModel @AssistedInject constructor(
                 }
                 if (pendingSave != null) performPendingSave()
             }
-            is TaskEditorEvent.SelectRecurrence -> updateDraft {
+            is TaskEditorEvent.SelectRecurrenceKind -> updateDraft {
                 it.copy(
-                    recurrence = event.value,
-                    recurrenceEndAt = it.recurrenceEndAt.takeUnless {
-                        event.value == RecurrenceType.NONE
-                    },
+                    recurrence = RecurrenceEditorState.forKind(
+                        event.value,
+                        it.recurrence.endAt.takeUnless { event.value == RecurrenceEditorKind.NONE }
+                    ),
                     errors = it.errors.copy(recurrence = null, recurrenceEnd = null)
                 )
             }
-            is TaskEditorEvent.UpdateRecurrenceEndAt -> updateDraft {
-                it.copy(
-                    recurrenceEndAt = event.value,
-                    errors = it.errors.copy(recurrenceEnd = null)
-                )
+            is TaskEditorEvent.SelectRecurrenceBasis -> updateRecurrenceFor(
+                RecurrenceEditorKind.INTERVAL,
+                RecurrenceEditorKind.SELECTED_WEEKDAYS,
+                RecurrenceEditorKind.MONTHLY_DAY,
+                RecurrenceEditorKind.MONTHLY_ORDINAL
+            ) {
+                it.withBasis(event.value)
+            }
+            is TaskEditorEvent.SelectRecurrenceIntervalUnit -> updateRecurrenceFor(
+                RecurrenceEditorKind.INTERVAL
+            ) {
+                it.withIntervalUnit(event.value)
+            }
+            is TaskEditorEvent.UpdateRecurrenceIntervalEvery -> updateRecurrenceFor(
+                RecurrenceEditorKind.INTERVAL
+            ) {
+                it.withIntervalEvery(event.value)
+            }
+            is TaskEditorEvent.ToggleRecurrenceWeekday -> updateRecurrenceFor(
+                RecurrenceEditorKind.SELECTED_WEEKDAYS
+            ) { recurrence ->
+                recurrence.toggledWeekday(event.value)
+            }
+            is TaskEditorEvent.UpdateRecurrenceMonthlyEvery -> updateRecurrenceFor(
+                RecurrenceEditorKind.MONTHLY_DAY,
+                RecurrenceEditorKind.MONTHLY_ORDINAL
+            ) {
+                it.withMonthlyEvery(event.value)
+            }
+            is TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay -> updateRecurrenceFor(
+                RecurrenceEditorKind.MONTHLY_DAY
+            ) {
+                it.withMonthlyAnchorDay(event.value)
+            }
+            is TaskEditorEvent.SelectRecurrenceOrdinal -> updateRecurrenceFor(
+                RecurrenceEditorKind.MONTHLY_ORDINAL
+            ) {
+                it.withOrdinal(event.value)
+            }
+            is TaskEditorEvent.SelectRecurrenceOrdinalWeekday -> updateRecurrenceFor(
+                RecurrenceEditorKind.MONTHLY_ORDINAL
+            ) {
+                it.withOrdinalWeekday(event.value)
+            }
+            is TaskEditorEvent.UpdateRecurrenceEndAt -> {
+                if (_uiState.value.recurrence.kind != RecurrenceEditorKind.NONE) {
+                    updateDraft {
+                        it.copy(
+                            recurrence = it.recurrence.withEndAt(event.value),
+                            errors = it.errors.copy(recurrenceEnd = null)
+                        )
+                    }
+                }
             }
             TaskEditorEvent.AddSubtask -> addSubtask()
             is TaskEditorEvent.RenameSubtask -> updateSubtask(event.draftId) {
@@ -164,9 +213,9 @@ class TaskEditorViewModel @AssistedInject constructor(
     private fun parseQuickEntry() {
         val state = _uiState.value
         if (state.taskId != null || state.categoryReadiness != CategoryReadiness.READY) return
-        val result = try {
+        val parsed = try {
             val environment = naturalLanguageEnvironment.snapshot(state.categories)
-            parseNaturalLanguageTask(
+            environment to parseNaturalLanguageTask(
                 NaturalLanguageInput(
                     rawText = state.quickEntryInput,
                     language = environment.language,
@@ -186,13 +235,14 @@ class TaskEditorViewModel @AssistedInject constructor(
             }
             return
         }
+        val (environment, result) = parsed
         val summary = QuickEntrySummaryField.entries.filter { field ->
             field.recognizedField in result.recognized
         }
         val issues = result.issues.map(ParseIssue::toQuickEntryIssue)
 
         updateDraft { current ->
-            current.applyQuickEntryResult(result, summary, issues)
+            current.applyQuickEntryResult(result, summary, issues, environment.zoneId)
         }
     }
 
@@ -310,8 +360,20 @@ class TaskEditorViewModel @AssistedInject constructor(
     private fun save() {
         if (_uiState.value.isSaving) return
         _uiState.update { it.copy(isSaving = true, errors = TaskEditorErrors()) }
+        val recurrenceRule = when (val result = _uiState.value.recurrence.toValidatedRule()) {
+            is RecurrenceRuleDraftResult.Valid -> result.rule
+            is RecurrenceRuleDraftResult.Invalid -> {
+                _uiState.update {
+                    it.copy(
+                        isSaving = false,
+                        errors = it.errors.copy(recurrence = result.error)
+                    )
+                }
+                return
+            }
+        }
         val save = PendingSave(
-            task = _uiState.value.toTask(loadedTask),
+            task = _uiState.value.toTask(loadedTask, recurrenceRule),
             expectedVersion = draftVersion
         )
         if (save.task.reminderAt == null) {
@@ -412,6 +474,25 @@ class TaskEditorViewModel @AssistedInject constructor(
         persistDraft(_uiState.value)
     }
 
+    private fun updateRecurrence(
+        transform: (RecurrenceEditorState) -> RecurrenceEditorState
+    ) {
+        updateDraft {
+            it.copy(
+                recurrence = transform(it.recurrence),
+                errors = it.errors.copy(recurrence = null)
+            )
+        }
+    }
+
+    private fun updateRecurrenceFor(
+        vararg kinds: RecurrenceEditorKind,
+        transform: (RecurrenceEditorState) -> RecurrenceEditorState
+    ) {
+        if (_uiState.value.recurrence.kind !in kinds) return
+        updateRecurrence(transform)
+    }
+
     private fun persistDraft(state: TaskEditorUiState) {
         savedStateHandle[KEY_INITIALIZED] = true
         savedStateHandle[KEY_TASK_ID_SET] = true
@@ -425,9 +506,7 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle[KEY_REMINDER_SET] = true
         savedStateHandle.set<Long?>(KEY_REMINDER_AT, state.reminderAt)
         savedStateHandle[KEY_REMINDER_STATUS] = state.reminderStatus.name
-        savedStateHandle[KEY_RECURRENCE] = state.recurrence.name
-        savedStateHandle[KEY_RECURRENCE_END_SET] = true
-        savedStateHandle.set<Long?>(KEY_RECURRENCE_END_AT, state.recurrenceEndAt)
+        savedStateHandle[KEY_RECURRENCE_DRAFT] = Json.encodeToString(state.recurrence)
         savedStateHandle[KEY_SUBTASKS] = Json.encodeToString(state.subtasks)
         savedStateHandle[KEY_QUICK_ENTRY_INPUT] = state.quickEntryInput
         savedStateHandle[KEY_QUICK_ENTRY_SUMMARY] = Json.encodeToString(state.quickEntrySummary)
@@ -437,13 +516,21 @@ class TaskEditorViewModel @AssistedInject constructor(
 
     private fun restoreDraftVersion(): TaskSnapshotVersion? {
         if (savedStateHandle.get<Boolean>(KEY_VERSION_SET) != true) return null
+        val restoredRecurrence = restoreVersionRecurrence() ?: return null
         return TaskSnapshotVersion(
             id = savedStateHandle.get<Int>(KEY_VERSION_ID) ?: return null,
             seriesId = savedStateHandle[KEY_VERSION_SERIES_ID],
             createdAt = savedStateHandle.get<Long>(KEY_VERSION_CREATED_AT) ?: return null,
             updatedAt = savedStateHandle.get<Long>(KEY_VERSION_UPDATED_AT) ?: return null,
             isCompleted = savedStateHandle.get<Boolean>(KEY_VERSION_COMPLETED) ?: return null,
-            completedAt = savedStateHandle[KEY_VERSION_COMPLETED_AT]
+            completedAt = savedStateHandle[KEY_VERSION_COMPLETED_AT],
+            reminderAt = savedStateHandle[KEY_VERSION_REMINDER_AT],
+            reminderStatus = enumValueOrDefault(
+                savedStateHandle.get<String>(KEY_VERSION_REMINDER_STATUS),
+                ReminderStatus.NONE
+            ),
+            recurrenceRule = restoredRecurrence.rule,
+            recurrenceEndAt = restoredRecurrence.endAt
         )
     }
 
@@ -457,7 +544,19 @@ class TaskEditorViewModel @AssistedInject constructor(
         savedStateHandle[KEY_VERSION_UPDATED_AT] = version.updatedAt
         savedStateHandle[KEY_VERSION_COMPLETED] = version.isCompleted
         savedStateHandle.set<Long?>(KEY_VERSION_COMPLETED_AT, version.completedAt)
+        savedStateHandle.set<Long?>(KEY_VERSION_REMINDER_AT, version.reminderAt)
+        savedStateHandle[KEY_VERSION_REMINDER_STATUS] = version.reminderStatus.name
+        savedStateHandle[KEY_VERSION_RECURRENCE_SNAPSHOT] = Json.encodeToString(
+            RecurrenceVersionSnapshot.from(version)
+        )
     }
+
+    private fun restoreVersionRecurrence(): RestoredRecurrenceVersion? =
+        savedStateHandle.get<String>(KEY_VERSION_RECURRENCE_SNAPSHOT)?.let { encoded ->
+            runCatching {
+                Json.decodeFromString<RecurrenceVersionSnapshot>(encoded).restore()
+            }.getOrNull()
+        }
 
     @AssistedFactory
     interface Factory {
@@ -477,9 +576,7 @@ class TaskEditorViewModel @AssistedInject constructor(
         const val KEY_REMINDER_SET = "reminder_at_set"
         const val KEY_REMINDER_AT = "reminder_at"
         const val KEY_REMINDER_STATUS = "reminder_status"
-        const val KEY_RECURRENCE = "recurrence"
-        const val KEY_RECURRENCE_END_SET = "recurrence_end_at_set"
-        const val KEY_RECURRENCE_END_AT = "recurrence_end_at"
+        const val KEY_RECURRENCE_DRAFT = "recurrence_draft"
         const val KEY_SUBTASKS = "subtasks"
         const val KEY_QUICK_ENTRY_INPUT = "quick_entry_input"
         const val KEY_QUICK_ENTRY_SUMMARY = "quick_entry_summary"
@@ -491,6 +588,9 @@ class TaskEditorViewModel @AssistedInject constructor(
         const val KEY_VERSION_UPDATED_AT = "draft_version_updated_at"
         const val KEY_VERSION_COMPLETED = "draft_version_completed"
         const val KEY_VERSION_COMPLETED_AT = "draft_version_completed_at"
+        const val KEY_VERSION_REMINDER_AT = "draft_version_reminder_at"
+        const val KEY_VERSION_REMINDER_STATUS = "draft_version_reminder_status"
+        const val KEY_VERSION_RECURRENCE_SNAPSHOT = "draft_version_recurrence_snapshot"
     }
 }
 
@@ -513,12 +613,10 @@ private fun SavedStateHandle.restoreState(
         dueAt = if (get<Boolean>("due_at_set") == true) get("due_at") else key.initialDueAt,
         reminderAt = if (get<Boolean>("reminder_at_set") == true) get("reminder_at") else null,
         reminderStatus = enumValueOrDefault(get("reminder_status"), ReminderStatus.NONE),
-        recurrence = enumValueOrDefault(get("recurrence"), RecurrenceType.NONE),
-        recurrenceEndAt = if (get<Boolean>("recurrence_end_at_set") == true) {
-            get("recurrence_end_at")
-        } else {
-            null
-        },
+        recurrence = get<String>("recurrence_draft")?.let { encoded ->
+            runCatching { Json.decodeFromString<RecurrenceEditorState>(encoded) }
+                .getOrDefault(RecurrenceEditorState())
+        } ?: RecurrenceEditorState(),
         subtasks = get<String>("subtasks")?.let { encoded ->
             runCatching { Json.decodeFromString<List<TaskEditorSubtask>>(encoded) }.getOrDefault(emptyList())
         }.orEmpty(),
@@ -554,6 +652,7 @@ private fun ParseIssue.toQuickEntryIssue(): QuickEntryIssue = when (this) {
     is ParseIssue.UnknownCategory -> QuickEntryIssue.UNKNOWN_CATEGORY
     is ParseIssue.AmbiguousCategory -> QuickEntryIssue.AMBIGUOUS_CATEGORY
     is ParseIssue.DuplicateField -> QuickEntryIssue.DUPLICATE_FIELD
+    ParseIssue.AmbiguousRecurrence -> QuickEntryIssue.AMBIGUOUS_RECURRENCE
     ParseIssue.RelativeReminderWithoutDueDate -> {
         QuickEntryIssue.RELATIVE_REMINDER_WITHOUT_DUE_DATE
     }
@@ -562,19 +661,21 @@ private fun ParseIssue.toQuickEntryIssue(): QuickEntryIssue = when (this) {
 private fun TaskEditorUiState.applyQuickEntryResult(
     result: NaturalLanguageParseResult,
     summary: List<QuickEntrySummaryField>,
-    issues: List<QuickEntryIssue>
+    issues: List<QuickEntryIssue>,
+    parserZoneId: ZoneId
 ): TaskEditorUiState {
     val recognized = result.recognized
     val draft = result.draft
     val parsedTitle = draft.title?.takeIf(String::isNotBlank)
     val reminderRecognized = RecognizedField.REMINDER in recognized
+    val parsedDueAt = if (RecognizedField.DUE_DATE in recognized) draft.dueAt else dueAt
     return copy(
         title = if (RecognizedField.TITLE in recognized && parsedTitle != null) {
             parsedTitle
         } else {
             title
         },
-        dueAt = if (RecognizedField.DUE_DATE in recognized) draft.dueAt else dueAt,
+        dueAt = parsedDueAt,
         reminderAt = if (reminderRecognized) draft.reminderAt else reminderAt,
         reminderStatus = if (reminderRecognized) {
             if (draft.reminderAt == null) ReminderStatus.NONE else ReminderStatus.REQUESTED
@@ -591,8 +692,11 @@ private fun TaskEditorUiState.applyQuickEntryResult(
         } else {
             categoryId
         },
-        recurrence = if (RecognizedField.RECURRENCE in recognized) {
-            draft.recurrence ?: recurrence
+        recurrence = if (
+            RecognizedField.RECURRENCE in recognized && draft.recurrenceRule != null
+        ) {
+            val parsedRule = draft.recurrenceRule.anchoredTo(parsedDueAt, parserZoneId)
+            RecurrenceEditorState.fromRule(parsedRule, recurrence.endAt)
         } else {
             recurrence
         },
@@ -600,6 +704,17 @@ private fun TaskEditorUiState.applyQuickEntryResult(
         quickEntryIssues = issues
     )
 }
+
+private fun RecurrenceRule.anchoredTo(dueAt: Long?, zoneId: ZoneId): RecurrenceRule =
+    if (this is RecurrenceRule.MonthlyDay && dueAt != null) {
+        copy(
+            anchorDay = java.time.Instant.ofEpochMilli(dueAt)
+                .atZone(zoneId)
+                .dayOfMonth
+        )
+    } else {
+        this
+    }
 
 private fun Task.toEditorState(categories: List<com.indiewalkabout.nowdothis.feature.category.domain.model.Category>) =
     TaskEditorUiState(
@@ -612,8 +727,7 @@ private fun Task.toEditorState(categories: List<com.indiewalkabout.nowdothis.fea
         dueAt = dueAt,
         reminderAt = reminderAt,
         reminderStatus = reminderStatus,
-        recurrence = recurrence,
-        recurrenceEndAt = recurrenceEndAt,
+        recurrence = RecurrenceEditorState.fromRule(recurrenceRule, recurrenceEndAt),
         subtasks = subtasks.sortedBy(Subtask::position).map { subtask ->
             TaskEditorSubtask(
                 draftId = subtask.id.toLong(),
@@ -626,7 +740,7 @@ private fun Task.toEditorState(categories: List<com.indiewalkabout.nowdothis.fea
         categories = categories
     )
 
-private fun TaskEditorUiState.toTask(existing: Task?): Task = Task(
+private fun TaskEditorUiState.toTask(existing: Task?, recurrenceRule: RecurrenceRule): Task = Task(
     id = taskId ?: existing?.id ?: 0,
     title = title.trim(),
     description = description.trim(),
@@ -637,8 +751,8 @@ private fun TaskEditorUiState.toTask(existing: Task?): Task = Task(
     dueAt = dueAt,
     reminderAt = reminderAt,
     reminderStatus = reminderStatus,
-    recurrence = recurrence,
-    recurrenceEndAt = recurrenceEndAt,
+    recurrenceRule = recurrenceRule,
+    recurrenceEndAt = recurrence.endAt,
     seriesId = existing?.seriesId,
     createdAt = existing?.createdAt ?: 0,
     updatedAt = existing?.updatedAt ?: 0,
@@ -671,6 +785,9 @@ private fun List<TaskValidationError>.toEditorErrors(): TaskEditorErrors {
             TaskValidationError.RECURRENCE_WITHOUT_DUE_TIME -> {
                 mapped.copy(recurrence = TaskEditorFieldError.DUE_REQUIRED)
             }
+            TaskValidationError.RECURRENCE_END_WITHOUT_RECURRENCE -> {
+                mapped.copy(recurrenceEnd = TaskEditorFieldError.END_WITHOUT_RECURRENCE)
+            }
             TaskValidationError.RECURRENCE_END_BEFORE_DUE -> {
                 mapped.copy(recurrenceEnd = TaskEditorFieldError.END_BEFORE_DUE)
             }
@@ -688,7 +805,15 @@ private fun TaskEditorEvent.changesDraft(): Boolean = when (this) {
     is TaskEditorEvent.SelectCategory,
     is TaskEditorEvent.UpdateDueAt,
     is TaskEditorEvent.UpdateReminderAt,
-    is TaskEditorEvent.SelectRecurrence,
+    is TaskEditorEvent.SelectRecurrenceKind,
+    is TaskEditorEvent.SelectRecurrenceBasis,
+    is TaskEditorEvent.SelectRecurrenceIntervalUnit,
+    is TaskEditorEvent.UpdateRecurrenceIntervalEvery,
+    is TaskEditorEvent.ToggleRecurrenceWeekday,
+    is TaskEditorEvent.UpdateRecurrenceMonthlyEvery,
+    is TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay,
+    is TaskEditorEvent.SelectRecurrenceOrdinal,
+    is TaskEditorEvent.SelectRecurrenceOrdinalWeekday,
     is TaskEditorEvent.UpdateRecurrenceEndAt,
     TaskEditorEvent.AddSubtask,
     is TaskEditorEvent.RenameSubtask,

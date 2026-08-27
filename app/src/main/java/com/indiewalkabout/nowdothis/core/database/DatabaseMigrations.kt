@@ -3,6 +3,8 @@ package com.indiewalkabout.nowdothis.core.database
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import java.time.Instant
+import java.time.ZoneId
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -27,6 +29,79 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
         db.execSQL("ALTER TABLE tasks_new RENAME TO tasks")
         createSubtasks(db)
         createIndices(db)
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE tasks ADD COLUMN recurrence_kind TEXT NOT NULL DEFAULT 'NONE'"
+        )
+        db.execSQL(
+            "ALTER TABLE tasks ADD COLUMN recurrence_interval_unit TEXT DEFAULT NULL"
+        )
+        db.execSQL(
+            "ALTER TABLE tasks ADD COLUMN recurrence_interval_count INTEGER DEFAULT NULL"
+        )
+        db.execSQL("ALTER TABLE tasks ADD COLUMN recurrence_basis TEXT DEFAULT NULL")
+        db.execSQL(
+            "ALTER TABLE tasks ADD COLUMN recurrence_weekday_mask INTEGER DEFAULT NULL"
+        )
+        db.execSQL(
+            "ALTER TABLE tasks ADD COLUMN recurrence_anchor_day INTEGER DEFAULT NULL"
+        )
+        db.execSQL("ALTER TABLE tasks ADD COLUMN recurrence_ordinal TEXT DEFAULT NULL")
+        db.execSQL(
+            "ALTER TABLE tasks ADD COLUMN recurrence_ordinal_weekday TEXT DEFAULT NULL"
+        )
+
+        db.execSQL("UPDATE tasks SET recurrence_kind = recurrence")
+        db.execSQL(
+            """
+            UPDATE tasks SET
+                recurrence_kind = 'INTERVAL',
+                recurrence_interval_unit = 'DAYS',
+                recurrence_interval_count = 1,
+                recurrence_basis = 'SCHEDULED_DATE'
+            WHERE recurrence = 'DAILY'
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            UPDATE tasks SET
+                recurrence_kind = 'INTERVAL',
+                recurrence_interval_unit = 'WEEKS',
+                recurrence_interval_count = 1,
+                recurrence_basis = 'SCHEDULED_DATE'
+            WHERE recurrence = 'WEEKLY'
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            UPDATE tasks SET
+                recurrence_kind = 'MONTHLY_DAY',
+                recurrence_interval_count = 1,
+                recurrence_basis = 'SCHEDULED_DATE'
+            WHERE recurrence = 'MONTHLY'
+            """.trimIndent()
+        )
+
+        val anchorUpdate = db.compileStatement(
+            "UPDATE tasks SET recurrence_anchor_day = ? WHERE id = ?"
+        )
+        db.query(
+            "SELECT id, due_at FROM tasks WHERE recurrence = 'MONTHLY' AND due_at IS NOT NULL"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val anchorDay = Instant.ofEpochMilli(cursor.getLong(1))
+                    .atZone(ZoneId.systemDefault())
+                    .dayOfMonth
+                anchorUpdate.clearBindings()
+                anchorUpdate.bindLong(1, anchorDay.toLong())
+                anchorUpdate.bindLong(2, cursor.getLong(0))
+                anchorUpdate.executeUpdateDelete()
+            }
+        }
     }
 }
 

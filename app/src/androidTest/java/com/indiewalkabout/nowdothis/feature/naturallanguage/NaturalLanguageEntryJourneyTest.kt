@@ -38,14 +38,31 @@ import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.app.MainActivity
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.core.database.DebugDatabaseEntryPoint
+import com.indiewalkabout.nowdothis.core.notifications.AlarmManagerReminderScheduler
 import com.indiewalkabout.nowdothis.core.notifications.AndroidAlarmGateway
 import com.indiewalkabout.nowdothis.core.notifications.NotificationPermissionTestState
 import com.indiewalkabout.nowdothis.core.notifications.ReminderReceiver
+import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.feature.category.data.local.CategoryEntity
+import com.indiewalkabout.nowdothis.feature.portability.data.local.PlanningDataSource
+import com.indiewalkabout.nowdothis.feature.portability.data.repository.DocumentGateway
+import com.indiewalkabout.nowdothis.feature.portability.data.repository.OfflinePortabilityRepository
+import com.indiewalkabout.nowdothis.feature.portability.data.serialization.BackupCodec
+import com.indiewalkabout.nowdothis.feature.portability.data.serialization.BackupValidator
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.DocumentReference
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
+import com.indiewalkabout.nowdothis.feature.portability.domain.model.PortabilityResult
+import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.CreateBackup
+import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.InspectBackup
+import com.indiewalkabout.nowdothis.feature.portability.domain.usecase.RestoreBackup
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
+import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import dagger.hilt.android.EntryPointAccessors
 import java.io.FileInputStream
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -55,6 +72,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -163,12 +181,167 @@ class NaturalLanguageEntryJourneyTest {
 
         composeRule.activityRule.scenario.recreate()
 
-        waitForTag("quick-entry-input")
+        scrollEditorTo("quick-entry-input")
         assertActiveLocale(fixture)
+        scrollEditorTo("quick-entry-input")
         assertEditableText("quick-entry-input", fixture.changedWithoutParse)
         assertNonTemporalPreview(fixture)
         assertScheduleControls(parsedSchedule)
         assertEquals(emptyList<TaskEntity>(), readTasks())
+    }
+
+    @Test
+    fun italianSelectedWeekdays_surviveEditorRecreation() {
+        assertSelectedWeekdaysSurviveRecreation(ITALIAN_SELECTED_WEEKDAYS_RECREATION)
+    }
+
+    @Test
+    fun englishSelectedWeekdays_surviveEditorRecreation() {
+        assertSelectedWeekdaysSurviveRecreation(ENGLISH_SELECTED_WEEKDAYS_RECREATION)
+    }
+
+    @Test
+    fun englishSelectedWeekdays_captureSaveAndComplete_createsScheduledSuccessor() {
+        val fixture = ENGLISH_SELECTED_WEEKDAYS_JOURNEY
+        val initialDueAt = fixture.expectedDueAt()
+        val initialReminderAt = initialDueAt - REMINDER_LEAD_MILLIS
+
+        assertActiveLocale(fixture)
+        openNewTask()
+        enterAndParse(fixture.phrase)
+        assertSelectedWeekdayDraft(fixture)
+        assertDateTimeControl("task-due-section", initialDueAt)
+        assertDateTimeControl("task-reminder-section", initialReminderAt)
+        correctPriorityAndDescribe("Production recurrence journey")
+        assertExactAlarmUnavailable()
+        saveThroughExactAlarmFallback()
+
+        val initial = waitForPersistedTask(fixture.expectedTitle)
+        assertProductionOccurrence(
+            task = initial,
+            expectedDueAt = initialDueAt,
+            expectedReminderAt = initialReminderAt
+        )
+        val seriesId = requireNotNull(initial.seriesId)
+        assertTrue("Production save did not assign a recurrence series", seriesId.isNotBlank())
+        assertExactRegisteredAlarms(initial.id to initialReminderAt)
+        assertReturnedToTaskList(fixture.expectedTitle)
+
+        composeRule.onNodeWithTag("task-complete-${initial.id}").performClick()
+
+        var successor: TaskEntity? = null
+        composeRule.waitUntil(timeoutMillis = WAIT_TIMEOUT_MILLIS) {
+            successor = readTasks().singleOrNull { task ->
+                task.title == fixture.expectedTitle &&
+                    !task.isCompleted &&
+                    task.id != initial.id &&
+                    task.reminderStatus == "SCHEDULED"
+            }
+            successor != null
+        }
+        val completedInitial = requireNotNull(readTasks().single { it.id == initial.id })
+        val persistedSuccessor = requireNotNull(successor)
+        assertTrue(completedInitial.isCompleted)
+        assertEquals(initial.id, completedInitial.id)
+        assertEquals(initialDueAt, completedInitial.dueAt)
+        assertEquals(initialReminderAt, completedInitial.reminderAt)
+        assertEquals(seriesId, completedInitial.seriesId)
+        assertSelectedWeekdayRule(completedInitial)
+        assertNotEquals(initial.id, persistedSuccessor.id)
+        assertEquals(seriesId, persistedSuccessor.seriesId)
+        assertProductionOccurrence(
+            task = persistedSuccessor,
+            expectedDueAt = initialDueAt + MILLIS_PER_DAY,
+            expectedReminderAt = initialReminderAt + MILLIS_PER_DAY
+        )
+        assertExactRegisteredAlarms(
+            persistedSuccessor.id to requireNotNull(persistedSuccessor.reminderAt)
+        )
+
+        val backupCodec = BackupCodec()
+        val documents = JourneyDocumentGateway()
+        val reference = DocumentReference("memory://production-recurrence-journey")
+        val taskRepository = OfflineTaskRepository(database, database.taskDao())
+        val scheduler = AlarmManagerReminderScheduler(
+            gateway = appStateRule.alarmGateway(),
+            taskRepository = taskRepository,
+            clock = AppClock { System.currentTimeMillis() }
+        )
+        val portability = OfflinePortabilityRepository(
+            planningDataStore = PlanningDataSource(database),
+            documentGateway = documents,
+            backupCodec = backupCodec,
+            backupValidator = BackupValidator(),
+            clock = AppClock { PRODUCTION_JOURNEY_BACKUP_CREATED_AT },
+            dispatcher = Dispatchers.IO
+        )
+        val exported = runBlocking { CreateBackup(portability)(reference) }
+        assertTrue(exported is PortabilityResult.Exported)
+        val exportedSummary = (exported as PortabilityResult.Exported).summary
+        assertEquals(PRODUCTION_JOURNEY_BACKUP_CREATED_AT, exportedSummary.createdAtEpochMillis)
+        assertEquals(1, exportedSummary.categoryCount)
+        assertEquals(2, exportedSummary.taskCount)
+        assertEquals(1, exportedSummary.completedTaskCount)
+
+        val exportedBackup = backupCodec.decode(documents.requireBytes(reference))
+        assertEquals("now-do-this-backup", exportedBackup.format)
+        assertEquals(2, exportedBackup.version)
+        assertEquals(
+            listOf(completedInitial.id, persistedSuccessor.id),
+            exportedBackup.tasks.map(PlanningTask::id)
+        )
+        assertPlanningTaskMatchesEntity(
+            exportedBackup.tasks.single { it.id == completedInitial.id },
+            completedInitial
+        )
+        assertPlanningTaskMatchesEntity(
+            exportedBackup.tasks.single { it.id == persistedSuccessor.id },
+            persistedSuccessor
+        )
+        val inspection = runBlocking { InspectBackup(portability)(reference) }
+        assertTrue(inspection is PortabilityResult.Inspected)
+        val candidate = (inspection as PortabilityResult.Inspected).candidate
+        assertEquals(exportedSummary, candidate.summary)
+        assertEquals(exportedBackup, candidate.backup)
+
+        val mutatedReminderAt = requireNotNull(persistedSuccessor.reminderAt) + 2 * MILLIS_PER_DAY
+        val mutated = persistedSuccessor.copy(
+            title = "Mutated after production export",
+            dueAt = requireNotNull(persistedSuccessor.dueAt) + 2 * MILLIS_PER_DAY,
+            reminderAt = mutatedReminderAt,
+            recurrence = "NONE",
+            recurrenceKind = "NONE",
+            recurrenceBasis = null,
+            recurrenceWeekdayMask = null,
+            seriesId = null,
+            updatedAt = persistedSuccessor.updatedAt + 1
+        )
+        runBlocking(Dispatchers.IO) {
+            database.taskDao().deleteTaskById(completedInitial.id)
+            database.taskDao().updateTask(mutated)
+        }
+        appStateRule.registerAlarmForTest(mutated.id, mutatedReminderAt)
+        assertEquals(listOf(mutated), readTasks())
+        assertExactRegisteredAlarms(mutated.id to mutatedReminderAt)
+
+        val restore = runBlocking { RestoreBackup(portability, scheduler)(candidate) }
+        assertEquals(PortabilityResult.Restored(exportedSummary), restore)
+        val restoredTasks = readTasks()
+        assertEquals(listOf(completedInitial, persistedSuccessor), restoredTasks)
+        val restoredInitial = restoredTasks.single { it.id == initial.id }
+        val restoredSuccessor = restoredTasks.single { it.id == persistedSuccessor.id }
+        assertTrue(restoredInitial.isCompleted)
+        assertEquals(seriesId, restoredInitial.seriesId)
+        assertEquals(seriesId, restoredSuccessor.seriesId)
+        assertSelectedWeekdayRule(restoredInitial)
+        assertProductionOccurrence(
+            task = restoredSuccessor,
+            expectedDueAt = requireNotNull(persistedSuccessor.dueAt),
+            expectedReminderAt = requireNotNull(persistedSuccessor.reminderAt)
+        )
+        assertExactRegisteredAlarms(
+            restoredSuccessor.id to requireNotNull(restoredSuccessor.reminderAt)
+        )
     }
 
     @Test
@@ -286,9 +459,11 @@ class NaturalLanguageEntryJourneyTest {
         scrollEditorTo("task-category-field")
         composeRule.onNodeWithTag("task-category-field")
             .assertTextEquals(fixture.categoryName)
-        scrollEditorTo("task-recurrence-field")
-        composeRule.onNodeWithTag("task-recurrence-field")
-            .assertTextEquals(text(R.string.task_recurrence_weekly))
+        scrollEditorTo("task-recurrence-kind")
+        composeRule.onNodeWithTag("task-recurrence-kind")
+            .assertTextEquals(text(R.string.task_recurrence_interval))
+        scrollEditorTo("task-recurrence-basis-scheduled_date")
+        composeRule.onNodeWithTag("task-recurrence-basis-scheduled_date").assertIsSelected()
     }
 
     private fun captureScheduleControls(): ScheduleControlSnapshot {
@@ -304,6 +479,30 @@ class NaturalLanguageEntryJourneyTest {
     private fun assertScheduleControls(expected: ScheduleControlSnapshot) {
         assertEquals(expected.dueText, controlTextSnapshot("task-due-section"))
         assertEquals(expected.reminderText, controlTextSnapshot("task-reminder-section"))
+    }
+
+    private fun assertSelectedWeekdaysSurviveRecreation(fixture: JourneyFixture) {
+        assertActiveLocale(fixture)
+        openNewTask()
+        enterAndParse(fixture.phrase)
+        assertSelectedWeekdayDraft(fixture)
+
+        composeRule.activityRule.scenario.recreate()
+
+        waitForTag("task-title")
+        assertActiveLocale(fixture)
+        assertSelectedWeekdayDraft(fixture)
+        assertEquals(emptyList<TaskEntity>(), readTasks())
+    }
+
+    private fun assertSelectedWeekdayDraft(fixture: JourneyFixture) {
+        scrollEditorTo("task-title")
+        assertEditableText("task-title", fixture.expectedTitle)
+        scrollEditorTo("task-recurrence-weekdays")
+        composeRule.onNodeWithTag("task-recurrence-weekday-monday").assertIsSelected()
+        composeRule.onNodeWithTag("task-recurrence-weekday-friday").assertIsSelected()
+        scrollEditorTo("task-recurrence-basis-scheduled_date")
+        composeRule.onNodeWithTag("task-recurrence-basis-scheduled_date").assertIsSelected()
     }
 
     private fun controlTextSnapshot(tag: String): List<String> {
@@ -337,7 +536,14 @@ class NaturalLanguageEntryJourneyTest {
             )
         )
         assertExactAlarmUnavailable()
-        assertTrue("Could not return from exact-alarm settings", device.pressBack())
+        device.pressBack()
+        assertTrue(
+            "Could not return from exact-alarm settings",
+            device.wait(
+                Until.hasObject(By.pkg(instrumentation.targetContext.packageName)),
+                PLATFORM_UI_TIMEOUT_MILLIS
+            )
+        )
         instrumentation.waitForIdleSync()
     }
 
@@ -366,7 +572,10 @@ class NaturalLanguageEntryJourneyTest {
         assertEquals(fixture.categoryId, task.categoryId)
         assertEquals(expectedDueAt, task.dueAt)
         assertEquals(expectedDueAt - REMINDER_LEAD_MILLIS, task.reminderAt)
-        assertEquals("WEEKLY", task.recurrence)
+        assertEquals("INTERVAL", task.recurrence)
+        assertEquals("INTERVAL", task.recurrenceKind)
+        assertEquals("WEEKS", task.recurrenceIntervalUnit)
+        assertEquals(1, task.recurrenceIntervalCount)
         assertEquals("SCHEDULED", task.reminderStatus)
         assertRegisteredReminder(task)
     }
@@ -391,6 +600,73 @@ class NaturalLanguageEntryJourneyTest {
             "Alarm trigger ${alarm.triggerAt} differed from $expectedReminderAt",
             abs(alarm.triggerAt - expectedReminderAt) <= ALARM_TRIGGER_TOLERANCE_MILLIS
         )
+    }
+
+    private fun assertExactRegisteredAlarms(vararg expected: Pair<Int, Long>) {
+        val actual = appStateRule.registeredReminders()
+            .groupBy(RegisteredAlarm::requestCode)
+            .also { grouped ->
+                assertTrue(
+                    "Duplicate package reminder alarms found: $grouped",
+                    grouped.values.all { alarms -> alarms.size == 1 }
+                )
+            }
+            .mapValues { (_, alarms) -> alarms.single() }
+        assertEquals(expected.map(Pair<Int, Long>::first).toSet(), actual.keys)
+        expected.forEach { (taskId, triggerAt) ->
+            val alarm = requireNotNull(actual[taskId])
+            assertEquals("RTC_WAKEUP", alarm.type)
+            assertTrue(
+                "Alarm trigger ${alarm.triggerAt} differed from $triggerAt for task $taskId",
+                abs(alarm.triggerAt - triggerAt) <= ALARM_TRIGGER_TOLERANCE_MILLIS
+            )
+        }
+    }
+
+    private fun assertProductionOccurrence(
+        task: TaskEntity,
+        expectedDueAt: Long,
+        expectedReminderAt: Long
+    ) {
+        assertEquals(ENGLISH_SELECTED_WEEKDAYS_JOURNEY.expectedTitle, task.title)
+        assertEquals("Production recurrence journey", task.description)
+        assertEquals("MEDIUM", task.priority)
+        assertEquals(expectedDueAt, task.dueAt)
+        assertEquals(expectedReminderAt, task.reminderAt)
+        assertEquals("SCHEDULED", task.reminderStatus)
+        assertSelectedWeekdayRule(task)
+    }
+
+    private fun assertSelectedWeekdayRule(task: TaskEntity) {
+        assertEquals("SELECTED_WEEKDAYS", task.recurrence)
+        assertEquals("SELECTED_WEEKDAYS", task.recurrenceKind)
+        assertEquals("SCHEDULED_DATE", task.recurrenceBasis)
+        assertEquals(0b001_0001, task.recurrenceWeekdayMask)
+    }
+
+    private fun assertPlanningTaskMatchesEntity(actual: PlanningTask, expected: TaskEntity) {
+        assertEquals(expected.id, actual.id)
+        assertEquals(expected.title, actual.title)
+        assertEquals(expected.description, actual.description)
+        assertEquals(expected.priority, actual.priority)
+        assertEquals(expected.categoryId, actual.categoryId)
+        assertEquals(expected.isCompleted, actual.isCompleted)
+        assertEquals(expected.completedAt, actual.completedAt)
+        assertEquals(expected.dueAt, actual.dueAt)
+        assertEquals(expected.reminderAt, actual.reminderAt)
+        assertEquals(expected.reminderStatus, actual.reminderStatus)
+        assertEquals(
+            RecurrenceRule.SelectedWeekdays(
+                setOf(DayOfWeek.MONDAY, DayOfWeek.FRIDAY),
+                RecurrenceBasis.SCHEDULED_DATE
+            ),
+            actual.recurrenceRule
+        )
+        assertEquals(expected.recurrenceEndAt, actual.recurrenceEndAt)
+        assertEquals(expected.seriesId, actual.seriesId)
+        assertEquals(expected.createdAt, actual.createdAt)
+        assertEquals(expected.updatedAt, actual.updatedAt)
+        assertTrue(actual.subtasks.isEmpty())
     }
 
     private fun waitForPersistedTask(title: String): TaskEntity {
@@ -527,6 +803,30 @@ private val ITALIAN_RECREATION = JourneyFixture(
     categoryName = "Casa"
 )
 
+private val ITALIAN_SELECTED_WEEKDAYS_RECREATION = JourneyFixture(
+    languageTags = "it",
+    phrase = "Pianifica rilascio 31/12/2037 alle 18 ogni lunedi e venerdi",
+    expectedTitle = "Pianifica rilascio",
+    description = "",
+    categoryId = 106,
+    categoryName = "Casa",
+    dueDate = LocalDate.of(2037, 12, 31)
+)
+
+private val ENGLISH_SELECTED_WEEKDAYS_RECREATION = JourneyFixture(
+    languageTags = "en",
+    phrase = "Plan release 12/31/2037 at 6 pm every Monday and Friday",
+    expectedTitle = "Plan release",
+    description = "",
+    categoryId = 107,
+    categoryName = "Home",
+    dueDate = LocalDate.of(2037, 12, 31)
+)
+
+private val ENGLISH_SELECTED_WEEKDAYS_JOURNEY = ENGLISH_SELECTED_WEEKDAYS_RECREATION.copy(
+    phrase = "Plan release 12/31/2037 at 6 pm every Monday and Friday remind 1h before"
+)
+
 private val ENGLISH_SECONDARY_LOCALE = JourneyFixture(
     languageTags = "fr-CH,en-US",
     phrase = "Plan project tomorrow at 18 #Work !high every week remind 1h before",
@@ -561,6 +861,11 @@ private fun journeyFixtureFor(testMethod: String): JourneyFixture = when (testMe
     }
     "recreation_restoresRelativeDatePreview_withoutReparsingChangedInput" -> {
         ITALIAN_RECREATION
+    }
+    "italianSelectedWeekdays_surviveEditorRecreation" -> ITALIAN_SELECTED_WEEKDAYS_RECREATION
+    "englishSelectedWeekdays_surviveEditorRecreation" -> ENGLISH_SELECTED_WEEKDAYS_RECREATION
+    "englishSelectedWeekdays_captureSaveAndComplete_createsScheduledSuccessor" -> {
+        ENGLISH_SELECTED_WEEKDAYS_JOURNEY
     }
     "setupFailure_afterMutation_restoresRowsSequencesAndLiveAlarm" -> ITALIAN_RECREATION
     else -> error("No Natural-Language Entry fixture for $testMethod")
@@ -814,7 +1119,7 @@ private class AppStateRule(
         }
     }
 
-    private fun alarmGateway(): AndroidAlarmGateway = AndroidAlarmGateway(
+    fun alarmGateway(): AndroidAlarmGateway = AndroidAlarmGateway(
         context = context,
         alarmManager = context.getSystemService(android.app.AlarmManager::class.java)
     )
@@ -828,6 +1133,20 @@ private data class AppStateSnapshot(
     val sequences: Map<String, Long?>,
     val registeredAlarms: Map<Int, RegisteredAlarm>
 )
+
+private class JourneyDocumentGateway : DocumentGateway {
+    private val documents = mutableMapOf<String, ByteArray>()
+
+    override suspend fun write(reference: DocumentReference, bytes: ByteArray) {
+        documents[reference.value] = bytes.copyOf()
+    }
+
+    override suspend fun read(reference: DocumentReference, maxBytes: Long): ByteArray =
+        requireNotNull(documents[reference.value]).copyOf()
+
+    fun requireBytes(reference: DocumentReference): ByteArray =
+        requireNotNull(documents[reference.value]).copyOf()
+}
 
 private class ExpectedFixtureSetupFailure : RuntimeException(EXPECTED_SETUP_FAILURE_MESSAGE)
 
@@ -858,11 +1177,13 @@ private val SETUP_FAILURE_NO_ALARM_TASK = TaskEntity(
 )
 
 private const val REMINDER_LEAD_MILLIS = 60 * 60 * 1_000L
+private const val MILLIS_PER_DAY = 24 * 60 * 60 * 1_000L
 private const val ALARM_TRIGGER_TOLERANCE_MILLIS = 1_000L
 private const val WAIT_TIMEOUT_MILLIS = 10_000L
 private const val PLATFORM_UI_TIMEOUT_MILLIS = 5_000L
 private const val SETTINGS_PACKAGE = "com.android.settings"
 private const val FIXTURE_CREATED_AT = 1_788_044_400_000L
+private const val PRODUCTION_JOURNEY_BACKUP_CREATED_AT = 1_788_044_500_000L
 private const val SETUP_FAILURE_TRIGGER_AT = 2_145_990_600_000L
 private const val SETUP_FAILURE_UNEXPECTED_TRIGGER_AT = 2_145_994_200_000L
 private const val SETUP_FAILURE_ORPHAN_REQUEST_CODE = 703

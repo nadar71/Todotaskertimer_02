@@ -7,6 +7,7 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParsedT
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.RecognizedField
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.SourceMatch
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.AttributeParser
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.RecurrenceParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.ReminderParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TemporalParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TextNormalizer
@@ -14,21 +15,39 @@ import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TextNo
 class ParseNaturalLanguageTask(
     private val temporalParser: TemporalParser,
     private val attributeParser: AttributeParser,
-    private val reminderParser: ReminderParser
+    private val reminderParser: ReminderParser,
+    private val recurrenceParser: RecurrenceParser
 ) {
 
     operator fun invoke(input: NaturalLanguageInput): NaturalLanguageParseResult {
         if (TextNormalizer.normalizeWhitespace(input.rawText).isBlank()) return emptyResult()
 
         val markerRanges = attributeParser.ownedMarkerRanges(input)
-        val reminderClaims = reminderParser.shieldingRanges(input, markerRanges)
-        val temporalExclusions = markerRanges + reminderClaims
+        val recurrenceClaims = recurrenceParser.ownershipRanges(input, markerRanges)
+        val reminderClaims = reminderParser.shieldingRanges(
+            input,
+            markerRanges + recurrenceClaims
+        )
+        val temporalExclusions = markerRanges + reminderClaims + recurrenceClaims
         val temporal = temporalParser.parse(input.withBarrierRanges(temporalExclusions))
-        val reminder = reminderParser.parse(input, temporal.dueAt, markerRanges)
-        val attributes = attributeParser.parse(input, reminderClaims)
+        val reminder = reminderParser.parse(
+            input,
+            temporal.dueAt,
+            markerRanges + recurrenceClaims
+        )
+        val recurrence = recurrenceParser.parse(
+            input = input,
+            dueAt = temporal.dueAt,
+            excludedRanges = markerRanges + reminderClaims + temporal.matches
+        )
+        val attributes = attributeParser.parse(
+            input,
+            reminderClaims + recurrenceClaims + temporal.matches
+        )
         val consumed = buildList {
             addAll(temporal.matches.rejectIntersecting(temporalExclusions))
-            addAll(reminder.matches.rejectIntersecting(markerRanges))
+            addAll(reminder.matches.rejectIntersecting(markerRanges + recurrenceClaims))
+            addAll(recurrence.matches)
             addAll(attributes.matches)
         }.disjointConsumedRanges(input.rawText)
         val dueAt = temporal.dueAt.takeIf {
@@ -43,7 +62,7 @@ class ParseNaturalLanguageTask(
         val categoryId = attributes.categoryId.takeIf {
             consumed.any { match -> match.field == RecognizedField.CATEGORY }
         }
-        val recurrence = attributes.recurrence.takeIf {
+        val recurrenceRule = recurrence.rule.takeIf {
             consumed.any { match -> match.field == RecognizedField.RECURRENCE }
         }
         val title = TextNormalizer.remainingTitle(input.rawText, consumed).takeIf(String::isNotBlank)
@@ -53,7 +72,7 @@ class ParseNaturalLanguageTask(
             if (reminderAt != null) add(RecognizedField.REMINDER)
             if (priority != null) add(RecognizedField.PRIORITY)
             if (categoryId != null) add(RecognizedField.CATEGORY)
-            if (recurrence != null) add(RecognizedField.RECURRENCE)
+            if (recurrenceRule != null) add(RecognizedField.RECURRENCE)
         }
 
         return NaturalLanguageParseResult(
@@ -63,10 +82,10 @@ class ParseNaturalLanguageTask(
                 reminderAt = reminderAt,
                 priority = priority,
                 categoryId = categoryId,
-                recurrence = recurrence
+                recurrenceRule = recurrenceRule
             ),
             recognized = recognized,
-            issues = temporal.issues + reminder.issues + attributes.issues,
+            issues = temporal.issues + reminder.issues + attributes.issues + recurrence.issues,
             consumed = consumed
         )
     }
@@ -112,7 +131,7 @@ class ParseNaturalLanguageTask(
             reminderAt = null,
             priority = null,
             categoryId = null,
-            recurrence = null
+            recurrenceRule = null
         ),
         recognized = emptySet(),
         issues = listOf(ParseIssue.EmptyInput),

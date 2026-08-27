@@ -1,12 +1,20 @@
 package com.indiewalkabout.nowdothis.feature.portability.domain.model
 
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
+
 data class PlanningBackup(
     val format: String,
     val version: Int,
     val createdAtEpochMillis: Long,
     val categories: List<PlanningCategory>,
     val tasks: List<PlanningTask>
-)
+) {
+    companion object {
+        const val FORMAT = "now-do-this-backup"
+        const val MIN_SUPPORTED_VERSION = 1
+        const val CURRENT_VERSION = 2
+    }
+}
 
 data class PlanningCategory(
     val id: Int,
@@ -28,7 +36,7 @@ data class PlanningTask(
     val dueAt: Long?,
     val reminderAt: Long?,
     val reminderStatus: String,
-    val recurrence: String,
+    val recurrenceRule: RecurrenceRule,
     val recurrenceEndAt: Long?,
     val seriesId: String?,
     val createdAt: Long,

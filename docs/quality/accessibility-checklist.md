@@ -35,6 +35,11 @@
 | Overdue task | Dedicated localized section heading and due date text |
 | Completed task | Checkbox state or completed icon and localized description |
 
+Advanced recurrence exposes selected weekday and recurrence-basis state through the
+editor's existing minimum-target and 200% geometry coverage. Connected Italian/English
+recreation tests prove parsed selected weekdays remain selected after activity
+recreation; they do not substitute for spoken-order validation on a physical device.
+
 ## Validation Matrix
 
 | Check | Environment | Date | Result |
@@ -46,6 +51,7 @@
 | Natural-Language Entry Italian/English production Compose | Medium Phone AVD, API 36 | 2026-08-26 | Passed: 14 focused tests cover localized rendering, semantics, 48 dp target, and 200% geometry/negative control |
 | Natural-Language Entry connected journey | Medium Phone AVD, API 36 | 2026-08-26 | Passed: 3 real MainActivity/Navigation 3/Room/reminder journeys |
 | Natural-Language Entry TalkBack parse/correct/save order | Pending physical-device review | - | Pending; automated labels/live regions are not a spoken-order claim |
+| Advanced Recurrence TalkBack editor order | Pending physical-device review | - | Pending; no physical-device check was run for this release evidence |
 | Quick Capture TalkBack reading order | Pending physical-device review | - | Pending; content descriptions are automated, spoken order is not claimed |
 | Light and dark contrast review | Pending physical-device review | - | Pending |
 | TalkBack: create task | Pending physical-device review | - | Pending |

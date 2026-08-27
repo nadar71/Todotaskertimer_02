@@ -20,15 +20,19 @@ import com.indiewalkabout.nowdothis.feature.category.presentation.DefaultCategor
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.CategoryCandidate
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.model.ParserLanguage
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.AttributeParser
+import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.RecurrenceParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.ReminderParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.parser.TemporalParser
 import com.indiewalkabout.nowdothis.feature.naturallanguage.domain.usecase.ParseNaturalLanguageTask
 import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.AndroidNaturalLanguageEnvironment
 import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.NaturalLanguageEnvironment
 import com.indiewalkabout.nowdothis.feature.naturallanguage.presentation.ParserEnvironment
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Subtask
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
@@ -44,8 +48,10 @@ import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepositor
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.SaveTask
 import com.indiewalkabout.nowdothis.feature.task.domain.usecase.ValidateTask
 import com.indiewalkabout.nowdothis.feature.task.navigation.TaskEditorKey
+import java.lang.reflect.Modifier
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.util.TimeZone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -95,7 +101,8 @@ class TaskEditorViewModelTest {
     private val naturalLanguageParser = ParseNaturalLanguageTask(
         temporalParser = TemporalParser(),
         attributeParser = AttributeParser(),
-        reminderParser = ReminderParser()
+        reminderParser = ReminderParser(),
+        recurrenceParser = RecurrenceParser()
     )
 
     @Before
@@ -221,6 +228,9 @@ class TaskEditorViewModelTest {
         val viewModel = createViewModel(TaskEditorKey(null, null))
         advanceUntilIdle()
         viewModel.onEvent(TaskEditorEvent.UpdateDescription("Keep this description"))
+        viewModel.onEvent(
+            TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+        )
         viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(epoch("2026-09-30T18:00:00+02:00")))
         viewModel.onEvent(TaskEditorEvent.AddSubtask)
         val subtaskId = viewModel.uiState.value.subtasks.single().draftId
@@ -250,10 +260,12 @@ class TaskEditorViewModelTest {
         assertEquals(ReminderStatus.REQUESTED, state.reminderStatus)
         assertEquals(TaskPriority.HIGH, state.priority)
         assertEquals(8, state.categoryId)
-        assertEquals(RecurrenceType.WEEKLY, state.recurrence)
+        assertEquals(RecurrenceEditorKind.INTERVAL, state.recurrence.kind)
+        assertEquals(RecurrenceEditorIntervalUnit.WEEKS, state.recurrence.intervalUnit)
+        assertEquals(RecurrenceEditorBasis.SCHEDULED_DATE, state.recurrence.basis)
         assertEquals("Keep this description", state.description)
         assertEquals(listOf("Keep this subtask"), state.subtasks.map { it.title })
-        assertEquals(epoch("2026-09-30T18:00:00+02:00"), state.recurrenceEndAt)
+        assertEquals(epoch("2026-09-30T18:00:00+02:00"), state.recurrence.endAt)
         assertEquals(QuickEntrySummaryField.entries, state.quickEntrySummary)
         assertTrue(state.quickEntryIssues.isEmpty())
         assertEquals(listOf(home), naturalLanguageEnvironment.categorySnapshots.single())
@@ -261,6 +273,123 @@ class TaskEditorViewModelTest {
         assertEquals(0, permissions.exactAlarmChecks)
         assertTrue(effects.isEmpty())
     }
+
+    @Test
+    fun monthlyQuickEntry_usesTheParsedDueDayAsItsEditorAnchor() = runTest(dispatcher) {
+        val previousTimeZone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ENGLISH,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(
+                TaskEditorEvent.UpdateQuickEntry("Pay rent tomorrow at 00:30 every month")
+            )
+
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            val recurrence = viewModel.uiState.value.recurrence
+            assertEquals(RecurrenceEditorKind.MONTHLY_DAY, recurrence.kind)
+            assertEquals(27, recurrence.monthlyAnchorDay)
+            assertEquals(RecurrenceEditorBasis.SCHEDULED_DATE, recurrence.basis)
+        } finally {
+            TimeZone.setDefault(previousTimeZone)
+        }
+    }
+
+    @Test
+    fun advancedQuickEntry_mergesTypedRuleIntoCorrectableDraftAndKeepsEnd() =
+        runTest(dispatcher) {
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ITALIAN,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+            )
+            viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(2_000_000_000_000L))
+            viewModel.onEvent(
+                TaskEditorEvent.UpdateQuickEntry(
+                    "Palestra ogni lunedì e venerdì in base alla data di completamento"
+                )
+            )
+
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            val state = viewModel.uiState.value
+            assertEquals("Palestra", state.title)
+            assertEquals(RecurrenceEditorKind.SELECTED_WEEKDAYS, state.recurrence.kind)
+            assertEquals(RecurrenceEditorBasis.COMPLETION_DATE, state.recurrence.basis)
+            assertEquals(
+                setOf(RecurrenceEditorWeekday.MONDAY, RecurrenceEditorWeekday.FRIDAY),
+                state.recurrence.selectedWeekdays
+            )
+            assertEquals(2_000_000_000_000L, state.recurrence.endAt)
+            assertTrue(state.quickEntryIssues.isEmpty())
+        }
+
+    @Test
+    fun monthlyQuickEntryWithoutParsedDate_usesCurrentEditorDueInParserZone() =
+        runTest(dispatcher) {
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ENGLISH,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(TaskEditorEvent.UpdateDueAt(epoch("2026-08-31T00:30:00+02:00")))
+            viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry("Rent every 3 months"))
+
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            val recurrence = viewModel.uiState.value.recurrence
+            assertEquals(RecurrenceEditorKind.MONTHLY_DAY, recurrence.kind)
+            assertEquals(3, recurrence.monthlyEvery)
+            assertEquals(31, recurrence.monthlyAnchorDay)
+            assertEquals(RecurrenceEditorBasis.SCHEDULED_DATE, recurrence.basis)
+        }
+
+    @Test
+    fun ambiguousQuickEntry_preservesExactTitleAndExistingCorrectableRule() =
+        runTest(dispatcher) {
+            naturalLanguageEnvironment.parserEnvironment = ParserEnvironment(
+                language = ParserLanguage.ITALIAN,
+                nowEpochMillis = NOW,
+                zoneId = ROME,
+                categories = emptyList()
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+            )
+            viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceIntervalEvery(4))
+            val previousRecurrence = viewModel.uiState.value.recurrence
+            val raw = "Report quinto lunedi del mese"
+            viewModel.onEvent(TaskEditorEvent.UpdateQuickEntry(raw))
+
+            viewModel.onEvent(TaskEditorEvent.ParseQuickEntry)
+
+            val state = viewModel.uiState.value
+            assertEquals(raw, state.title)
+            assertEquals(previousRecurrence, state.recurrence)
+            assertEquals(
+                listOf(QuickEntryIssue.AMBIGUOUS_RECURRENCE),
+                state.quickEntryIssues
+            )
+            assertEquals(listOf(QuickEntrySummaryField.TITLE), state.quickEntrySummary)
+        }
 
     @Test
     fun quickEntryReparse_replacesOnlyRecognizedFields() = runTest(dispatcher) {
@@ -297,7 +426,7 @@ class TaskEditorViewModelTest {
         assertEquals(before.categoryId, reparsed.categoryId)
         assertEquals(before.recurrence, reparsed.recurrence)
         assertEquals("User description", reparsed.description)
-        assertEquals(2_000_000_000_000L, reparsed.recurrenceEndAt)
+        assertEquals(2_000_000_000_000L, reparsed.recurrence.endAt)
         assertEquals(listOf("User subtask"), reparsed.subtasks.map { it.title })
         assertEquals(listOf(QuickEntrySummaryField.PRIORITY), reparsed.quickEntrySummary)
     }
@@ -631,6 +760,536 @@ class TaskEditorViewModelTest {
     }
 
     @Test
+    fun selectingInterval_appliesCompletionDefaultAndInitializesOnlyIntervalFields() =
+        runTest(dispatcher) {
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+            )
+
+            assertEquals(
+                RecurrenceEditorState(
+                    kind = RecurrenceEditorKind.INTERVAL,
+                    basis = RecurrenceEditorBasis.COMPLETION_DATE,
+                    intervalUnit = RecurrenceEditorIntervalUnit.DAYS,
+                    intervalEvery = 1
+                ),
+                viewModel.uiState.value.recurrence
+            )
+        }
+
+    @Test
+    fun selectingWeekdays_appliesScheduledDefaultAndClearsIntervalFields() =
+        runTest(dispatcher) {
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+            )
+            viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceIntervalEvery(12))
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceIntervalUnit(
+                    RecurrenceEditorIntervalUnit.WEEKS
+                )
+            )
+
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.SELECTED_WEEKDAYS)
+            )
+
+            val recurrence = viewModel.uiState.value.recurrence
+            assertEquals(RecurrenceEditorBasis.SCHEDULED_DATE, recurrence.basis)
+            assertNull(recurrence.intervalEvery)
+            assertNull(recurrence.intervalUnit)
+            assertTrue(recurrence.selectedWeekdays.isEmpty())
+        }
+
+    @Test
+    fun recurrenceBasisOverrideAndWeekdayToggles_areExplicitAndReversible() =
+        runTest(dispatcher) {
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.SELECTED_WEEKDAYS)
+            )
+
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceBasis(RecurrenceEditorBasis.COMPLETION_DATE)
+            )
+            viewModel.onEvent(
+                TaskEditorEvent.ToggleRecurrenceWeekday(RecurrenceEditorWeekday.MONDAY)
+            )
+            viewModel.onEvent(
+                TaskEditorEvent.ToggleRecurrenceWeekday(RecurrenceEditorWeekday.FRIDAY)
+            )
+
+            assertEquals(
+                RecurrenceEditorBasis.COMPLETION_DATE,
+                viewModel.uiState.value.recurrence.basis
+            )
+            assertEquals(
+                setOf(RecurrenceEditorWeekday.MONDAY, RecurrenceEditorWeekday.FRIDAY),
+                viewModel.uiState.value.recurrence.selectedWeekdays
+            )
+
+            viewModel.onEvent(
+                TaskEditorEvent.ToggleRecurrenceWeekday(RecurrenceEditorWeekday.MONDAY)
+            )
+
+            assertEquals(
+                setOf(RecurrenceEditorWeekday.FRIDAY),
+                viewModel.uiState.value.recurrence.selectedWeekdays
+            )
+        }
+
+    @Test
+    fun selectingMonthlyKinds_initializesTheirOwnScheduledParametersOnly() =
+        runTest(dispatcher) {
+            val viewModel = createViewModel(TaskEditorKey(null, null))
+            advanceUntilIdle()
+
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.MONTHLY_DAY)
+            )
+
+            assertEquals(
+                RecurrenceEditorState(
+                    kind = RecurrenceEditorKind.MONTHLY_DAY,
+                    basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                    monthlyEvery = 1,
+                    monthlyAnchorDay = 1
+                ),
+                viewModel.uiState.value.recurrence
+            )
+
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.MONTHLY_ORDINAL)
+            )
+
+            assertEquals(
+                RecurrenceEditorState(
+                    kind = RecurrenceEditorKind.MONTHLY_ORDINAL,
+                    basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                    monthlyEvery = 1,
+                    ordinal = RecurrenceEditorOrdinal.FIRST,
+                    ordinalWeekday = RecurrenceEditorWeekday.MONDAY
+                ),
+                viewModel.uiState.value.recurrence
+            )
+        }
+
+    @Test
+    fun selectingNone_clearsEveryHiddenRecurrenceParameterAndEnd() = runTest(dispatcher) {
+        val viewModel = createViewModel(TaskEditorKey(null, null))
+        advanceUntilIdle()
+        viewModel.onEvent(
+            TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.MONTHLY_ORDINAL)
+        )
+        viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceMonthlyEvery(8))
+        viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(190_000L))
+
+        viewModel.onEvent(TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.NONE))
+
+        assertEquals(RecurrenceEditorState(), viewModel.uiState.value.recurrence)
+    }
+
+    @Test
+    fun advancedRecurrenceDraft_restoresWithoutDomainConstruction() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        val first = createViewModel(TaskEditorKey(null, null), handle)
+        advanceUntilIdle()
+        first.onEvent(
+            TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.MONTHLY_DAY)
+        )
+        first.onEvent(TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay(32))
+        first.onEvent(TaskEditorEvent.UpdateRecurrenceMonthlyEvery(0))
+        first.onEvent(
+            TaskEditorEvent.SelectRecurrenceBasis(RecurrenceEditorBasis.COMPLETION_DATE)
+        )
+        first.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(190_000L))
+
+        val restored = createViewModel(TaskEditorKey(null, null), handle)
+        advanceUntilIdle()
+
+        assertEquals(first.uiState.value.recurrence, restored.uiState.value.recurrence)
+        assertEquals(32, restored.uiState.value.recurrence.monthlyAnchorDay)
+        assertEquals(0, restored.uiState.value.recurrence.monthlyEvery)
+    }
+
+    @Test
+    fun invalidRecurrenceDrafts_neverReachTheRepository() = runTest(dispatcher) {
+        val invalidDrafts = listOf(
+            RecurrenceEditorState(
+                kind = RecurrenceEditorKind.INTERVAL,
+                basis = RecurrenceEditorBasis.COMPLETION_DATE,
+                intervalUnit = RecurrenceEditorIntervalUnit.DAYS,
+                intervalEvery = 0
+            ) to TaskEditorFieldError.RECURRENCE_INTERVAL_OUT_OF_RANGE,
+            RecurrenceEditorState(
+                kind = RecurrenceEditorKind.INTERVAL,
+                basis = RecurrenceEditorBasis.COMPLETION_DATE,
+                intervalUnit = RecurrenceEditorIntervalUnit.WEEKS,
+                intervalEvery = 1000
+            ) to TaskEditorFieldError.RECURRENCE_INTERVAL_OUT_OF_RANGE,
+            RecurrenceEditorState(
+                kind = RecurrenceEditorKind.SELECTED_WEEKDAYS,
+                basis = RecurrenceEditorBasis.SCHEDULED_DATE
+            ) to TaskEditorFieldError.RECURRENCE_WEEKDAY_REQUIRED,
+            RecurrenceEditorState(
+                kind = RecurrenceEditorKind.MONTHLY_DAY,
+                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                monthlyEvery = 1,
+                monthlyAnchorDay = 0
+            ) to TaskEditorFieldError.RECURRENCE_ANCHOR_OUT_OF_RANGE,
+            RecurrenceEditorState(
+                kind = RecurrenceEditorKind.MONTHLY_ORDINAL,
+                basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                monthlyEvery = 1000,
+                ordinal = RecurrenceEditorOrdinal.LAST,
+                ordinalWeekday = RecurrenceEditorWeekday.SUNDAY
+            ) to TaskEditorFieldError.RECURRENCE_INTERVAL_OUT_OF_RANGE,
+            RecurrenceEditorState(
+                kind = RecurrenceEditorKind.INTERVAL,
+                basis = RecurrenceEditorBasis.COMPLETION_DATE,
+                intervalUnit = RecurrenceEditorIntervalUnit.DAYS,
+                intervalEvery = 1,
+                monthlyAnchorDay = 12
+            ) to TaskEditorFieldError.RECURRENCE_INCOMPLETE
+        )
+
+        invalidDrafts.forEach { (draft, expectedError) ->
+            repository.lastUpsert = null
+            val handle = SavedStateHandle(
+                mapOf(
+                    "draft_initialized" to true,
+                    "title" to "Plan",
+                    "description" to "Details",
+                    "due_at_set" to true,
+                    "due_at" to 90_000L,
+                    "recurrence_draft" to kotlinx.serialization.json.Json.encodeToString(draft)
+                )
+            )
+            val viewModel = createViewModel(TaskEditorKey(null, null), handle)
+            advanceUntilIdle()
+
+            viewModel.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals(expectedError, viewModel.uiState.value.errors.recurrence)
+            assertFalse(viewModel.uiState.value.isSaving)
+            assertNull(repository.lastUpsert)
+        }
+    }
+
+    @Test
+    fun everyCrossKindHiddenParameter_isRejectedByDraftValidation() {
+        val interval = RecurrenceEditorState(
+            kind = RecurrenceEditorKind.INTERVAL,
+            basis = RecurrenceEditorBasis.COMPLETION_DATE,
+            intervalUnit = RecurrenceEditorIntervalUnit.DAYS,
+            intervalEvery = 1
+        )
+        val weekdays = RecurrenceEditorState(
+            kind = RecurrenceEditorKind.SELECTED_WEEKDAYS,
+            basis = RecurrenceEditorBasis.SCHEDULED_DATE
+        ).withSelectedWeekdays(setOf(RecurrenceEditorWeekday.MONDAY))
+        val monthlyDay = RecurrenceEditorState(
+            kind = RecurrenceEditorKind.MONTHLY_DAY,
+            basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+            monthlyEvery = 1,
+            monthlyAnchorDay = 15
+        )
+        val monthlyOrdinal = RecurrenceEditorState(
+            kind = RecurrenceEditorKind.MONTHLY_ORDINAL,
+            basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+            monthlyEvery = 1,
+            ordinal = RecurrenceEditorOrdinal.FIRST,
+            ordinalWeekday = RecurrenceEditorWeekday.MONDAY
+        )
+        val invalidDrafts = buildList {
+            add(RecurrenceEditorState(basis = RecurrenceEditorBasis.SCHEDULED_DATE))
+            add(RecurrenceEditorState(intervalUnit = RecurrenceEditorIntervalUnit.DAYS))
+            add(RecurrenceEditorState(intervalEvery = 1))
+            add(
+                RecurrenceEditorState().withSelectedWeekdays(
+                    setOf(RecurrenceEditorWeekday.MONDAY)
+                )
+            )
+            add(RecurrenceEditorState(monthlyEvery = 1))
+            add(RecurrenceEditorState(monthlyAnchorDay = 1))
+            add(RecurrenceEditorState(ordinal = RecurrenceEditorOrdinal.FIRST))
+            add(RecurrenceEditorState(ordinalWeekday = RecurrenceEditorWeekday.MONDAY))
+
+            add(interval.withSelectedWeekdays(setOf(RecurrenceEditorWeekday.MONDAY)))
+            add(interval.withMonthlyEvery(1))
+            add(interval.withMonthlyAnchorDay(1))
+            add(interval.withOrdinal(RecurrenceEditorOrdinal.FIRST))
+            add(interval.withOrdinalWeekday(RecurrenceEditorWeekday.MONDAY))
+
+            add(weekdays.withIntervalUnit(RecurrenceEditorIntervalUnit.DAYS))
+            add(weekdays.withIntervalEvery(1))
+            add(weekdays.withMonthlyEvery(1))
+            add(weekdays.withMonthlyAnchorDay(1))
+            add(weekdays.withOrdinal(RecurrenceEditorOrdinal.FIRST))
+            add(weekdays.withOrdinalWeekday(RecurrenceEditorWeekday.MONDAY))
+
+            add(monthlyDay.withIntervalUnit(RecurrenceEditorIntervalUnit.DAYS))
+            add(monthlyDay.withIntervalEvery(1))
+            add(monthlyDay.withSelectedWeekdays(setOf(RecurrenceEditorWeekday.MONDAY)))
+            add(monthlyDay.withOrdinal(RecurrenceEditorOrdinal.FIRST))
+            add(monthlyDay.withOrdinalWeekday(RecurrenceEditorWeekday.MONDAY))
+
+            add(monthlyOrdinal.withIntervalUnit(RecurrenceEditorIntervalUnit.DAYS))
+            add(monthlyOrdinal.withIntervalEvery(1))
+            add(monthlyOrdinal.withSelectedWeekdays(setOf(RecurrenceEditorWeekday.MONDAY)))
+            add(monthlyOrdinal.withMonthlyAnchorDay(1))
+        }
+
+        invalidDrafts.forEach { draft ->
+            assertEquals(
+                RecurrenceRuleDraftResult.Invalid(TaskEditorFieldError.RECURRENCE_INCOMPLETE),
+                draft.toValidatedRule()
+            )
+        }
+    }
+
+    @Test
+    fun staleKindSpecificEvents_areIgnoredWithoutPersisting() = runTest(dispatcher) {
+        val cases = listOf(
+            RecurrenceEditorKind.NONE to TaskEditorEvent.SelectRecurrenceBasis(
+                RecurrenceEditorBasis.SCHEDULED_DATE
+            ),
+            RecurrenceEditorKind.NONE to TaskEditorEvent.UpdateRecurrenceEndAt(90_000L),
+            RecurrenceEditorKind.INTERVAL to TaskEditorEvent.ToggleRecurrenceWeekday(
+                RecurrenceEditorWeekday.MONDAY
+            ),
+            RecurrenceEditorKind.INTERVAL to TaskEditorEvent.UpdateRecurrenceMonthlyEvery(2),
+            RecurrenceEditorKind.INTERVAL to TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay(2),
+            RecurrenceEditorKind.INTERVAL to TaskEditorEvent.SelectRecurrenceOrdinal(
+                RecurrenceEditorOrdinal.SECOND
+            ),
+            RecurrenceEditorKind.INTERVAL to TaskEditorEvent.SelectRecurrenceOrdinalWeekday(
+                RecurrenceEditorWeekday.TUESDAY
+            ),
+            RecurrenceEditorKind.SELECTED_WEEKDAYS to
+                TaskEditorEvent.SelectRecurrenceIntervalUnit(RecurrenceEditorIntervalUnit.WEEKS),
+            RecurrenceEditorKind.SELECTED_WEEKDAYS to
+                TaskEditorEvent.UpdateRecurrenceIntervalEvery(2),
+            RecurrenceEditorKind.MONTHLY_DAY to TaskEditorEvent.ToggleRecurrenceWeekday(
+                RecurrenceEditorWeekday.FRIDAY
+            ),
+            RecurrenceEditorKind.MONTHLY_DAY to TaskEditorEvent.SelectRecurrenceOrdinal(
+                RecurrenceEditorOrdinal.LAST
+            ),
+            RecurrenceEditorKind.MONTHLY_ORDINAL to
+                TaskEditorEvent.UpdateRecurrenceMonthlyAnchorDay(31)
+        )
+
+        cases.forEach { (kind, event) ->
+            val handle = SavedStateHandle()
+            val viewModel = createViewModel(TaskEditorKey(null, null), handle)
+            advanceUntilIdle()
+            if (kind != RecurrenceEditorKind.NONE) {
+                viewModel.onEvent(TaskEditorEvent.SelectRecurrenceKind(kind))
+            }
+            val beforeState = viewModel.uiState.value
+            val beforeSavedState = handle.snapshotValues()
+
+            viewModel.onEvent(event)
+
+            assertEquals(beforeState, viewModel.uiState.value)
+            assertEquals(beforeSavedState, handle.snapshotValues())
+        }
+    }
+
+    @Test
+    fun selectedWeekdays_snapshotMutableConstructionAndDeserializationInputs() {
+        val source = linkedSetOf(RecurrenceEditorWeekday.MONDAY)
+        val state = RecurrenceEditorState(
+            kind = RecurrenceEditorKind.SELECTED_WEEKDAYS,
+            basis = RecurrenceEditorBasis.SCHEDULED_DATE
+        ).withSelectedWeekdays(source)
+        source += RecurrenceEditorWeekday.TUESDAY
+
+        assertEquals(setOf(RecurrenceEditorWeekday.MONDAY), state.selectedWeekdays)
+        val exposed = state.selectedWeekdays as MutableSet<RecurrenceEditorWeekday>
+        runCatching { exposed += RecurrenceEditorWeekday.WEDNESDAY }
+        assertEquals(setOf(RecurrenceEditorWeekday.MONDAY), state.selectedWeekdays)
+
+        val restored = kotlinx.serialization.json.Json.decodeFromString<RecurrenceEditorState>(
+            kotlinx.serialization.json.Json.encodeToString(state)
+        )
+        val restoredExposure = restored.selectedWeekdays as MutableSet<RecurrenceEditorWeekday>
+        runCatching { restoredExposure += RecurrenceEditorWeekday.FRIDAY }
+        assertEquals(setOf(RecurrenceEditorWeekday.MONDAY), restored.selectedWeekdays)
+    }
+
+    @Test
+    fun weekdayBackingList_constructorAndCopyAreNotPublicAliasPaths() {
+        val stateClass = RecurrenceEditorState::class.java
+        val publicBackingConstructors = stateClass.declaredConstructors.filter { constructor ->
+            Modifier.isPublic(constructor.modifiers) &&
+                constructor.parameterTypes.any { List::class.java.isAssignableFrom(it) }
+        }
+        val publicBackingCopies = stateClass.declaredMethods.filter { method ->
+            method.name == "copy" &&
+                Modifier.isPublic(method.modifiers) &&
+                method.parameterTypes.any { List::class.java.isAssignableFrom(it) }
+        }
+
+        assertTrue(
+            "Backing-list constructor must not be public: $publicBackingConstructors",
+            publicBackingConstructors.isEmpty()
+        )
+        assertTrue(
+            "Backing-list copy must not be public: $publicBackingCopies",
+            publicBackingCopies.isEmpty()
+        )
+    }
+
+    @Test
+    fun eachAdvancedRecurrenceKind_mapsToItsTypedRuleOnlyWhenSaving() =
+        runTest(dispatcher) {
+            val cases = listOf(
+                RecurrenceEditorState(
+                    kind = RecurrenceEditorKind.INTERVAL,
+                    basis = RecurrenceEditorBasis.COMPLETION_DATE,
+                    intervalUnit = RecurrenceEditorIntervalUnit.WEEKS,
+                    intervalEvery = 3
+                ) to RecurrenceRule.Interval(
+                    IntervalUnit.WEEKS,
+                    3,
+                    RecurrenceBasis.COMPLETION_DATE
+                ),
+                RecurrenceEditorState(
+                    kind = RecurrenceEditorKind.SELECTED_WEEKDAYS,
+                    basis = RecurrenceEditorBasis.SCHEDULED_DATE
+                ).withSelectedWeekdays(
+                    setOf(
+                        RecurrenceEditorWeekday.MONDAY,
+                        RecurrenceEditorWeekday.WEDNESDAY,
+                        RecurrenceEditorWeekday.FRIDAY
+                    )
+                ) to RecurrenceRule.SelectedWeekdays(
+                    setOf(
+                        java.time.DayOfWeek.MONDAY,
+                        java.time.DayOfWeek.WEDNESDAY,
+                        java.time.DayOfWeek.FRIDAY
+                    ),
+                    RecurrenceBasis.SCHEDULED_DATE
+                ),
+                RecurrenceEditorState(
+                    kind = RecurrenceEditorKind.MONTHLY_DAY,
+                    basis = RecurrenceEditorBasis.SCHEDULED_DATE,
+                    monthlyEvery = 2,
+                    monthlyAnchorDay = 31
+                ) to RecurrenceRule.MonthlyDay(
+                    anchorDay = 31,
+                    everyMonths = 2,
+                    basis = RecurrenceBasis.SCHEDULED_DATE
+                ),
+                RecurrenceEditorState(
+                    kind = RecurrenceEditorKind.MONTHLY_ORDINAL,
+                    basis = RecurrenceEditorBasis.COMPLETION_DATE,
+                    monthlyEvery = 6,
+                    ordinal = RecurrenceEditorOrdinal.LAST,
+                    ordinalWeekday = RecurrenceEditorWeekday.SUNDAY
+                ) to RecurrenceRule.MonthlyOrdinal(
+                    ordinal = com.indiewalkabout.nowdothis.feature.task.domain.model.MonthlyOrdinalValue.LAST,
+                    weekday = java.time.DayOfWeek.SUNDAY,
+                    everyMonths = 6,
+                    basis = RecurrenceBasis.COMPLETION_DATE
+                )
+            )
+
+            cases.forEach { (draft, expectedRule) ->
+                repository.lastUpsert = null
+                val handle = SavedStateHandle(
+                    mapOf(
+                        "draft_initialized" to true,
+                        "title" to "Plan",
+                        "description" to "Details",
+                        "due_at_set" to true,
+                        "due_at" to 90_000L,
+                        "recurrence_draft" to kotlinx.serialization.json.Json.encodeToString(draft)
+                    )
+                )
+                val viewModel = createViewModel(TaskEditorKey(null, null), handle)
+                advanceUntilIdle()
+
+                viewModel.onEvent(TaskEditorEvent.Save)
+                advanceUntilIdle()
+
+                assertEquals(expectedRule, repository.lastUpsert?.recurrenceRule)
+            }
+        }
+
+    @Test
+    fun existingAdvancedRule_loadsAndRestoresLosslessly() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        val rule = RecurrenceRule.MonthlyOrdinal(
+            ordinal = com.indiewalkabout.nowdothis.feature.task.domain.model.MonthlyOrdinalValue.THIRD,
+            weekday = java.time.DayOfWeek.THURSDAY,
+            everyMonths = 4,
+            basis = RecurrenceBasis.COMPLETION_DATE
+        )
+        repository.emit(
+            existingTask(title = "Advanced").copy(
+                recurrenceRule = rule,
+                recurrenceEndAt = 290_000L
+            )
+        )
+        val first = createViewModel(TaskEditorKey(7, null), handle)
+        advanceUntilIdle()
+
+        val restored = createViewModel(TaskEditorKey(7, null), handle.freshProcessSnapshot())
+        advanceUntilIdle()
+
+        assertEquals(first.uiState.value.recurrence, restored.uiState.value.recurrence)
+        assertEquals(RecurrenceEditorKind.MONTHLY_ORDINAL, restored.uiState.value.recurrence.kind)
+        assertEquals(RecurrenceEditorOrdinal.THIRD, restored.uiState.value.recurrence.ordinal)
+        assertEquals(RecurrenceEditorWeekday.THURSDAY, restored.uiState.value.recurrence.ordinalWeekday)
+        assertEquals(290_000L, restored.uiState.value.recurrence.endAt)
+    }
+
+    @Test
+    fun optimisticVersion_usesDedicatedRecurrenceSnapshotAcrossRecreation() =
+        runTest(dispatcher) {
+            val handle = SavedStateHandle()
+            val expectedRule = RecurrenceRule.MonthlyOrdinal(
+                ordinal = com.indiewalkabout.nowdothis.feature.task.domain.model.MonthlyOrdinalValue.LAST,
+                weekday = java.time.DayOfWeek.SUNDAY,
+                everyMonths = 6,
+                basis = RecurrenceBasis.COMPLETION_DATE
+            )
+            repository.emit(
+                existingTask(title = "Versioned").copy(
+                    recurrenceRule = expectedRule,
+                    recurrenceEndAt = 290_000L
+                )
+            )
+            val first = createViewModel(TaskEditorKey(7, null), handle)
+            advanceUntilIdle()
+            first.onEvent(TaskEditorEvent.UpdateTitle("Local draft"))
+
+            assertTrue(handle.contains("draft_version_recurrence_snapshot"))
+            assertFalse(handle.contains("draft_version_recurrence_draft"))
+
+            val recreated = createViewModel(
+                TaskEditorKey(7, null),
+                handle.freshProcessSnapshot()
+            )
+            advanceUntilIdle()
+            recreated.onEvent(TaskEditorEvent.Save)
+            advanceUntilIdle()
+
+            assertEquals(expectedRule, repository.lastExpectedVersion?.recurrenceRule)
+            assertEquals(290_000L, repository.lastExpectedVersion?.recurrenceEndAt)
+        }
+
+    @Test
     fun manualReminder_defersAccessChecksAndEffectsUntilSave() = runTest(dispatcher) {
         permissions.notificationRequired = true
         permissions.exactAlarmRequired = true
@@ -828,7 +1487,7 @@ class TaskEditorViewModelTest {
             TaskEditorEvent.SelectCategory(99),
             TaskEditorEvent.UpdateDueAt(100_000L),
             TaskEditorEvent.UpdateReminderAt(80_000L),
-            TaskEditorEvent.SelectRecurrence(RecurrenceType.WEEKLY),
+            TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL),
             TaskEditorEvent.UpdateRecurrenceEndAt(200_000L),
             TaskEditorEvent.AddSubtask,
             TaskEditorEvent.RenameSubtask(subtaskIds[0], "Changed"),
@@ -850,7 +1509,7 @@ class TaskEditorViewModelTest {
         assertNull(saved.categoryId)
         assertEquals(90_000L, saved.dueAt)
         assertNull(saved.reminderAt)
-        assertEquals(RecurrenceType.NONE, saved.recurrence)
+        assertEquals(RecurrenceRule.None, saved.recurrenceRule)
         assertEquals(listOf("First", "Second"), saved.subtasks.map(Subtask::title))
     }
 
@@ -865,7 +1524,15 @@ class TaskEditorViewModelTest {
         viewModel.onEvent(TaskEditorEvent.SelectCategory(3))
         viewModel.onEvent(TaskEditorEvent.UpdateDueAt(90_000L))
         viewModel.onEvent(TaskEditorEvent.UpdateReminderAt(80_000L))
-        viewModel.onEvent(TaskEditorEvent.SelectRecurrence(RecurrenceType.WEEKLY))
+        viewModel.onEvent(
+            TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+        )
+        viewModel.onEvent(
+            TaskEditorEvent.SelectRecurrenceBasis(RecurrenceEditorBasis.SCHEDULED_DATE)
+        )
+        viewModel.onEvent(
+            TaskEditorEvent.SelectRecurrenceIntervalUnit(RecurrenceEditorIntervalUnit.WEEKS)
+        )
         viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(190_000L))
         viewModel.onEvent(TaskEditorEvent.AddSubtask)
         val subtaskId = viewModel.uiState.value.subtasks.single().draftId
@@ -882,11 +1549,66 @@ class TaskEditorViewModelTest {
         assertEquals(3, saved.categoryId)
         assertEquals(90_000L, saved.dueAt)
         assertEquals(80_000L, saved.reminderAt)
-        assertEquals(RecurrenceType.WEEKLY, saved.recurrence)
+        assertEquals(
+            RecurrenceRule.Interval(IntervalUnit.WEEKS, 1, RecurrenceBasis.SCHEDULED_DATE),
+            saved.recurrenceRule
+        )
         assertEquals(190_000L, saved.recurrenceEndAt)
         assertEquals(listOf("Outline"), saved.subtasks.map { it.title })
         assertEquals(listOf(0), saved.subtasks.map { it.position })
         assertEquals(TaskEditorEffect.NavigateBack, effect.await())
+    }
+
+    @Test
+    fun monthlyRuleWithDifferentAnchor_loadsWithoutLegacyProjection() = runTest(dispatcher) {
+        val dueDay = java.time.Instant.ofEpochMilli(90_000L)
+            .atZone(ZoneId.systemDefault())
+            .dayOfMonth
+        repository.emit(
+            existingTask(title = "Advanced monthly").copy(
+                recurrenceRule = RecurrenceRule.MonthlyDay(
+                    anchorDay = if (dueDay == 31) 30 else 31,
+                    everyMonths = 1,
+                    basis = RecurrenceBasis.SCHEDULED_DATE
+                )
+            )
+        )
+        val viewModel = createViewModel(TaskEditorKey(7, null))
+        advanceUntilIdle()
+
+        assertEquals(RecurrenceEditorKind.MONTHLY_DAY, viewModel.uiState.value.recurrence.kind)
+        assertEquals(
+            if (dueDay == 31) 30 else 31,
+            viewModel.uiState.value.recurrence.monthlyAnchorDay
+        )
+    }
+
+    @Test
+    fun recurrenceEndWithoutRule_mapsToAnInlineEditorError() = runTest(dispatcher) {
+        val restoredDraft = RecurrenceEditorState(endAt = 80_000L)
+        val handle = SavedStateHandle(
+            mapOf(
+                "draft_initialized" to true,
+                "title" to "Plan",
+                "description" to "Quarter",
+                "due_at_set" to true,
+                "due_at" to 70_000L,
+                "recurrence_draft" to kotlinx.serialization.json.Json.encodeToString(
+                    restoredDraft
+                )
+            )
+        )
+        val viewModel = createViewModel(TaskEditorKey(null, null), handle)
+        advanceUntilIdle()
+
+        viewModel.onEvent(TaskEditorEvent.Save)
+        advanceUntilIdle()
+
+        assertEquals(
+            TaskEditorFieldError.END_WITHOUT_RECURRENCE,
+            viewModel.uiState.value.errors.recurrenceEnd
+        )
+        assertNull(repository.lastUpsert)
     }
 
     @Test
@@ -895,7 +1617,12 @@ class TaskEditorViewModelTest {
         advanceUntilIdle()
         viewModel.onEvent(TaskEditorEvent.UpdateDueAt(70_000L))
         viewModel.onEvent(TaskEditorEvent.UpdateReminderAt(80_000L))
-        viewModel.onEvent(TaskEditorEvent.SelectRecurrence(RecurrenceType.DAILY))
+        viewModel.onEvent(
+            TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.INTERVAL)
+        )
+        viewModel.onEvent(
+            TaskEditorEvent.SelectRecurrenceBasis(RecurrenceEditorBasis.SCHEDULED_DATE)
+        )
         viewModel.onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(60_000L))
 
         viewModel.onEvent(TaskEditorEvent.Save)
@@ -954,12 +1681,14 @@ class TaskEditorViewModelTest {
             val viewModel = createViewModel(TaskEditorKey(7, null), handle)
             advanceUntilIdle()
 
-            viewModel.onEvent(TaskEditorEvent.SelectRecurrence(RecurrenceType.NONE))
+            viewModel.onEvent(
+                TaskEditorEvent.SelectRecurrenceKind(RecurrenceEditorKind.NONE)
+            )
             val restored = createViewModel(TaskEditorKey(7, null), handle)
             advanceUntilIdle()
 
-            assertEquals(RecurrenceType.NONE, restored.uiState.value.recurrence)
-            assertNull(restored.uiState.value.recurrenceEndAt)
+            assertEquals(RecurrenceEditorState(), restored.uiState.value.recurrence)
+            assertNull(restored.uiState.value.recurrence.endAt)
         }
 
     @Test
@@ -1171,7 +1900,13 @@ class TaskEditorViewModelTest {
         categoryId = 3,
         dueAt = 90_000L,
         reminderAt = 80_000L,
-        recurrence = RecurrenceType.MONTHLY,
+        recurrenceRule = RecurrenceRule.MonthlyDay(
+            java.time.Instant.ofEpochMilli(90_000L)
+                .atZone(ZoneId.systemDefault())
+                .dayOfMonth,
+            1,
+            RecurrenceBasis.SCHEDULED_DATE
+        ),
         recurrenceEndAt = 190_000L,
         createdAt = 10L,
         updatedAt = 20L,
@@ -1338,7 +2073,7 @@ private class EditorTaskRepository : TaskRepository {
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        nextOccurrence: (Task) -> Task?
+        completionDecision: (Task, Long) -> AtomicCompletionDecision
     ): AtomicCompletionResult = AtomicCompletionResult.NotFound
 
     override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot = error("unused")
@@ -1351,7 +2086,12 @@ private class EditorTaskRepository : TaskRepository {
     override suspend fun updateReminderStatusIfCurrent(
         expectedVersion: TaskSnapshotVersion,
         status: ReminderStatus
-    ): Boolean = false
+    ): Boolean {
+        val current = observed[expectedVersion.id]?.value ?: return false
+        if (current.snapshotVersion() != expectedVersion) return false
+        emit(current.copy(reminderStatus = status))
+        return true
+    }
     override suspend fun futureReminders(after: Long): List<Task> = emptyList()
 }
 

@@ -6,6 +6,7 @@ import android.os.LocaleList
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -29,6 +30,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assume.assumeTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -85,10 +89,10 @@ class CoreTaskJourneyTest {
         composeRule.onNodeWithTag("task-category-field").performClick()
         composeRule.onNodeWithText("Clienti").performClick()
         closeSoftKeyboard()
-        scrollEditorTo("task-recurrence-field")
-        composeRule.onNodeWithTag("task-recurrence-field").performClick()
+        scrollEditorTo("task-recurrence-kind")
+        composeRule.onNodeWithTag("task-recurrence-kind").performClick()
         composeRule.onNodeWithTag(
-            "task-recurrence-option-monthly",
+            "task-recurrence-kind-option-monthly_day",
             useUnmergedTree = true
         ).performClick()
         scrollEditorTo("subtask-add")
@@ -99,6 +103,7 @@ class CoreTaskJourneyTest {
 
         waitForText(title)
         composeRule.onNodeWithTag("navigation-tasks").performClick()
+        waitForTag("task-search")
         waitForText(title)
         composeRule.onNode(
             hasContentDescription(text(R.string.task_complete_description, title))
@@ -106,6 +111,19 @@ class CoreTaskJourneyTest {
         waitForText(text(R.string.task_section_completed_today))
 
         val nextOccurrence = waitForNextOccurrence(title)
+        val seriesRows = runBlocking(Dispatchers.IO) {
+            database.taskDao().observeAllTaskEntities().first().filter { it.title == title }
+        }
+        val completedOccurrence = seriesRows.single(TaskEntity::isCompleted)
+        assertEquals(2, seriesRows.size)
+        assertEquals(1, seriesRows.count(TaskEntity::isCompleted))
+        assertEquals(1, seriesRows.count { !it.isCompleted })
+        assertNotEquals(completedOccurrence.id, nextOccurrence.id)
+        assertNotNull(completedOccurrence.seriesId)
+        assertEquals(completedOccurrence.seriesId, nextOccurrence.seriesId)
+        assertEquals("MONTHLY_DAY", completedOccurrence.recurrenceKind)
+        assertEquals(completedOccurrence.recurrenceKind, nextOccurrence.recurrenceKind)
+        assertEquals(completedOccurrence.recurrenceEndAt, nextOccurrence.recurrenceEndAt)
         val nextDate = Instant.ofEpochMilli(requireNotNull(nextOccurrence.dueAt))
             .atZone(ZoneId.systemDefault())
             .toLocalDate()
@@ -138,6 +156,12 @@ class CoreTaskJourneyTest {
     private fun waitForText(value: String) {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText(value).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun waitForTag(tag: String) {
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }
     }
 

@@ -43,10 +43,12 @@ import com.indiewalkabout.nowdothis.feature.quickcapture.domain.usecase.LoadQuic
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetCoordinator
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetReceiver
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetState
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.observeQuickCaptureWidgetState
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
@@ -153,7 +155,14 @@ class QuickCaptureWidgetIntegrationTest {
             awaitSnapshot(renderedSnapshots) { it.tasks.isEmpty() }
 
             val recurringId = saveTask(
-                task(title = "Recurring through use case", recurrence = RecurrenceType.DAILY)
+                task(
+                    title = "Recurring through use case",
+                    recurrenceRule = RecurrenceRule.Interval(
+                        IntervalUnit.DAYS,
+                        1,
+                        RecurrenceBasis.SCHEDULED_DATE
+                    )
+                )
             ).let { result ->
                 (result as com.indiewalkabout.nowdothis.feature.task.domain.usecase.SaveTaskResult.Saved).taskId
             }
@@ -294,12 +303,15 @@ class QuickCaptureWidgetIntegrationTest {
         error("unreachable")
     }
 
-    private fun task(title: String, recurrence: RecurrenceType = RecurrenceType.NONE) = Task(
+    private fun task(
+        title: String,
+        recurrenceRule: RecurrenceRule = RecurrenceRule.None
+    ) = Task(
         title = title,
         description = "Description",
         priority = TaskPriority.MEDIUM,
         dueAt = dueAt,
-        recurrence = recurrence,
+        recurrenceRule = recurrenceRule,
         createdAt = 0,
         updatedAt = 0
     )
@@ -331,7 +343,7 @@ class QuickCaptureWidgetIntegrationTest {
                     dueAt = dueAt,
                     reminderAt = null,
                     reminderStatus = ReminderStatus.NONE.name,
-                    recurrence = RecurrenceType.NONE.name,
+                    recurrenceRule = RecurrenceRule.None,
                     recurrenceEndAt = null,
                     seriesId = null,
                     createdAt = now,

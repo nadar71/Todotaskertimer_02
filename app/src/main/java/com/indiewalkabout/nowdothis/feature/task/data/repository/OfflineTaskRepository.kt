@@ -6,6 +6,7 @@ import com.indiewalkabout.nowdothis.core.time.DayBounds
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskDao
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskWithSubtasks
 import com.indiewalkabout.nowdothis.feature.task.data.mapper.TaskEntityMapper
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
@@ -68,12 +69,18 @@ class OfflineTaskRepository @Inject constructor(
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        nextOccurrence: (Task) -> Task?
+        completionDecision: (current: Task, completedAt: Long) -> AtomicCompletionDecision
     ): AtomicCompletionResult = database.withTransaction {
         val current = taskDao.getTask(taskId) ?: return@withTransaction AtomicCompletionResult.NotFound
         if (current.task.isCompleted) return@withTransaction AtomicCompletionResult.AlreadyCompleted
         val currentTask = TaskEntityMapper.toDomain(current)
-        val next = nextOccurrence(currentTask)
+        val next = when (val decision = completionDecision(currentTask, completedAt)) {
+            is AtomicCompletionDecision.Create -> decision.task
+            AtomicCompletionDecision.CompleteOnly -> null
+            is AtomicCompletionDecision.Invalid -> {
+                return@withTransaction AtomicCompletionResult.Invalid(decision.reason)
+            }
+        }
         val completedTask = current.task.copy(
             isCompleted = true,
             completedAt = completedAt,

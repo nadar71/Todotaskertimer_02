@@ -1,6 +1,6 @@
 package com.indiewalkabout.nowdothis.feature.task.domain.usecase
 
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 
 enum class TaskValidationError {
@@ -8,6 +8,7 @@ enum class TaskValidationError {
     BLANK_DESCRIPTION,
     REMINDER_AFTER_DUE,
     RECURRENCE_WITHOUT_DUE_TIME,
+    RECURRENCE_END_WITHOUT_RECURRENCE,
     RECURRENCE_END_BEFORE_DUE,
     REMINDER_IN_PAST
 }
@@ -23,15 +24,18 @@ class ValidateTask {
         ) {
             add(TaskValidationError.REMINDER_AFTER_DUE)
         }
-        if (task.recurrence != RecurrenceType.NONE && task.dueAt == null) {
+        if (task.recurrenceRule !is RecurrenceRule.None && task.dueAt == null) {
             add(TaskValidationError.RECURRENCE_WITHOUT_DUE_TIME)
         }
-        if (
-            task.recurrenceEndAt != null &&
-            task.dueAt != null &&
-            task.recurrenceEndAt < task.dueAt
-        ) {
-            add(TaskValidationError.RECURRENCE_END_BEFORE_DUE)
+        if (task.recurrenceEndAt != null) {
+            when {
+                task.recurrenceRule is RecurrenceRule.None -> {
+                    add(TaskValidationError.RECURRENCE_END_WITHOUT_RECURRENCE)
+                }
+                task.dueAt != null && task.recurrenceEndAt < task.dueAt -> {
+                    add(TaskValidationError.RECURRENCE_END_BEFORE_DUE)
+                }
+            }
         }
         if (task.reminderAt != null && task.reminderAt < now) {
             add(TaskValidationError.REMINDER_IN_PAST)

@@ -56,6 +56,18 @@ receiver, request code, and trigger. Platform notification-dialog interaction, a
 delivery, notification posting, exact-alarm grant, and vendor-specific timing remain
 manual/device checks.
 
+## Advanced Recurrence Evidence
+
+Advanced Recurrence adds pure JVM matrices for each typed rule and both bases,
+including DST/zone and month-end cases, migration paths through Room v3, backup v2/v1
+compatibility, and completion/reminder race handling. Its connected journey uses the
+installed application database and Android alarm gateway, snapshots and restores
+categories, task/subtask rows, SQLite sequences, registered package alarms, app locale,
+and notification permission in `finally`. Independent fixtures cover selected weekdays,
+monthly anchor recovery, completion-date intervals, recurrence-end stopping, reminder
+handoff, v2 export/restore, and Italian/English editor recreation. The journey proves
+registered alarm state, not platform notification delivery.
+
 ## Local Gates
 
 ```bash

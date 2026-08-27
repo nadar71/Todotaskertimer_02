@@ -11,7 +11,7 @@ data class Task(
     val dueAt: Long? = null,
     val reminderAt: Long? = null,
     val reminderStatus: ReminderStatus = ReminderStatus.NONE,
-    val recurrence: RecurrenceType = RecurrenceType.NONE,
+    val recurrenceRule: RecurrenceRule = RecurrenceRule.None,
     val recurrenceEndAt: Long? = null,
     val seriesId: String? = null,
     val createdAt: Long,

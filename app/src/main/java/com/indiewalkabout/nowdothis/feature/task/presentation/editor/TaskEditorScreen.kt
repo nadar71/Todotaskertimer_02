@@ -61,7 +61,6 @@ import androidx.compose.ui.unit.dp
 import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.feature.category.domain.model.Category
 import com.indiewalkabout.nowdothis.feature.category.domain.model.DefaultCategoryKey
-import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceType
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import java.time.Instant
@@ -247,20 +246,13 @@ private fun EditorForm(
             }
         }
         item {
-            RecurrenceControl(state.recurrence, state.errors.recurrence, onEvent)
-        }
-        if (state.recurrence != RecurrenceType.NONE) {
-            item {
-                DateControl(
-                    label = stringResource(R.string.task_editor_recurrence_end_label),
-                    value = state.recurrenceEndAt,
-                    clearTag = "task-recurrence-end-clear",
-                    error = state.errors.recurrenceEnd?.let {
-                        stringResource(R.string.task_editor_error_end_before_due)
-                    },
-                    onValueChange = { onEvent(TaskEditorEvent.UpdateRecurrenceEndAt(it)) }
-                )
-            }
+            RecurrenceEditor(
+                state = state.recurrence,
+                recurrenceError = state.errors.recurrence,
+                recurrenceEndError = state.errors.recurrenceEnd,
+                onEvent = onEvent,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
         item {
             EditorSectionLabel(stringResource(R.string.task_editor_subtasks_label))
@@ -350,48 +342,6 @@ private fun CategoryControl(
                     }
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun RecurrenceControl(
-    selected: RecurrenceType,
-    error: TaskEditorFieldError?,
-    onEvent: (TaskEditorEvent) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column {
-        EditorSectionLabel(stringResource(R.string.task_editor_recurrence_label))
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("task-recurrence-field")
-        ) {
-            Text(recurrenceLabel(selected))
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            RecurrenceType.entries.forEach { recurrence ->
-                DropdownMenuItem(
-                    text = { Text(recurrenceLabel(recurrence)) },
-                    modifier = Modifier.testTag(
-                        "task-recurrence-option-${recurrence.name.lowercase()}"
-                    ),
-                    onClick = {
-                        expanded = false
-                        onEvent(TaskEditorEvent.SelectRecurrence(recurrence))
-                    }
-                )
-            }
-        }
-        if (error == TaskEditorFieldError.DUE_REQUIRED) {
-            Text(
-                text = stringResource(R.string.task_editor_error_recurrence_due_required),
-                modifier = Modifier.padding(top = 4.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
         }
     }
 }
@@ -510,69 +460,6 @@ private fun TimePickerDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DateControl(
-    label: String,
-    value: Long?,
-    clearTag: String,
-    error: String?,
-    onValueChange: (Long?) -> Unit
-) {
-    var showPicker by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    Column {
-        EditorSectionLabel(label)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { showPicker = true }, modifier = Modifier.weight(1f)) {
-                Text(
-                    value?.let {
-                        DateUtils.formatDateTime(context, it, DateUtils.FORMAT_SHOW_DATE)
-                    } ?: stringResource(R.string.task_editor_not_set)
-                )
-            }
-            if (value != null) {
-                IconButton(
-                    onClick = { onValueChange(null) },
-                    modifier = Modifier.testTag(clearTag)
-                ) {
-                    Icon(
-                        Icons.Filled.Clear,
-                        contentDescription = stringResource(R.string.task_editor_clear_value, label)
-                    )
-                }
-            }
-        }
-        error?.let {
-            Text(
-                text = it,
-                modifier = Modifier.padding(top = 4.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error
-            )
-        }
-    }
-    if (showPicker) {
-        val state = rememberDatePickerState(
-            initialSelectedDateMillis = value?.toDatePickerMillis()
-        )
-        DatePickerDialog(
-            onDismissRequest = { showPicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    onValueChange(state.selectedDateMillis?.utcDate()?.endOfLocalDayMillis())
-                    showPicker = false
-                }) { Text(stringResource(R.string.task_editor_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPicker = false }) {
-                    Text(stringResource(R.string.task_editor_cancel))
-                }
-            }
-        ) { DatePicker(state = state) }
-    }
-}
-
 private fun Long.utcDate(): LocalDate =
     Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
@@ -583,12 +470,6 @@ private fun Long.toDatePickerMillis(): Long =
         .atStartOfDay(ZoneOffset.UTC)
         .toInstant()
         .toEpochMilli()
-
-private fun LocalDate.endOfLocalDayMillis(): Long =
-    plusDays(1)
-        .atStartOfDay(ZoneId.systemDefault())
-        .toInstant()
-        .toEpochMilli() - 1L
 
 @Composable
 private fun reminderError(error: TaskEditorFieldError?): String? = when (error) {
@@ -606,14 +487,6 @@ private fun priorityLabel(priority: TaskPriority): String = when (priority) {
     TaskPriority.LOW -> stringResource(R.string.task_priority_low)
     TaskPriority.MEDIUM -> stringResource(R.string.task_priority_medium)
     TaskPriority.HIGH -> stringResource(R.string.task_priority_high)
-}
-
-@Composable
-private fun recurrenceLabel(recurrence: RecurrenceType): String = when (recurrence) {
-    RecurrenceType.NONE -> stringResource(R.string.task_recurrence_none)
-    RecurrenceType.DAILY -> stringResource(R.string.task_recurrence_daily)
-    RecurrenceType.WEEKLY -> stringResource(R.string.task_recurrence_weekly)
-    RecurrenceType.MONTHLY -> stringResource(R.string.task_recurrence_monthly)
 }
 
 @Composable

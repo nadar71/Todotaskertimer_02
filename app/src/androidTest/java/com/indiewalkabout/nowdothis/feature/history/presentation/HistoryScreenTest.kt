@@ -2,6 +2,7 @@ package com.indiewalkabout.nowdothis.feature.history.presentation
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -129,12 +130,24 @@ class HistoryScreenTest {
         onBack: () -> Unit = {}
     ) {
         composeRule.runOnUiThread {
+            val renderedState = mutableStateOf(state)
             HistoryTestContent.content = {
                 MaterialTheme {
                     HistoryScreen(
-                        state = state,
+                        state = renderedState.value,
                         snackbarHostState = remember { SnackbarHostState() },
-                        onEvent = onEvent,
+                        onEvent = { event ->
+                            onEvent(event)
+                            renderedState.value = when (event) {
+                                is HistoryEvent.UpdateQuery -> {
+                                    renderedState.value.copy(query = event.query)
+                                }
+                                is HistoryEvent.SelectCategory -> {
+                                    renderedState.value.copy(selectedCategoryId = event.categoryId)
+                                }
+                                else -> renderedState.value
+                            }
+                        },
                         onBack = onBack
                     )
                 }

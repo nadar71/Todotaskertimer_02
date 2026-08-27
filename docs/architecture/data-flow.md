@@ -123,6 +123,38 @@ scheduler remain authoritative. The offline grammar is deliberately bounded to t
 documented Italian/English date, time, priority, current category, recurrence, and
 single-reminder forms; unsupported or ambiguous text remains recoverable and visible.
 
+## Advanced Recurrence
+
+```mermaid
+flowchart LR
+    Capture["Editor or Quick entry"] --> Draft["Immutable recurrence draft"]
+    Draft --> Rule["Typed RecurrenceRule"]
+    Rule --> Save["SaveTask"]
+    Save --> Room["Room v3 flattened recurrence columns"]
+    Save --> Alarm["ReminderScheduler / AlarmManager"]
+    Complete["CompleteTask"] --> Next["CalculateNextOccurrence"]
+    Next --> Room
+    Next --> Alarm
+    Room --> Backup["Backup v2 structured recurrence"]
+    Backup --> Restore["Validated Replace All + reminder reconciliation"]
+    Restore --> Room
+    Restore --> Alarm
+```
+
+`RecurrenceRule` is the domain boundary for interval, selected-weekday, monthly-day,
+and monthly-ordinal rules. Room's v3 columns and backup v2's structured document are
+mapping formats only; neither is a second behavioral model. `CompleteTask` commits the
+completed occurrence and zero or one successor in one transaction, then coordinates
+alarm cancellation/scheduling through the reminder boundary. Scheduled calendar rules
+skip overdue intermediate dates, monthly-day rules retain their original anchor after a
+short-month clamp, and calculations preserve local wall-clock time across timezone and
+DST transitions.
+
+Quick entry parses only its documented deterministic Italian/English grammar. In
+particular, recurrence after an independent temporal clause is unsupported: the exact
+mixed ordering `every month, tomorrow, Mondays` is rejected as `AmbiguousRecurrence`
+and remains in the title for correction rather than retaining `tomorrow` separately.
+
 ## Quick Capture Widget
 
 ```mermaid

@@ -59,6 +59,7 @@ Pull requests and pushes to `develop` run compilation, JVM tests, lint, and debu
 - [Emulator performance results](docs/performance/results-2026-08.md)
 - [Release checklist](docs/release/checklist.md)
 - [Natural-Language Entry release evidence](docs/release/natural-language-entry-evidence-2026-08-26.md)
+- [Advanced Recurrence release evidence](docs/release/advanced-recurrence-evidence-2026-08-26.md)
 
 Recorded emulator measurements validate repeatable benchmark infrastructure but are not presented as physical-device performance claims.
 
@@ -76,7 +77,7 @@ The release build remains unsigned unless all four `NOWDOTHIS_*` signing variabl
 
 ## Trade-offs And Revisit Triggers
 
-The single production module is deliberate for the current team size and domain. A new Gradle module requires separate ownership, enforceable dependency isolation, reusable infrastructure, isolated build/testing, or measured build-time benefit. Local-first storage and deterministic offline parsing avoid account, network, and model-service complexity, while Natural-Language Entry deliberately supports a bounded grammar rather than open-ended interpretation. User-owned backup provides manual portability, but there is still no account-based synchronization, automatic cloud backup, merge import, or cross-device conflict resolution.
+The single production module is deliberate for the current team size and domain. A new Gradle module requires separate ownership, enforceable dependency isolation, reusable infrastructure, isolated build/testing, or measured build-time benefit. Local-first storage and deterministic offline parsing avoid account, network, and model-service complexity, while Natural-Language Entry deliberately supports a bounded grammar rather than open-ended interpretation. Advanced Recurrence uses typed interval, selected-weekday, monthly-date, and monthly-ordinal rules with scheduled-date or completion-date bases; overdue schedules produce one future occurrence, monthly anchors recover after short months, and backup v2 preserves every rule field. The parser does not support recurrence after an independent temporal clause: `every month, tomorrow, Mondays` is rejected for correction as one ambiguous recurrence attempt. User-owned backup provides manual portability, but there is still no account-based synchronization, automatic cloud backup, merge import, or cross-device conflict resolution.
 
 The ADRs record rejected alternatives and concrete revisit triggers rather than treating current choices as permanent.
 

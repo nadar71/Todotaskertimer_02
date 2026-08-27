@@ -8,6 +8,7 @@ import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryColor
 import com.indiewalkabout.nowdothis.feature.category.domain.model.CategoryMutationResult
 import com.indiewalkabout.nowdothis.feature.category.domain.repository.CategoryRepository
 import com.indiewalkabout.nowdothis.feature.history.domain.usecase.ObserveCompletionHistory
+import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionDecision
 import com.indiewalkabout.nowdothis.feature.task.domain.model.AtomicCompletionResult
 import com.indiewalkabout.nowdothis.feature.task.domain.model.DeletedTaskSnapshot
 import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
@@ -270,7 +271,7 @@ private class FakeTaskRepository : TaskRepository {
     override suspend fun completeAtomically(
         taskId: Int,
         completedAt: Long,
-        nextOccurrence: (Task) -> Task?
+        completionDecision: (Task, Long) -> AtomicCompletionDecision
     ): AtomicCompletionResult = AtomicCompletionResult.NotFound
     override suspend fun deleteWithSnapshot(taskId: Int): DeletedTaskSnapshot = error("unused")
     override suspend fun deleteAll(): List<Int> = emptyList()

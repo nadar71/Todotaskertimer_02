@@ -11,8 +11,18 @@ import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningBac
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningCategory
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningSubtask
 import com.indiewalkabout.nowdothis.feature.portability.domain.model.PlanningTask
+import com.indiewalkabout.nowdothis.feature.portability.data.serialization.BackupCodec
 import com.indiewalkabout.nowdothis.feature.task.data.local.SubtaskEntity
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
+import com.indiewalkabout.nowdothis.feature.task.data.mapper.TaskEntityMapper
+import com.indiewalkabout.nowdothis.feature.task.data.repository.OfflineTaskRepository
+import com.indiewalkabout.nowdothis.feature.task.domain.model.IntervalUnit
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceBasis
+import com.indiewalkabout.nowdothis.feature.task.domain.model.RecurrenceRule
+import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
+import java.time.Instant
+import java.util.TimeZone
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -48,7 +58,7 @@ class PlanningDataSourceTest {
         assertEquals(
             PlanningBackup(
                 format = "now-do-this-backup",
-                version = 1,
+                version = 2,
                 createdAtEpochMillis = 9_999L,
                 categories = listOf(
                     PlanningCategory(10, "Home", null, "GREEN", 0, 100L),
@@ -124,6 +134,71 @@ class PlanningDataSourceTest {
     }
 
     @Test
+    fun replaceAll_v1WeeklyAndMonthlyAreReadableThroughAuthoritativeMapper() = runTest {
+        val previousTimeZone = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Europe/Rome"))
+            val monthlyDueAt = Instant.parse("2026-01-30T23:30:00Z").toEpochMilli()
+            val backup = BackupCodec().decode(
+                v1BackupJson(monthlyDueAt).encodeToByteArray()
+            )
+
+            dataSource.replaceAll(backup)
+
+            val repository = OfflineTaskRepository(database, database.taskDao())
+            assertEquals(
+                RecurrenceRule.Interval(
+                    IntervalUnit.WEEKS,
+                    1,
+                    RecurrenceBasis.SCHEDULED_DATE
+                ),
+                repository.getTask(401)?.recurrenceRule
+            )
+            assertEquals(
+                RecurrenceRule.MonthlyDay(
+                    anchorDay = 31,
+                    everyMonths = 1,
+                    basis = RecurrenceBasis.SCHEDULED_DATE
+                ),
+                repository.getTask(402)?.recurrenceRule
+            )
+        } finally {
+            TimeZone.setDefault(previousTimeZone)
+        }
+    }
+
+    @Test
+    fun snapshotAndRestore_advancedMonthlyRuleRetainsAnchorThroughMapper() = runTest {
+        val repository = OfflineTaskRepository(database, database.taskDao())
+        val rule = RecurrenceRule.MonthlyDay(
+            anchorDay = 31,
+            everyMonths = 2,
+            basis = RecurrenceBasis.COMPLETION_DATE
+        )
+        val taskId = 403
+        val entity = TaskEntityMapper.toEntities(
+            Task(
+                id = taskId,
+                title = "Retain the anchor",
+                description = "",
+                priority = TaskPriority.MEDIUM,
+                dueAt = Instant.parse("2026-02-28T09:00:00Z").toEpochMilli(),
+                recurrenceRule = rule,
+                createdAt = 1,
+                updatedAt = 1
+            )
+        ).first.copy(recurrence = "WEEKLY")
+        database.taskDao().insertTask(entity)
+
+        val snapshot = dataSource.snapshot(createdAtEpochMillis = 10)
+        assertEquals(rule, snapshot.tasks.single().recurrenceRule)
+
+        dataSource.replaceAll(snapshot)
+
+        assertEquals(rule, repository.getTask(taskId)?.recurrenceRule)
+    }
+
+    @Test
     fun replaceAll_rollsBackOriginalGraphWhenABulkInsertFails() = runTest {
         seedOriginalGraph()
         val invalidBackup = replacementBackup().copy(
@@ -173,6 +248,10 @@ class PlanningDataSourceTest {
                 reminderAt = 800L,
                 reminderStatus = "SCHEDULED",
                 recurrence = "WEEKLY",
+                recurrenceKind = "INTERVAL",
+                recurrenceIntervalUnit = "WEEKS",
+                recurrenceIntervalCount = 1,
+                recurrenceBasis = "SCHEDULED_DATE",
                 recurrenceEndAt = 2_000L,
                 seriesId = "series-1",
                 createdAt = 111L,
@@ -189,7 +268,7 @@ class PlanningDataSourceTest {
 
     private fun originalBackup(createdAtEpochMillis: Long) = PlanningBackup(
         format = "now-do-this-backup",
-        version = 1,
+        version = 2,
         createdAtEpochMillis = createdAtEpochMillis,
         categories = listOf(
             PlanningCategory(10, "Home", null, "GREEN", 0, 100L),
@@ -240,7 +319,7 @@ class PlanningDataSourceTest {
 
     private fun replacementBackup() = PlanningBackup(
         format = "now-do-this-backup",
-        version = 1,
+        version = 2,
         createdAtEpochMillis = 5L,
         categories = listOf(PlanningCategory(30, "Restored", null, "RED", 0, 500L)),
         tasks = listOf(
@@ -293,7 +372,7 @@ class PlanningDataSourceTest {
         dueAt,
         reminderAt,
         reminderStatus,
-        recurrence,
+        legacyRule(recurrence, dueAt),
         recurrenceEndAt,
         seriesId,
         createdAt,
@@ -309,4 +388,69 @@ class PlanningDataSourceTest {
         completedAt: Long?,
         position: Int
     ) = PlanningSubtask(id, taskId, title, isCompleted, completedAt, position)
+
+    private fun v1BackupJson(monthlyDueAt: Long) =
+        """
+        {
+          "format": "now-do-this-backup",
+          "version": 1,
+          "createdAtEpochMillis": 1,
+          "categories": [],
+          "tasks": [
+            {
+              "id": 401,
+              "title": "Weekly",
+              "description": "",
+              "priority": "MEDIUM",
+              "categoryId": null,
+              "isCompleted": false,
+              "completedAt": null,
+              "dueAt": 1000,
+              "reminderAt": null,
+              "reminderStatus": "NONE",
+              "recurrence": "WEEKLY",
+              "recurrenceEndAt": null,
+              "seriesId": null,
+              "createdAt": 1,
+              "updatedAt": 1,
+              "subtasks": []
+            },
+            {
+              "id": 402,
+              "title": "Monthly",
+              "description": "",
+              "priority": "MEDIUM",
+              "categoryId": null,
+              "isCompleted": false,
+              "completedAt": null,
+              "dueAt": $monthlyDueAt,
+              "reminderAt": null,
+              "reminderStatus": "NONE",
+              "recurrence": "MONTHLY",
+              "recurrenceEndAt": null,
+              "seriesId": null,
+              "createdAt": 1,
+              "updatedAt": 1,
+              "subtasks": []
+            }
+          ]
+        }
+        """.trimIndent()
+
+    private fun legacyRule(recurrence: String, dueAt: Long?): RecurrenceRule = when (recurrence) {
+        "NONE" -> RecurrenceRule.None
+        "WEEKLY" -> RecurrenceRule.Interval(
+            IntervalUnit.WEEKS,
+            1,
+            RecurrenceBasis.SCHEDULED_DATE
+        )
+        "MONTHLY" -> RecurrenceRule.MonthlyDay(
+            anchorDay = Instant.ofEpochMilli(requireNotNull(dueAt))
+                .atZone(java.time.ZoneId.systemDefault())
+                .dayOfMonth,
+            everyMonths = 1,
+            basis = RecurrenceBasis.SCHEDULED_DATE
+        )
+        else -> error("Unsupported fixture recurrence: $recurrence")
+    }
 }
