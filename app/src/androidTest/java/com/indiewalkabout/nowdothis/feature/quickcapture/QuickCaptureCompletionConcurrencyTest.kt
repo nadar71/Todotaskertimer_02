@@ -23,6 +23,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.ReminderStatus
 import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSnapshotVersion
+import com.indiewalkabout.nowdothis.feature.task.domain.model.snapshotVersion
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduleResult
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.ReminderScheduler
 import com.indiewalkabout.nowdothis.feature.task.domain.repository.TaskRepository
@@ -229,6 +230,124 @@ class QuickCaptureCompletionConcurrencyTest {
         assertEquals(2, tasks.size)
         assertEquals(1, tasks.count { !it.isCompleted })
         assertEquals(ReminderStatus.NONE.name, tasks.single { !it.isCompleted }.reminderStatus)
+    }
+
+    @Test
+    fun saveScheduleResumingAfterWidgetCompletion_keepsOnlySuccessorAlarm() = runTest {
+        val currentDueAt = 10_000L
+        val currentReminderAt = 9_000L
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Recurring before save",
+                dueAt = currentDueAt,
+                reminderAt = currentReminderAt,
+                recurrenceRule = DAILY_RULE
+            )
+        )
+        val staleDraft = requireNotNull(repository.getTask(currentId)).copy(
+            title = "Committed before completion"
+        )
+        val scheduler = SchedulePausingReminderScheduler()
+        val save = async {
+            SaveTask(
+                repository = repository,
+                scheduler = scheduler,
+                validateTask = ValidateTask(),
+                clock = AppClock { 1_000L },
+                seriesIdFactory = { "unused-series" }
+            )(staleDraft)
+        }
+
+        assertEquals(currentId, scheduler.awaitPausedSchedule())
+        val completion = CompleteQuickCaptureTask(
+            completeTask = completeTask(repository, scheduler),
+            updater = QuickCaptureWidgetUpdater { }
+        )(currentId)
+        assertEquals(CompleteQuickCaptureResult.Completed, completion)
+
+        val successorBeforeResume = requireNotNull(
+            repository.observeDay(
+                currentDueAt + ONE_DAY_MILLIS,
+                currentDueAt + ONE_DAY_MILLIS + 1
+            ).first().singleOrNull()
+        )
+        assertEquals(
+            mapOf(successorBeforeResume.id to (currentReminderAt + ONE_DAY_MILLIS)),
+            scheduler.activeAlarms
+        )
+
+        scheduler.releasePausedSchedule()
+        val staleSaveResult = save.await()
+
+        val completedSource = requireNotNull(repository.getTask(currentId))
+        val successor = requireNotNull(repository.getTask(successorBeforeResume.id))
+        assertTrue(completedSource.isCompleted)
+        assertEquals(ReminderStatus.REQUESTED, completedSource.reminderStatus)
+        assertEquals(ReminderStatus.SCHEDULED, successor.reminderStatus)
+        assertEquals(
+            mapOf(successor.id to requireNotNull(successor.reminderAt)),
+            scheduler.activeAlarms
+        )
+        assertEquals(SaveTaskResult.Conflict, staleSaveResult)
+    }
+
+    @Test
+    fun staleNoReminderCancel_reconcilesLaterSaveAlarmForSameTaskId() = runTest {
+        val originalReminderAt = 9_000L
+        val laterReminderAt = 19_000L
+        val currentId = repository.upsert(
+            recurringTask(
+                title = "Owner before cancellation",
+                dueAt = 10_000L,
+                reminderAt = originalReminderAt,
+                recurrenceRule = RecurrenceRule.None
+            ).copy(reminderStatus = ReminderStatus.SCHEDULED)
+        )
+        val scheduler = CancelPausingReminderScheduler(
+            initialAlarms = mapOf(currentId to originalReminderAt)
+        )
+        val original = requireNotNull(repository.getTask(currentId))
+        val removingDraft = original.copy(reminderAt = null)
+        val staleSave = async {
+            SaveTask(
+                repository = repository,
+                scheduler = scheduler,
+                validateTask = ValidateTask(),
+                clock = AppClock { 1_000L }
+            ).invoke(
+                task = removingDraft,
+                expectedVersion = original.snapshotVersion()
+            )
+        }
+
+        assertEquals(currentId, scheduler.awaitPausedCancel())
+        val ownerAfterRemoval = requireNotNull(repository.getTask(currentId))
+        val laterSaveTask = SaveTask(
+            repository = repository,
+            scheduler = scheduler,
+            validateTask = ValidateTask(),
+            clock = AppClock { 1_000L }
+        )
+        val laterSave = laterSaveTask.invoke(
+            task = ownerAfterRemoval.copy(
+                title = "Later reminder owner",
+                dueAt = 20_000L,
+                reminderAt = laterReminderAt
+            ),
+            expectedVersion = ownerAfterRemoval.snapshotVersion()
+        )
+        assertTrue(laterSave is SaveTaskResult.Saved)
+        assertEquals(mapOf(currentId to laterReminderAt), scheduler.activeAlarms)
+
+        scheduler.releasePausedCancel()
+        val staleSaveResult = staleSave.await()
+
+        val current = requireNotNull(repository.getTask(currentId))
+        assertEquals("Later reminder owner", current.title)
+        assertEquals(laterReminderAt, current.reminderAt)
+        assertEquals(ReminderStatus.SCHEDULED, current.reminderStatus)
+        assertEquals(mapOf(currentId to laterReminderAt), scheduler.activeAlarms)
+        assertEquals(SaveTaskResult.Conflict, staleSaveResult)
     }
 
     @Test
@@ -595,6 +714,62 @@ class QuickCaptureCompletionConcurrencyTest {
         suspend fun awaitScheduleStart(): Int = scheduleStarted.await()
 
         fun releaseSchedule() = proceed.complete(Unit)
+    }
+
+    private class SchedulePausingReminderScheduler : ReminderScheduler {
+        val activeAlarms = mutableMapOf<Int, Long>()
+        private val scheduleStarted = CompletableDeferred<Int>()
+        private val proceed = CompletableDeferred<Unit>()
+        private var pauseNextSchedule = true
+
+        override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+            if (pauseNextSchedule) {
+                pauseNextSchedule = false
+                scheduleStarted.complete(taskId)
+                proceed.await()
+            }
+            activeAlarms[taskId] = triggerAt
+            return ReminderScheduleResult.EXACT
+        }
+
+        override suspend fun cancel(taskId: Int) {
+            activeAlarms.remove(taskId)
+        }
+
+        override suspend fun reconcile() = Unit
+
+        suspend fun awaitPausedSchedule(): Int = scheduleStarted.await()
+
+        fun releasePausedSchedule() = proceed.complete(Unit)
+    }
+
+    private class CancelPausingReminderScheduler(
+        initialAlarms: Map<Int, Long>
+    ) : ReminderScheduler {
+        val activeAlarms = initialAlarms.toMutableMap()
+        private val cancelStarted = CompletableDeferred<Int>()
+        private val proceed = CompletableDeferred<Unit>()
+        private var pauseNextCancel = true
+
+        override suspend fun schedule(taskId: Int, triggerAt: Long): ReminderScheduleResult {
+            activeAlarms[taskId] = triggerAt
+            return ReminderScheduleResult.EXACT
+        }
+
+        override suspend fun cancel(taskId: Int) {
+            if (pauseNextCancel) {
+                pauseNextCancel = false
+                cancelStarted.complete(taskId)
+                proceed.await()
+            }
+            activeAlarms.remove(taskId)
+        }
+
+        override suspend fun reconcile() = Unit
+
+        suspend fun awaitPausedCancel(): Int = cancelStarted.await()
+
+        fun releasePausedCancel() = proceed.complete(Unit)
     }
 
     private class ReconciledActiveReminderScheduler(
