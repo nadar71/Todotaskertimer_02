@@ -712,6 +712,103 @@ class ParseNaturalLanguageTaskTest {
     }
 
     @Test
+    fun ordinalLeadingProseLeavesTemporalAndReminderSyntaxAvailable() {
+        val cases = listOf(
+            OrdinalProseCase(
+                language = ParserLanguage.ENGLISH,
+                raw = "First project tomorrow",
+                expectedTitle = "First project",
+                dueToken = "tomorrow"
+            ),
+            OrdinalProseCase(
+                language = ParserLanguage.ITALIAN,
+                raw = "Secondo piano domani",
+                expectedTitle = "Secondo piano",
+                dueToken = "domani"
+            ),
+            OrdinalProseCase(
+                language = ParserLanguage.ENGLISH,
+                raw = "Last review tomorrow remind 1h before",
+                expectedTitle = "Last review",
+                dueToken = "tomorrow",
+                reminderToken = "remind 1h before"
+            ),
+            OrdinalProseCase(
+                language = ParserLanguage.ITALIAN,
+                raw = "Ultimo controllo domani promemoria 1h prima",
+                expectedTitle = "Ultimo controllo",
+                dueToken = "domani",
+                reminderToken = "promemoria 1h prima"
+            )
+        )
+
+        cases.forEach { case ->
+            val result = parse(case.raw, case.language)
+            val expectedConsumed = buildList {
+                add(
+                    SourceMatch(
+                        case.raw.indexOf(case.dueToken),
+                        case.raw.indexOf(case.dueToken) + case.dueToken.length,
+                        RecognizedField.DUE_DATE
+                    )
+                )
+                case.reminderToken?.let { reminderToken ->
+                    add(
+                        SourceMatch(
+                            case.raw.indexOf(reminderToken),
+                            case.raw.indexOf(reminderToken) + reminderToken.length,
+                            RecognizedField.REMINDER
+                        )
+                    )
+                }
+            }
+
+            assertEquals(case.raw, case.expectedTitle, result.draft.title)
+            assertEquals(case.raw, epoch("2026-08-27T09:00:00+02:00"), result.draft.dueAt)
+            assertEquals(
+                case.raw,
+                case.reminderToken?.let { epoch("2026-08-27T08:00:00+02:00") },
+                result.draft.reminderAt
+            )
+            assertNull(case.raw, result.draft.recurrenceRule)
+            assertEquals(case.raw, expectedConsumed, result.consumed)
+            assertPairwiseDisjoint(case.raw, result.consumed)
+            assertEquals(
+                case.raw,
+                buildSet {
+                    add(RecognizedField.TITLE)
+                    add(RecognizedField.DUE_DATE)
+                    if (case.reminderToken != null) add(RecognizedField.REMINDER)
+                },
+                result.recognized
+            )
+            assertTrue(case.raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun malformedMonthlyOrdinalContextPreservesTitleAndBlocksNestedMonth() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task first Monday every month"),
+            Pair(ParserLanguage.ENGLISH, "Task first project of every month"),
+            Pair(ParserLanguage.ITALIAN, "Task primo lunedì ogni mese"),
+            Pair(ParserLanguage.ITALIAN, "Task secondo piano del mese")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parse(raw, language)
+
+            assertEquals(raw, raw, result.draft.title)
+            assertNull(raw, result.draft.dueAt)
+            assertNull(raw, result.draft.reminderAt)
+            assertNull(raw, result.draft.recurrenceRule)
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+            assertTrue(raw, result.consumed.isEmpty())
+            assertEquals(raw, setOf(RecognizedField.TITLE), result.recognized)
+        }
+    }
+
+    @Test
     fun normalizedWholeItalianWeekdayTokenRetainsExactConsumedRange() {
         val variants = listOf("sábato", "sa\u0301bato")
 
@@ -1591,6 +1688,14 @@ class ParseNaturalLanguageTaskTest {
     private data class OverflowCase(
         val raw: String,
         val expectedTitle: String
+    )
+
+    private data class OrdinalProseCase(
+        val language: ParserLanguage,
+        val raw: String,
+        val expectedTitle: String,
+        val dueToken: String,
+        val reminderToken: String? = null
     )
 
     private data class MarkerBridgeCase(

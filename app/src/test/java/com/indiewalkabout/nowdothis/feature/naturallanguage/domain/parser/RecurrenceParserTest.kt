@@ -690,6 +690,50 @@ class RecurrenceParserTest {
     }
 
     @Test
+    fun ordinalLeadingProseWithoutWeekdayOrMonthlyContextCreatesNoAttempt() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "First project tomorrow"),
+            Pair(ParserLanguage.ENGLISH, "Last review tomorrow remind 1h before"),
+            Pair(ParserLanguage.ITALIAN, "Secondo piano domani"),
+            Pair(ParserLanguage.ITALIAN, "Ultimo controllo domani promemoria 1h prima")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.candidates.isEmpty())
+            assertTrue(raw, result.matches.isEmpty())
+            assertTrue(raw, result.ownedRanges.isEmpty())
+            assertTrue(raw, result.issues.isEmpty())
+        }
+    }
+
+    @Test
+    fun malformedMonthlyOrdinalContextOwnsWholeAttemptWithoutNestedBacktracking() {
+        val cases = listOf(
+            Pair(ParserLanguage.ENGLISH, "Task first Monday every month"),
+            Pair(ParserLanguage.ENGLISH, "Task first project of every month"),
+            Pair(ParserLanguage.ITALIAN, "Task primo lunedì ogni mese"),
+            Pair(ParserLanguage.ITALIAN, "Task secondo piano del mese")
+        )
+
+        cases.forEach { (language, raw) ->
+            val result = parser.parse(input(raw, language), DUE_AT)
+
+            assertNull(raw, result.rule)
+            assertTrue(raw, result.candidates.isEmpty())
+            assertTrue(raw, result.matches.isEmpty())
+            assertEquals(
+                raw,
+                listOf(SourceMatch(5, raw.length, RecognizedField.RECURRENCE)),
+                result.ownedRanges
+            )
+            assertEquals(raw, listOf(ParseIssue.AmbiguousRecurrence), result.issues)
+        }
+    }
+
+    @Test
     fun italianWeekdayMatchingNormalizesAccentsAcrossTheWholeToken() {
         val saturdayVariants = listOf(
             "sábato",
