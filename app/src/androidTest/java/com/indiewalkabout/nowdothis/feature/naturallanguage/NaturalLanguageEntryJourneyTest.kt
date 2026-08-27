@@ -163,8 +163,9 @@ class NaturalLanguageEntryJourneyTest {
 
         composeRule.activityRule.scenario.recreate()
 
-        waitForTag("quick-entry-input")
+        scrollEditorTo("quick-entry-input")
         assertActiveLocale(fixture)
+        scrollEditorTo("quick-entry-input")
         assertEditableText("quick-entry-input", fixture.changedWithoutParse)
         assertNonTemporalPreview(fixture)
         assertScheduleControls(parsedSchedule)
@@ -400,7 +401,14 @@ class NaturalLanguageEntryJourneyTest {
             )
         )
         assertExactAlarmUnavailable()
-        assertTrue("Could not return from exact-alarm settings", device.pressBack())
+        device.pressBack()
+        assertTrue(
+            "Could not return from exact-alarm settings",
+            device.wait(
+                Until.hasObject(By.pkg(instrumentation.targetContext.packageName)),
+                PLATFORM_UI_TIMEOUT_MILLIS
+            )
+        )
         instrumentation.waitForIdleSync()
     }
 

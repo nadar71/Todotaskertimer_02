@@ -6,6 +6,7 @@ import android.os.LocaleList
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -102,6 +103,7 @@ class CoreTaskJourneyTest {
 
         waitForText(title)
         composeRule.onNodeWithTag("navigation-tasks").performClick()
+        waitForTag("task-search")
         waitForText(title)
         composeRule.onNode(
             hasContentDescription(text(R.string.task_complete_description, title))
@@ -154,6 +156,12 @@ class CoreTaskJourneyTest {
     private fun waitForText(value: String) {
         composeRule.waitUntil(timeoutMillis = 5_000) {
             composeRule.onAllNodesWithText(value).fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    private fun waitForTag(tag: String) {
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }
     }
 
