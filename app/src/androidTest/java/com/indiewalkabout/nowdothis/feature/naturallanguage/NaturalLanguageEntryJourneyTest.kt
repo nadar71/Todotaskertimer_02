@@ -182,6 +182,33 @@ class NaturalLanguageEntryJourneyTest {
     }
 
     @Test
+    fun englishSelectedWeekdays_captureSaveAndComplete_createsScheduledSuccessor() {
+        val fixture = ENGLISH_SELECTED_WEEKDAYS_RECREATION
+
+        assertActiveLocale(fixture)
+        openNewTask()
+        enterAndParse(fixture.phrase)
+        assertSelectedWeekdayDraft(fixture)
+        correctPriorityAndDescribe("Production recurrence journey")
+        composeRule.onNodeWithTag("task-editor-save").performClick()
+
+        val initial = waitForPersistedTaskWithoutReminder(fixture.expectedTitle)
+        composeRule.onNodeWithTag("task-complete-${initial.id}").performClick()
+
+        var successor: TaskEntity? = null
+        composeRule.waitUntil(timeoutMillis = WAIT_TIMEOUT_MILLIS) {
+            successor = readTasks().singleOrNull { task ->
+                task.title == fixture.expectedTitle && !task.isCompleted && task.id != initial.id
+            }
+            successor != null
+        }
+        assertTrue(requireNotNull(readTasks().single { it.id == initial.id }).isCompleted)
+        assertEquals("SELECTED_WEEKDAYS", requireNotNull(successor).recurrenceKind)
+        assertEquals(0b001_0001, requireNotNull(successor).recurrenceWeekdayMask)
+        assertEquals("NONE", requireNotNull(successor).reminderStatus)
+    }
+
+    @Test
     fun setupFailure_afterMutation_restoresRowsSequencesAndLiveAlarm() {
         appStateRule.insertTaskWithRegisteredAlarm(SETUP_FAILURE_TASK)
         appStateRule.insertTaskWithoutRegisteredAlarm(SETUP_FAILURE_NO_ALARM_TASK)
@@ -444,6 +471,17 @@ class NaturalLanguageEntryJourneyTest {
         return requireNotNull(persisted)
     }
 
+    private fun waitForPersistedTaskWithoutReminder(title: String): TaskEntity {
+        var persisted: TaskEntity? = null
+        composeRule.waitUntil(timeoutMillis = WAIT_TIMEOUT_MILLIS) {
+            persisted = readTasks().singleOrNull { task ->
+                task.title == title && task.reminderStatus == "NONE"
+            }
+            persisted != null
+        }
+        return requireNotNull(persisted)
+    }
+
     private fun assertReturnedToTaskList(title: String) {
         waitForTag("task-search")
         composeRule.onNodeWithTag("task-search").assertIsDisplayed()
@@ -623,6 +661,9 @@ private fun journeyFixtureFor(testMethod: String): JourneyFixture = when (testMe
     }
     "italianSelectedWeekdays_surviveEditorRecreation" -> ITALIAN_SELECTED_WEEKDAYS_RECREATION
     "englishSelectedWeekdays_surviveEditorRecreation" -> ENGLISH_SELECTED_WEEKDAYS_RECREATION
+    "englishSelectedWeekdays_captureSaveAndComplete_createsScheduledSuccessor" -> {
+        ENGLISH_SELECTED_WEEKDAYS_RECREATION
+    }
     "setupFailure_afterMutation_restoresRowsSequencesAndLiveAlarm" -> ITALIAN_RECREATION
     else -> error("No Natural-Language Entry fixture for $testMethod")
 }
