@@ -131,7 +131,7 @@ class AdvancedRecurrenceJourneyTest {
         val initialTaskId = (saved as SaveTaskResult.Saved).taskId
         val initial = requireNotNull(repository.getTask(initialTaskId))
         assertEquals(ReminderStatus.SCHEDULED, initial.reminderStatus)
-        assertRegisteredAlarm(initial.id, requireNotNull(initial.reminderAt))
+        assertExactRegisteredAlarms(initial.id to requireNotNull(initial.reminderAt))
 
         clock.now = at("2038-01-01T19:00", zone)
         val completion = CompleteTask(
@@ -149,7 +149,7 @@ class AdvancedRecurrenceJourneyTest {
         assertEquals("2038-01-04T18:00", localDateTime(next.dueAt, zone).toString())
         assertEquals("2038-01-04T17:00", localDateTime(next.reminderAt, zone).toString())
         assertEquals(ReminderStatus.SCHEDULED, next.reminderStatus)
-        assertRegisteredAlarm(next.id, requireNotNull(next.reminderAt))
+        assertExactRegisteredAlarms(next.id to requireNotNull(next.reminderAt))
 
         val documents = MemoryDocumentGateway()
         val portability = OfflinePortabilityRepository(
@@ -194,7 +194,7 @@ class AdvancedRecurrenceJourneyTest {
         assertEquals("SELECTED_WEEKDAYS", restoredNext.recurrenceKind)
         assertEquals(0b001_0001, restoredNext.recurrenceWeekdayMask)
         assertEquals(next.id, restoredNext.id)
-        assertRegisteredAlarm(restoredNext.id, requireNotNull(restoredNext.reminderAt))
+        assertExactRegisteredAlarms(restoredNext.id to requireNotNull(restoredNext.reminderAt))
     }
 
     @Test
@@ -293,12 +293,15 @@ class AdvancedRecurrenceJourneyTest {
         )
     }
 
-    private fun assertRegisteredAlarm(taskId: Int, expectedTriggerAt: Long) {
-        val alarm = stateRule.registeredReminders().single { it.requestCode == taskId }
-        assertTrue(
-            "Alarm for task $taskId was ${alarm.triggerAt}, expected $expectedTriggerAt",
-            abs(alarm.triggerAt - expectedTriggerAt) <= ALARM_TRIGGER_TOLERANCE_MILLIS
-        )
+    private fun assertExactRegisteredAlarms(vararg expected: Pair<Int, Long>) {
+        val actual = stateRule.registeredReminders().groupBy(RegisteredAlarm::requestCode)
+            .also { grouped -> assertTrue(grouped.values.all { it.size == 1 }) }
+            .mapValues { (_, alarms) -> alarms.single() }
+        assertEquals(expected.map { it.first }.toSet(), actual.keys)
+        expected.forEach { (taskId, expectedTriggerAt) ->
+            val alarm = requireNotNull(actual[taskId])
+            assertTrue(abs(alarm.triggerAt - expectedTriggerAt) <= ALARM_TRIGGER_TOLERANCE_MILLIS)
+        }
     }
 
     private fun repository() = OfflineTaskRepository(stateRule.database, stateRule.database.taskDao())
