@@ -2086,7 +2086,12 @@ private class EditorTaskRepository : TaskRepository {
     override suspend fun updateReminderStatusIfCurrent(
         expectedVersion: TaskSnapshotVersion,
         status: ReminderStatus
-    ): Boolean = false
+    ): Boolean {
+        val current = observed[expectedVersion.id]?.value ?: return false
+        if (current.snapshotVersion() != expectedVersion) return false
+        emit(current.copy(reminderStatus = status))
+        return true
+    }
     override suspend fun futureReminders(after: Long): List<Task> = emptyList()
 }
 
