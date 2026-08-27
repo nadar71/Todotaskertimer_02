@@ -121,7 +121,7 @@ class RecurrenceParser {
         val parsedRanges = parsed.map(Attempt::ownedRange)
         val starts = grammar.attemptStartPattern.findAll(input.rawText)
             .filter { start ->
-                start.groups[PARTIAL_ORDINAL_TARGET_GROUP]?.value
+                start.groups[1]?.value
                     ?.let { target -> weekdayLike(target, input.language) }
                     ?: true
             }
@@ -437,7 +437,6 @@ class RecurrenceParser {
         const val START_BOUNDARY = "(?<![\\p{L}\\p{M}\\p{N}_])"
         const val END_BOUNDARY = "(?![\\p{L}\\p{M}\\p{N}_])"
         const val WORD_TOKEN = "[\\p{L}\\p{M}]+"
-        const val PARTIAL_ORDINAL_TARGET_GROUP = "partialOrdinalTarget"
         const val ENGLISH_WEEKDAY =
             "(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
         const val ENGLISH_ORDINAL_ATTEMPT =
@@ -518,7 +517,7 @@ class RecurrenceParser {
             attemptStartPattern = Regex(
                 START_BOUNDARY +
                     "(?:every|$ENGLISH_ORDINAL_ATTEMPT\\s+" +
-                    "(?<$PARTIAL_ORDINAL_TARGET_GROUP>$WORD_TOKEN))" +
+                    "($WORD_TOKEN))" +
                     END_BOUNDARY,
                 RegexOption.IGNORE_CASE
             ),
@@ -553,7 +552,7 @@ class RecurrenceParser {
             attemptStartPattern = Regex(
                 START_BOUNDARY +
                     "(?:ogni|$ITALIAN_ORDINAL_ATTEMPT\\s+" +
-                    "(?<$PARTIAL_ORDINAL_TARGET_GROUP>$WORD_TOKEN))" + END_BOUNDARY,
+                    "($WORD_TOKEN))" + END_BOUNDARY,
                 RegexOption.IGNORE_CASE
             ),
             continuationPattern = Regex(
