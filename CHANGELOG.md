@@ -6,6 +6,10 @@ Notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Added
 
+- Typed advanced recurrence rules for intervals, selected weekdays, anchored monthly dates, and monthly ordinal weekdays, with scheduled-date and completion-date bases.
+- Room v3 recurrence migration, atomic recurring completion/reminder continuity, lossless backup v2 export with v1 import compatibility, and deterministic Italian/English advanced recurrence parsing.
+- Executable connected critical journeys for recurrence completion, monthly anchor recovery, completion-date intervals, recurrence-end stopping, alarm continuity, backup restore, and bilingual editor recreation.
+
 - Explicit offline Italian/English Quick entry with deterministic parsing for supported dates, times, priorities, current categories, recurrence, and reminders before normal editor confirmation and save.
 - Real MainActivity/Navigation 3 bilingual parse-correct-describe-save journeys through Room and AlarmManager, plus relative-date recreation coverage without reparsing.
 - Responsive home-screen Quick Capture widget with overdue/today/upcoming ordering, 3/5/8-task layouts, localized add/open/complete actions, and empty/error/retry states.

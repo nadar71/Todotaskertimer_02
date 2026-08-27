@@ -88,10 +88,10 @@ class CoreTaskJourneyTest {
         composeRule.onNodeWithTag("task-category-field").performClick()
         composeRule.onNodeWithText("Clienti").performClick()
         closeSoftKeyboard()
-        scrollEditorTo("task-recurrence-field")
-        composeRule.onNodeWithTag("task-recurrence-field").performClick()
+        scrollEditorTo("task-recurrence-kind")
+        composeRule.onNodeWithTag("task-recurrence-kind").performClick()
         composeRule.onNodeWithTag(
-            "task-recurrence-option-monthly",
+            "task-recurrence-kind-option-monthly_day",
             useUnmergedTree = true
         ).performClick()
         scrollEditorTo("subtask-add")

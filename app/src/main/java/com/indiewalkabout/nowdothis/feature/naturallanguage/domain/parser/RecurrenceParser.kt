@@ -142,8 +142,8 @@ class RecurrenceParser {
         input: NaturalLanguageInput,
         dueAt: Long?
     ): Attempt {
-        val amount = match.groups["amount"]?.value?.toIntOrNull()
-        val unit = match.groups["unit"]?.value?.lowercase(Locale.ROOT)
+        val amount = match.groups[1]?.value?.toIntOrNull()
+        val unit = match.groups[2]?.value?.lowercase(Locale.ROOT)
         val basis = explicitBasis(match.value, input.language)
         val rule = when {
             amount !in 1..MAX_INTERVAL -> null
@@ -172,7 +172,7 @@ class RecurrenceParser {
         input: NaturalLanguageInput,
         dueAt: Long?
     ): Attempt {
-        val unit = match.groups["legacyUnit"]?.value?.lowercase(Locale.ROOT)
+        val unit = match.groups[1]?.value?.lowercase(Locale.ROOT)
         val basis = explicitBasis(match.value, input.language) ?: RecurrenceBasis.SCHEDULED_DATE
         val rule = when (unit) {
             in DAY_UNITS -> RecurrenceRule.Interval(IntervalUnit.DAYS, 1, basis)
@@ -184,7 +184,7 @@ class RecurrenceParser {
     }
 
     private fun parseWeekdayList(match: MatchResult, language: ParserLanguage): Attempt? {
-        val dayGroup = requireNotNull(match.groups["days"])
+        val dayGroup = requireNotNull(match.groups[1])
         val grammar = Grammar.forLanguage(language)
         val tokens = grammar.weekdayTokenPattern.findAll(dayGroup.value)
             .filterNot { token ->
@@ -237,8 +237,8 @@ class RecurrenceParser {
         ?.let { RecurrenceRule.SelectedWeekdays(it.toSet(), basis) }
 
     private fun parseOrdinal(match: MatchResult, language: ParserLanguage): Attempt? {
-        val ordinalText = requireNotNull(match.groups["ordinal"]).value
-        val weekdayText = requireNotNull(match.groups["weekday"]).value
+        val ordinalText = requireNotNull(match.groups[1]).value
+        val weekdayText = requireNotNull(match.groups[2]).value
         if (!ordinalLike(ordinalText, language) && !weekdayLike(weekdayText, language)) return null
 
         val ordinal = ordinal(ordinalText, language)
@@ -336,7 +336,7 @@ class RecurrenceParser {
         val tail = raw.substring(ownedRange.endExclusive)
         val continuation = grammar.continuationPattern.find(tail)
             ?: WEEKDAY_CONTINUATION_PATTERN.find(tail)?.takeIf { match ->
-                weekday(requireNotNull(match.groups["weekday"]).value, language) != null
+                weekday(requireNotNull(match.groups[1]).value, language) != null
             }
             ?: return this
         val continuationEnd = ownedRange.endExclusive + continuation.range.last + 1
@@ -468,7 +468,7 @@ class RecurrenceParser {
         val ENGLISH_LEGACY_UNITS = setOf("day", "week", "month")
         val ITALIAN_LEGACY_UNITS = setOf("giorno", "settimana", "mese")
         val WEEKDAY_CONTINUATION_PATTERN = Regex(
-            "^\\s*(?:[\\p{P}]+\\s*)?(?<weekday>$WORD_TOKEN)$END_BOUNDARY",
+            "^\\s*(?:[\\p{P}]+\\s*)?($WORD_TOKEN)$END_BOUNDARY",
             RegexOption.IGNORE_CASE
         )
         val ENGLISH_WEEKDAYS = mapOf(
@@ -491,20 +491,20 @@ class RecurrenceParser {
         )
         val ENGLISH_GRAMMAR = Grammar(
             intervalPattern = grammarRegex(
-                "every\\s+(?<amount>\\d+)\\s+(?<unit>days?|weeks?|months?)" +
+                "every\\s+(\\d+)\\s+(days?|weeks?|months?)" +
                     ENGLISH_BASIS_SUFFIX
             ),
             legacyPattern = grammarRegex(
-                "every\\s+(?<legacyUnit>day|week|month)$ENGLISH_BASIS_SUFFIX"
+                "every\\s+(day|week|month)$ENGLISH_BASIS_SUFFIX"
             ),
             weekdayListPattern = grammarRegex(
-                "every\\s+(?<days>$WORD_TOKEN(?:" +
+                "every\\s+($WORD_TOKEN(?:" +
                     "(?:\\s*,\\s*(?:and\\s+)?|\\s+and\\s+)$WORD_TOKEN)*)" +
                     ENGLISH_BASIS_SUFFIX
             ),
             ordinalPattern = grammarRegex(
-                "(?<ordinal>(?:$WORD_TOKEN|\\d+(?:st|nd|rd|th)?))\\s+" +
-                    "(?<weekday>$WORD_TOKEN)\\s+of\\s+(?:every|the)\\s+month" +
+                "((?:$WORD_TOKEN|\\d+(?:st|nd|rd|th)?))\\s+" +
+                    "($WORD_TOKEN)\\s+of\\s+(?:every|the)\\s+month" +
                     ENGLISH_BASIS_SUFFIX
             ),
             weekdayTokenPattern = Regex(WORD_TOKEN, RegexOption.IGNORE_CASE),
@@ -524,21 +524,21 @@ class RecurrenceParser {
         )
         val ITALIAN_GRAMMAR = Grammar(
             intervalPattern = grammarRegex(
-                "ogni\\s+(?<amount>\\d+)\\s+" +
-                    "(?<unit>giorn(?:o|i)|settiman(?:a|e)|mes(?:e|i))" +
+                "ogni\\s+(\\d+)\\s+" +
+                    "(giorn(?:o|i)|settiman(?:a|e)|mes(?:e|i))" +
                     ITALIAN_BASIS_SUFFIX
             ),
             legacyPattern = grammarRegex(
-                "ogni\\s+(?<legacyUnit>giorno|settimana|mese)$ITALIAN_BASIS_SUFFIX"
+                "ogni\\s+(giorno|settimana|mese)$ITALIAN_BASIS_SUFFIX"
             ),
             weekdayListPattern = grammarRegex(
-                "ogni\\s+(?<days>$WORD_TOKEN(?:" +
+                "ogni\\s+($WORD_TOKEN(?:" +
                     "(?:\\s*,\\s*(?:e\\s+)?|\\s+e\\s+)$WORD_TOKEN)*)" +
                     ITALIAN_BASIS_SUFFIX
             ),
             ordinalPattern = grammarRegex(
-                "(?<ordinal>(?:$WORD_TOKEN|\\d+))\\s+" +
-                    "(?<weekday>$WORD_TOKEN)\\s+(?:del\\s+mese|di\\s+ogni\\s+mese)" +
+                "((?:$WORD_TOKEN|\\d+))\\s+" +
+                    "($WORD_TOKEN)\\s+(?:del\\s+mese|di\\s+ogni\\s+mese)" +
                     ITALIAN_BASIS_SUFFIX
             ),
             weekdayTokenPattern = Regex(WORD_TOKEN, RegexOption.IGNORE_CASE),

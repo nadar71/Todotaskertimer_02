@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.util.Locale
 
 class TaskEditorTestActivity : ComponentActivity() {
     private var testBody by mutableStateOf<@Composable () -> Unit>({})
@@ -23,7 +24,12 @@ class TaskEditorTestActivity : ComponentActivity() {
             return
         }
         val localizedConfiguration = Configuration(newBase.resources.configuration).apply {
-            setLocales(LocaleList.forLanguageTags(languageTags))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                setLocales(LocaleList.forLanguageTags(languageTags))
+            } else {
+                @Suppress("DEPRECATION")
+                run { locale = Locale.forLanguageTag(languageTags.substringBefore(',')) }
+            }
         }
         super.attachBaseContext(newBase.createConfigurationContext(localizedConfiguration))
     }

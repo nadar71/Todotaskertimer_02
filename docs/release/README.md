@@ -19,4 +19,6 @@ Secret values are never committed or logged. A missing or partial set produces a
 
 See [checklist.md](checklist.md), [migration-and-rollback.md](migration-and-rollback.md),
 the [Quick Capture verification evidence](quick-capture-evidence-2026-08-16.md), and
-the [Data Portability v1 contract](../data-portability/backup-format-v1.md).
+the [Data Portability v1 contract](../data-portability/backup-format-v1.md),
+[backup v2 contract](../data-portability/backup-format-v2.md), and
+[Advanced Recurrence verification evidence](advanced-recurrence-evidence-2026-08-26.md).

@@ -172,6 +172,16 @@ class NaturalLanguageEntryJourneyTest {
     }
 
     @Test
+    fun italianSelectedWeekdays_surviveEditorRecreation() {
+        assertSelectedWeekdaysSurviveRecreation(ITALIAN_SELECTED_WEEKDAYS_RECREATION)
+    }
+
+    @Test
+    fun englishSelectedWeekdays_surviveEditorRecreation() {
+        assertSelectedWeekdaysSurviveRecreation(ENGLISH_SELECTED_WEEKDAYS_RECREATION)
+    }
+
+    @Test
     fun setupFailure_afterMutation_restoresRowsSequencesAndLiveAlarm() {
         appStateRule.insertTaskWithRegisteredAlarm(SETUP_FAILURE_TASK)
         appStateRule.insertTaskWithoutRegisteredAlarm(SETUP_FAILURE_NO_ALARM_TASK)
@@ -286,9 +296,11 @@ class NaturalLanguageEntryJourneyTest {
         scrollEditorTo("task-category-field")
         composeRule.onNodeWithTag("task-category-field")
             .assertTextEquals(fixture.categoryName)
-        scrollEditorTo("task-recurrence-field")
-        composeRule.onNodeWithTag("task-recurrence-field")
-            .assertTextEquals(text(R.string.task_recurrence_weekly))
+        scrollEditorTo("task-recurrence-kind")
+        composeRule.onNodeWithTag("task-recurrence-kind")
+            .assertTextEquals(text(R.string.task_recurrence_interval))
+        scrollEditorTo("task-recurrence-basis-scheduled_date")
+        composeRule.onNodeWithTag("task-recurrence-basis-scheduled_date").assertIsSelected()
     }
 
     private fun captureScheduleControls(): ScheduleControlSnapshot {
@@ -304,6 +316,30 @@ class NaturalLanguageEntryJourneyTest {
     private fun assertScheduleControls(expected: ScheduleControlSnapshot) {
         assertEquals(expected.dueText, controlTextSnapshot("task-due-section"))
         assertEquals(expected.reminderText, controlTextSnapshot("task-reminder-section"))
+    }
+
+    private fun assertSelectedWeekdaysSurviveRecreation(fixture: JourneyFixture) {
+        assertActiveLocale(fixture)
+        openNewTask()
+        enterAndParse(fixture.phrase)
+        assertSelectedWeekdayDraft(fixture)
+
+        composeRule.activityRule.scenario.recreate()
+
+        waitForTag("task-title")
+        assertActiveLocale(fixture)
+        assertSelectedWeekdayDraft(fixture)
+        assertEquals(emptyList<TaskEntity>(), readTasks())
+    }
+
+    private fun assertSelectedWeekdayDraft(fixture: JourneyFixture) {
+        scrollEditorTo("task-title")
+        assertEditableText("task-title", fixture.expectedTitle)
+        scrollEditorTo("task-recurrence-weekdays")
+        composeRule.onNodeWithTag("task-recurrence-weekday-monday").assertIsSelected()
+        composeRule.onNodeWithTag("task-recurrence-weekday-friday").assertIsSelected()
+        scrollEditorTo("task-recurrence-basis-scheduled_date")
+        composeRule.onNodeWithTag("task-recurrence-basis-scheduled_date").assertIsSelected()
     }
 
     private fun controlTextSnapshot(tag: String): List<String> {
@@ -530,6 +566,26 @@ private val ITALIAN_RECREATION = JourneyFixture(
     categoryName = "Casa"
 )
 
+private val ITALIAN_SELECTED_WEEKDAYS_RECREATION = JourneyFixture(
+    languageTags = "it",
+    phrase = "Pianifica rilascio 31/12/2037 alle 18 ogni lunedi e venerdi",
+    expectedTitle = "Pianifica rilascio",
+    description = "",
+    categoryId = 106,
+    categoryName = "Casa",
+    dueDate = LocalDate.of(2037, 12, 31)
+)
+
+private val ENGLISH_SELECTED_WEEKDAYS_RECREATION = JourneyFixture(
+    languageTags = "en",
+    phrase = "Plan release 12/31/2037 at 6 pm every Monday and Friday",
+    expectedTitle = "Plan release",
+    description = "",
+    categoryId = 107,
+    categoryName = "Home",
+    dueDate = LocalDate.of(2037, 12, 31)
+)
+
 private val ENGLISH_SECONDARY_LOCALE = JourneyFixture(
     languageTags = "fr-CH,en-US",
     phrase = "Plan project tomorrow at 18 #Work !high every week remind 1h before",
@@ -565,6 +621,8 @@ private fun journeyFixtureFor(testMethod: String): JourneyFixture = when (testMe
     "recreation_restoresRelativeDatePreview_withoutReparsingChangedInput" -> {
         ITALIAN_RECREATION
     }
+    "italianSelectedWeekdays_surviveEditorRecreation" -> ITALIAN_SELECTED_WEEKDAYS_RECREATION
+    "englishSelectedWeekdays_surviveEditorRecreation" -> ENGLISH_SELECTED_WEEKDAYS_RECREATION
     "setupFailure_afterMutation_restoresRowsSequencesAndLiveAlarm" -> ITALIAN_RECREATION
     else -> error("No Natural-Language Entry fixture for $testMethod")
 }
