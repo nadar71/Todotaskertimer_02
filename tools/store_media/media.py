@@ -34,6 +34,7 @@ LEGACY_DENSITIES = {
 RENDER_SCALE = 4
 WORDMARK_SIZE = (440, 96)
 PHONE_SIZE = (1080, 1920)
+NATIVE_CAPTURE_SIZE = (1080, 2400)
 PHONE_SAFE_MARGIN = 72
 PHONE_CAPTURE_TOP = 480
 PHONE_CAPTURE_SIZE = (1080, 1440)
@@ -903,10 +904,16 @@ def common_asset_errors(root: Path) -> list[str]:
     common = root / "store-assets/google-play/common"
     errors: list[str] = []
     for filename, spec in COMMON_ASSET_SPECS.items():
-        errors.extend(
-            f"common {filename}: {error}"
-            for error in validate_asset(common / filename, spec)
-        )
+        path = common / filename
+        asset_errors = validate_asset(path, spec)
+        errors.extend(f"common {filename}: {error}" for error in asset_errors)
+        if filename == "wordmark.png" and not asset_errors:
+            with Image.open(path) as wordmark:
+                alpha_extrema = wordmark.getchannel("A").getextrema()
+            if alpha_extrema != (0, 255):
+                errors.append(
+                    "common wordmark.png: expected mixed-alpha transparency"
+                )
     return errors
 
 
@@ -981,6 +988,12 @@ def capture_errors(root: Path, manifest: MediaManifest) -> list[str]:
                             f"{screenshot.capture} must be PNG, found {image.format or 'unknown'}"
                         )
                         continue
+                    if image.size != NATIVE_CAPTURE_SIZE:
+                        errors.append(
+                            f"{screenshot.capture} must be "
+                            f"{NATIVE_CAPTURE_SIZE[0]}x{NATIVE_CAPTURE_SIZE[1]}, "
+                            f"found {image.width}x{image.height}"
+                        )
                     rgb = image.convert("RGB")
                     background = Image.new("RGB", rgb.size, rgb.getpixel((0, 0)))
                     if ImageChops.difference(rgb, background).getbbox() is None:

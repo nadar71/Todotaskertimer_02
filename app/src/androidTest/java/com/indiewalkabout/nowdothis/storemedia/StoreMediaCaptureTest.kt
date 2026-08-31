@@ -1,6 +1,7 @@
 package com.indiewalkabout.nowdothis.storemedia
 
 import android.app.LocaleManager
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.LocaleList
 import androidx.compose.ui.test.assertIsDisplayed
@@ -20,6 +21,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.indiewalkabout.nowdothis.app.MainActivity
 import java.io.File
 import java.io.FileOutputStream
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -46,10 +48,10 @@ class StoreMediaCaptureTest {
             createTitle = "Nuova attività",
             quickEntryLabel = "Inserimento rapido",
             recurrenceLabel = "Ripetizione",
-            categoriesTitle = "Categorie",
+            historyTitle = "Cronologia",
             portabilityTitle = "Backup e ripristino",
             moreActions = "Altre azioni",
-            manageCategories = "Gestisci categorie",
+            completionHistoryAction = "Cronologia completate",
             portabilityAction = "Backup e ripristino"
         )
     )
@@ -63,15 +65,16 @@ class StoreMediaCaptureTest {
             createTitle = "New task",
             quickEntryLabel = "Quick entry",
             recurrenceLabel = "Repeat",
-            categoriesTitle = "Categories",
+            historyTitle = "History",
             portabilityTitle = "Backup and restore",
             moreActions = "More actions",
-            manageCategories = "Manage categories",
+            completionHistoryAction = "Completion history",
             portabilityAction = "Backup and restore"
         )
     )
 
     private fun capturePhoneStory(locale: StoreMediaLocale) {
+        assertCaptureEnvironment()
         assertActiveLocale(locale.tag)
         waitForTag("task-list")
         capture(locale, "01-focus", locale.tasksTitle, "task-list")
@@ -114,11 +117,13 @@ class StoreMediaCaptureTest {
 
         composeRule.onNodeWithTag("task-editor-back").performClick()
         waitForTag("task-list")
-        openOverflowAction(locale.moreActions, locale.manageCategories)
-        waitForTag("category-list")
-        capture(locale, "05-organize", locale.categoriesTitle, "category-list")
+        openOverflowAction(locale.moreActions, locale.completionHistoryAction)
+        waitForTag("history-list")
+        composeRule.onNodeWithTag("history-category-1").assertIsDisplayed()
+        composeRule.onNodeWithTag("history-task-$COMPLETED_TASK_ID").assertIsDisplayed()
+        capture(locale, "05-organize", locale.historyTitle, "history-list")
 
-        composeRule.onNodeWithTag("category-back").performClick()
+        composeRule.onNodeWithTag("history-back").performClick()
         waitForTag("task-list")
         openOverflowAction(locale.moreActions, locale.portabilityAction)
         waitForTag("portability-create")
@@ -129,6 +134,20 @@ class StoreMediaCaptureTest {
         val localeManager = InstrumentationRegistry.getInstrumentation().targetContext
             .applicationContext.getSystemService(LocaleManager::class.java)
         assertEquals(expectedTag, localeManager.applicationLocales.toLanguageTags())
+    }
+
+    private fun assertCaptureEnvironment() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val configuration = context.resources.configuration
+        val displayMetrics = context.resources.displayMetrics
+
+        assertEquals(1.0f, configuration.fontScale)
+        assertEquals(
+            Configuration.UI_MODE_NIGHT_NO,
+            configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        )
+        assertEquals(420, displayMetrics.densityDpi)
+        assertEquals("Europe/Rome", ZoneId.systemDefault().id)
     }
 
     private fun openOverflowAction(moreActions: String, actionLabel: String) {
@@ -155,6 +174,8 @@ class StoreMediaCaptureTest {
         check(parent.isDirectory || parent.mkdirs()) { "Unable to create ${output.parent}" }
         val bitmap = instrumentation.uiAutomation.takeScreenshot()
         try {
+            assertEquals(1080, bitmap.width)
+            assertEquals(2400, bitmap.height)
             FileOutputStream(output).use { stream ->
                 check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
                     "Unable to write ${output.absolutePath}"
@@ -173,6 +194,7 @@ class StoreMediaCaptureTest {
 
     private companion object {
         const val RECURRING_TASK_ID = 40_003
+        const val COMPLETED_TASK_ID = 40_006
         const val WAIT_TIMEOUT_MILLIS = 15_000L
     }
 }
@@ -184,10 +206,10 @@ private data class StoreMediaLocale(
     val createTitle: String,
     val quickEntryLabel: String,
     val recurrenceLabel: String,
-    val categoriesTitle: String,
+    val historyTitle: String,
     val portabilityTitle: String,
     val moreActions: String,
-    val manageCategories: String,
+    val completionHistoryAction: String,
     val portabilityAction: String
 )
 

@@ -339,6 +339,20 @@ class CommonAssetTest(unittest.TestCase):
             self.assertLess(foreground_bounds[1], central_bounds[3])
             self.assertGreater(foreground_bounds[3], central_bounds[1])
 
+    def test_common_validation_rejects_fully_opaque_wordmark(self) -> None:
+        self.render()
+        wordmark_path = (
+            self.root / "store-assets/google-play/common/wordmark.png"
+        )
+        Image.new("RGBA", media.WORDMARK_SIZE, (20, 40, 60, 255)).save(wordmark_path)
+
+        errors = media.common_asset_errors(self.root)
+
+        self.assertIn(
+            "common wordmark.png: expected mixed-alpha transparency",
+            errors,
+        )
+
     def test_feature_graphic_centers_only_the_rendered_wordmark_text(self) -> None:
         marker_color = (255, 0, 255, 255)
         marker = Image.new(
@@ -796,6 +810,24 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(0, code)
         self.assertEqual("", output)
+
+    def test_validate_captures_rejects_non_native_dimensions(self) -> None:
+        self.write_captures()
+        capture = (
+            self.root
+            / "store-assets/google-play/source/captures/it-IT/05-screen-5.png"
+        )
+        image = Image.new("RGB", (1080, 2399), "white")
+        image.putpixel((0, 0), (0, 0, 0))
+        image.save(capture)
+
+        code, output = self.run_command("validate-captures")
+
+        self.assertEqual(1, code)
+        self.assertIn(
+            "it-IT/05-screen-5.png must be 1080x2400, found 1080x2399",
+            output,
+        )
 
     def test_contact_sheet_reports_missing_derived_outputs(self) -> None:
         code, output = self.run_command("contact-sheet")

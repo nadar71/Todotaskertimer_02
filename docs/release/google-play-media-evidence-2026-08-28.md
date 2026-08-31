@@ -15,9 +15,13 @@ root.
 
 | Check | Command | Result |
 |---|---|---|
-| Media unit tests | `.venv-store-media/bin/python -m unittest tools.store_media.test_media -v` | PASS: 36 tests in 5.517 s, zero failures or errors |
+| Media unit tests | `.venv-store-media/bin/python -m unittest tools.store_media.test_media -v` | PASS: 38 tests in 6.048 s, zero failures or errors; includes native-capture geometry and mixed-alpha wordmark regressions |
+| Capture host safety | `bash tools/store_media/test_capture.sh` | PASS: rejects physical/unsupported display targets before destructive commands and restores normalized emulator state after failure |
+| Localized capture journeys | `bash tools/store_media/capture.sh --locale <it-IT\|en-US> --serial emulator-5554` | PASS: one connected journey per locale on API 36; six 1080 x 2400 captures each; in-app environment assertions passed |
+| Emulator fixture tests | `ANDROID_SERIAL=emulator-5554 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.indiewalkabout.nowdothis.storemedia.StoreMediaFixtureTest --console=plain` | PASS: 3 tests on the API 36 emulator, including Default sort reset |
 | Asset validation | `.venv-store-media/bin/python -m tools.store_media.media validate --root .` | PASS: exit 0 and zero validation errors |
-| Android JVM tests, lint, debug APK, release AAB | `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:bundleRelease --console=plain` | PASS: `BUILD SUCCESSFUL` in 1m54s; 119 tasks (54 executed, 65 up-to-date); lint XML contains zero Error issues; 16 MiB debug APK and 6.7 MiB release AAB produced |
+| Android JVM tests, lint, debug APK, release AAB, special variants | `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:bundleRelease :app:compileBenchmarkReleaseKotlin :app:compileNonMinifiedReleaseKotlin --console=plain` | PASS: `BUILD SUCCESSFUL` in 1m13s; 153 tasks (18 executed, 135 up-to-date); lint XML contains zero Error issues |
+| Fixture provider exposure | Inspect merged `release`, `benchmarkRelease`, and `nonMinifiedRelease` manifests | PASS: fixture provider absent from all three; present only in debug |
 
 Gradle emitted the existing local SDK warning that `ndk-bundle` has no
 `source.properties`, followed by a non-fatal notice that two native libraries
@@ -61,8 +65,8 @@ the 1080 x 1920 composition, exceeding the 70% requirement.
 | 1 | `01-focus.png` | PASS: headline and task rows readable; no clipping | PASS: benefit and populated list remain identifiable | Fictional tasks, clean 10:00 status bar, no unsupported claim | PASS |
 | 2 | `02-quick-capture.png` | PASS: editor, quick-entry field, and action fit | PASS: quick-capture state remains clear | Empty genuine editor state; no personal or debug content | PASS |
 | 3 | `03-natural-language.png` | PASS: sentence, parsed title, and headline fit | PASS: natural-entry benefit remains clear | Fictional sentence demonstrates supported parsing only | PASS |
-| 4 | `04-recurrence.png` | PASS: reminder, weekday recurrence, calculation basis, and complete end selector fit | PASS: repeat controls remain identifiable | Complete real control pairs; no fragment or paid claim | PASS |
-| 5 | `05-organize.png` | PASS: three categories and actions fit | PASS: category organization remains clear | Sensible default fixture categories; no personal content | PASS |
+| 4 | `04-recurrence.png` | PASS: visible no-reminder state, weekday recurrence, calculation basis, and complete end selector fit | PASS: repeat controls remain identifiable | Alt text truthfully states that the reminder is not set | PASS |
+| 5 | `05-organize.png` | PASS: history title, category filters, completed task, and Work category fit | PASS: categorized completion context remains clear | Real history context from fictional fixture data; no personal content | PASS |
 | 6 | `06-portability.png` | PASS: local backup and restore actions fit | PASS: local ownership benefit remains clear | Copy and UI do not imply cloud sync | PASS |
 
 ### English (`en-US`)
@@ -72,8 +76,8 @@ the 1080 x 1920 composition, exceeding the 70% requirement.
 | 1 | `01-focus.png` | PASS: headline and task rows readable; no clipping | PASS: benefit and populated list remain identifiable | Fictional tasks, clean 10:00 status bar, no unsupported claim | PASS |
 | 2 | `02-quick-capture.png` | PASS: editor, quick-entry field, and action fit | PASS: quick-capture state remains clear | Empty genuine editor state; no personal or debug content | PASS |
 | 3 | `03-natural-language.png` | PASS: sentence, parsed title, and headline fit | PASS: natural-entry benefit remains clear | Fictional sentence demonstrates supported parsing only | PASS |
-| 4 | `04-recurrence.png` | PASS: reminder, weekday recurrence, calculation basis, and complete end selector fit | PASS: repeat controls remain identifiable | Complete real control pairs; no fragment or paid claim | PASS |
-| 5 | `05-organize.png` | PASS: three categories and actions fit | PASS: category organization remains clear | Sensible default fixture categories; no personal content | PASS |
+| 4 | `04-recurrence.png` | PASS: visible no-reminder state, weekday recurrence, calculation basis, and complete end selector fit | PASS: repeat controls remain identifiable | Alt text truthfully states that the reminder is not set | PASS |
+| 5 | `05-organize.png` | PASS: history title, category filters, completed task, and Work category fit | PASS: categorized completion context remains clear | Real history context from fictional fixture data; no personal content | PASS |
 | 6 | `06-portability.png` | PASS: local backup and restore actions fit | PASS: local ownership benefit remains clear | Copy and UI do not imply cloud sync | PASS |
 
 Both 906 x 1032 contact sheets were inspected at native size and as 397 x 453

@@ -5,7 +5,10 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.os.Binder
+import android.os.Process
 import com.indiewalkabout.nowdothis.core.database.DebugDatabaseEntryPoint
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSort
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -22,12 +25,21 @@ class StoreMediaFixtureProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         require(method == STORE_MEDIA_FIXTURE_METHOD) { "Unsupported method: $method" }
         val appContext = requireNotNull(context).applicationContext
-        val database = EntryPointAccessors.fromApplication(
+        val callerAuthorized = isStoreMediaFixtureCaller(
+            callingUid = Binder.getCallingUid(),
+            appUid = appContext.applicationInfo.uid,
+            shellUid = Process.SHELL_UID
+        )
+        if (!callerAuthorized) {
+            throw SecurityException("Store-media fixture caller is not authorized")
+        }
+        val entryPoint = EntryPointAccessors.fromApplication(
             appContext,
             DebugDatabaseEntryPoint::class.java
-        ).database()
+        )
         runBlocking(Dispatchers.IO) {
-            StoreMediaFixture(database).prepare(
+            entryPoint.taskPreferencesRepository().setTaskSort(TaskSort.DEFAULT)
+            StoreMediaFixture(entryPoint.database()).prepare(
                 requireNotNull(arg) { "$STORE_MEDIA_LOCALE_ARG is required" }
             )
         }
@@ -61,3 +73,9 @@ class StoreMediaFixtureProvider : ContentProvider() {
         const val STORE_MEDIA_FIXTURE_TASK_COUNT = 6
     }
 }
+
+internal fun isStoreMediaFixtureCaller(
+    callingUid: Int,
+    appUid: Int,
+    shellUid: Int
+): Boolean = callingUid == appUid || callingUid == shellUid

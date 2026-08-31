@@ -5,16 +5,16 @@
       {"order": 1, "slug": "focus", "headline": "Fai adesso ciò che conta", "alt_text": "Elenco attività di NowDoThis con priorità, categorie e scadenze per concentrarsi sugli impegni più importanti.", "capture": "it-IT/01-focus.png"},
       {"order": 2, "slug": "quick-capture", "headline": "Cattura un'attività in un istante", "alt_text": "Editor di NowDoThis aperto sull'inserimento rapido di una nuova attività.", "capture": "it-IT/02-quick-capture.png"},
       {"order": 3, "slug": "natural-language", "headline": "Scrivi come pensi", "alt_text": "Inserimento rapido di NowDoThis che riconosce titolo, scadenza e ripetizione da una frase in italiano.", "capture": "it-IT/03-natural-language.png"},
-      {"order": 4, "slug": "recurrence", "headline": "Ripeti solo quando serve", "alt_text": "Editor di NowDoThis con promemoria e ricorrenza avanzata configurati per un'attività.", "capture": "it-IT/04-recurrence.png"},
-      {"order": 5, "slug": "organize", "headline": "Ogni impegno al suo posto", "alt_text": "Schermata Categorie di NowDoThis con aree di lavoro, personali e desideri organizzate e riordinabili.", "capture": "it-IT/05-organize.png"},
+      {"order": 4, "slug": "recurrence", "headline": "Ripeti solo quando serve", "alt_text": "Editor di NowDoThis con promemoria non impostato e ricorrenza avanzata configurata per un'attività.", "capture": "it-IT/04-recurrence.png"},
+      {"order": 5, "slug": "organize", "headline": "Ogni impegno al suo posto", "alt_text": "Cronologia di NowDoThis con filtri per categoria e un'attività completata nella categoria Lavoro.", "capture": "it-IT/05-organize.png"},
       {"order": 6, "slug": "portability", "headline": "I tuoi dati, sempre con te", "alt_text": "Schermata Backup e ripristino di NowDoThis con azioni per creare o ripristinare una copia locale dei dati.", "capture": "it-IT/06-portability.png"}
     ],
     "en-US": [
       {"order": 1, "slug": "focus", "headline": "Do what matters now", "alt_text": "NowDoThis task list with priorities, categories, and due dates for focusing on the most important commitments.", "capture": "en-US/01-focus.png"},
       {"order": 2, "slug": "quick-capture", "headline": "Capture a task in an instant", "alt_text": "NowDoThis task editor open to quick entry for a new task.", "capture": "en-US/02-quick-capture.png"},
       {"order": 3, "slug": "natural-language", "headline": "Write the way you think", "alt_text": "NowDoThis quick entry recognizing a title, due date, and repeat schedule from an English sentence.", "capture": "en-US/03-natural-language.png"},
-      {"order": 4, "slug": "recurrence", "headline": "Repeat exactly when needed", "alt_text": "NowDoThis editor with reminder and advanced recurrence configured for a task.", "capture": "en-US/04-recurrence.png"},
-      {"order": 5, "slug": "organize", "headline": "A place for every commitment", "alt_text": "NowDoThis Categories screen with work, personal, and wishlist areas ready to reorder or edit.", "capture": "en-US/05-organize.png"},
+      {"order": 4, "slug": "recurrence", "headline": "Repeat exactly when needed", "alt_text": "NowDoThis editor with advanced recurrence configured and the reminder not set.", "capture": "en-US/04-recurrence.png"},
+      {"order": 5, "slug": "organize", "headline": "A place for every commitment", "alt_text": "NowDoThis history with category filters and a completed task in the Work category.", "capture": "en-US/05-organize.png"},
       {"order": 6, "slug": "portability", "headline": "Your plans stay with you", "alt_text": "NowDoThis Backup and restore screen with actions to create or restore a local copy of app data.", "capture": "en-US/06-portability.png"}
     ]
   }

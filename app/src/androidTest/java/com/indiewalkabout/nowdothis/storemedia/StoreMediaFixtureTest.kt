@@ -6,10 +6,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.core.database.DebugDatabaseEntryPoint
+import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSort
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -20,12 +22,14 @@ class StoreMediaFixtureTest {
     private val context: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    private val database: AppDatabase by lazy {
+    private val entryPoint: DebugDatabaseEntryPoint by lazy {
         EntryPointAccessors.fromApplication(
             context.applicationContext,
             DebugDatabaseEntryPoint::class.java
-        ).database()
+        )
     }
+    private val database: AppDatabase
+        get() = entryPoint.database()
 
     @Test
     fun italianFixture_containsLocalizedStoreStory() = runBlocking {
@@ -59,6 +63,15 @@ class StoreMediaFixtureTest {
                 "Submit the expense report"
             )
         )
+    }
+
+    @Test
+    fun fixture_resetsTaskSortToDefault() = runBlocking {
+        entryPoint.taskPreferencesRepository().setTaskSort(TaskSort.HIGH_FIRST)
+
+        providerCall("en-US")
+
+        assertEquals(TaskSort.DEFAULT, entryPoint.taskPreferencesRepository().taskSort.first())
     }
 
     private suspend fun assertFixtureGraph(expectedTitles: List<String>) {
