@@ -6,16 +6,16 @@
       {"order": 2, "slug": "quick-capture", "headline": "Cattura un'attività in un istante", "alt_text": "Schermata di acquisizione rapida per una nuova attività.", "capture": "it-IT/02-quick-capture.png"},
       {"order": 3, "slug": "natural-language", "headline": "Scrivi come pensi", "alt_text": "Inserimento di un'attività con linguaggio naturale.", "capture": "it-IT/03-natural-language.png"},
       {"order": 4, "slug": "recurrence", "headline": "Ripeti solo quando serve", "alt_text": "Editor di promemoria e ripetizione attività.", "capture": "it-IT/04-recurrence.png"},
-      {"order": 5, "slug": "categories", "headline": "Ogni impegno al suo posto", "alt_text": "Categorie di attività con contesto organizzato.", "capture": "it-IT/05-categories.png"},
-      {"order": 6, "slug": "local-data", "headline": "I tuoi dati, sempre con te", "alt_text": "Schermata di backup e ripristino dei dati locali.", "capture": "it-IT/06-local-data.png"}
+      {"order": 5, "slug": "organize", "headline": "Ogni impegno al suo posto", "alt_text": "Categorie di attività con contesto organizzato.", "capture": "it-IT/05-organize.png"},
+      {"order": 6, "slug": "portability", "headline": "I tuoi dati, sempre con te", "alt_text": "Schermata di backup e ripristino dei dati locali.", "capture": "it-IT/06-portability.png"}
     ],
     "en-US": [
       {"order": 1, "slug": "focus", "headline": "Do what matters now", "alt_text": "English task list showing the day's priorities.", "capture": "en-US/01-focus.png"},
       {"order": 2, "slug": "quick-capture", "headline": "Capture a task in an instant", "alt_text": "Quick capture screen for a new task.", "capture": "en-US/02-quick-capture.png"},
       {"order": 3, "slug": "natural-language", "headline": "Write the way you think", "alt_text": "Natural-language task entry in progress.", "capture": "en-US/03-natural-language.png"},
       {"order": 4, "slug": "recurrence", "headline": "Repeat exactly when needed", "alt_text": "Task reminder and recurrence editor.", "capture": "en-US/04-recurrence.png"},
-      {"order": 5, "slug": "categories", "headline": "A place for every commitment", "alt_text": "Organized task categories with calendar context.", "capture": "en-US/05-categories.png"},
-      {"order": 6, "slug": "local-data", "headline": "Your plans stay with you", "alt_text": "Local data backup and restore screen.", "capture": "en-US/06-local-data.png"}
+      {"order": 5, "slug": "organize", "headline": "A place for every commitment", "alt_text": "Task categories arranged for organized planning.", "capture": "en-US/05-organize.png"},
+      {"order": 6, "slug": "portability", "headline": "Your plans stay with you", "alt_text": "Local data backup and restore screen.", "capture": "en-US/06-portability.png"}
     ]
   }
 }

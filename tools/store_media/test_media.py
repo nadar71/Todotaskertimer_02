@@ -470,6 +470,43 @@ class CommandTest(unittest.TestCase):
         self.assertIn("en-US is missing final screenshot 06-screen-6.png", output)
         self.assertFalse((self.root / "store-assets/google-play/it-IT/phone-screenshots").exists())
 
+    def test_validate_captures_reports_missing_and_blank_pngs(self) -> None:
+        manifest = load_manifest(
+            self.root / "store-assets/google-play/source/media_manifest.json"
+        )
+        captures_root = self.root / "store-assets/google-play/source/captures"
+        for screenshots in manifest.locales.values():
+            for copy in screenshots:
+                if copy.capture == "en-US/06-screen-6.png":
+                    continue
+                capture = captures_root / copy.capture
+                capture.parent.mkdir(parents=True, exist_ok=True)
+                Image.new("RGB", (1080, 2400), "white").save(capture)
+
+        code, output = self.run_command("validate-captures")
+
+        self.assertEqual(1, code)
+        self.assertIn("it-IT/01-screen-1.png is blank", output)
+        self.assertIn("en-US is missing capture en-US/06-screen-6.png", output)
+
+    def test_validate_captures_accepts_twelve_nonblank_pngs(self) -> None:
+        manifest = load_manifest(
+            self.root / "store-assets/google-play/source/media_manifest.json"
+        )
+        captures_root = self.root / "store-assets/google-play/source/captures"
+        for screenshots in manifest.locales.values():
+            for copy in screenshots:
+                capture = captures_root / copy.capture
+                capture.parent.mkdir(parents=True, exist_ok=True)
+                image = Image.new("RGB", (1080, 2400), "white")
+                image.putpixel((0, 0), (0, 0, 0))
+                image.save(capture)
+
+        code, output = self.run_command("validate-captures")
+
+        self.assertEqual(0, code)
+        self.assertEqual("", output)
+
     def test_contact_sheet_reports_missing_derived_outputs(self) -> None:
         code, output = self.run_command("contact-sheet")
 

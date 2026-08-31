@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageDraw, ImageFont, UnidentifiedImageError
 
 
 MANIFEST_PATH = Path("store-assets/google-play/source/media_manifest.json")
@@ -657,6 +657,21 @@ def capture_errors(root: Path, manifest: MediaManifest) -> list[str]:
             capture = root / CAPTURES_PATH / screenshot.capture
             if not capture.is_file():
                 errors.append(f"{locale} is missing capture {screenshot.capture}")
+                continue
+            try:
+                with Image.open(capture) as image:
+                    image.load()
+                    if image.format != "PNG":
+                        errors.append(
+                            f"{screenshot.capture} must be PNG, found {image.format or 'unknown'}"
+                        )
+                        continue
+                    rgb = image.convert("RGB")
+                    background = Image.new("RGB", rgb.size, rgb.getpixel((0, 0)))
+                    if ImageChops.difference(rgb, background).getbbox() is None:
+                        errors.append(f"{screenshot.capture} is blank")
+            except (OSError, UnidentifiedImageError) as error:
+                errors.append(f"unable to read capture {screenshot.capture}: {error}")
     return errors
 
 
@@ -687,6 +702,8 @@ def command_errors(command: str, root: Path, scope: str = "all") -> list[str]:
         return [str(error)]
 
     errors = validate_manifest(manifest)
+    if command == "validate-captures":
+        return errors + capture_errors(root, manifest)
     return errors + final_asset_errors(root, manifest)
 
 
@@ -699,6 +716,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
         "contact-sheet",
         "render-launcher",
         "render-common",
+        "validate-captures",
     ):
         command_parser = subparsers.add_parser(command)
         command_parser.add_argument("--root", type=Path, default=Path("."))
