@@ -2,6 +2,7 @@ package com.indiewalkabout.nowdothis.storemedia
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
@@ -32,46 +33,58 @@ class StoreMediaFixtureTest {
         get() = entryPoint.database()
 
     @Test
-    fun italianFixture_containsLocalizedStoreStory() = runBlocking {
-        providerCall("it-IT")
-        providerCall("it-IT")
+    fun italianFixture_containsLocalizedStoreStory() {
+        requireStoreMediaEmulatorDevice()
+        runBlocking {
+            providerCall("it-IT")
+            providerCall("it-IT")
 
-        assertFixtureGraph(
-            listOf(
-                "Preparare la presentazione",
-                "Chiamare il dentista",
-                "Rivedere il piano di rilascio",
-                "Comprare i biglietti del treno",
-                "Allenamento del mattino",
-                "Inviare la nota spese"
+            assertFixtureGraph(
+                listOf(
+                    "Preparare la presentazione",
+                    "Chiamare il dentista",
+                    "Rivedere il piano di rilascio",
+                    "Comprare i biglietti del treno",
+                    "Allenamento del mattino",
+                    "Inviare la nota spese"
+                )
             )
-        )
+        }
     }
 
     @Test
-    fun englishFixture_containsLocalizedStoreStory() = runBlocking {
-        providerCall("en-US")
-        providerCall("en-US")
+    fun englishFixture_containsLocalizedStoreStory() {
+        requireStoreMediaEmulatorDevice()
+        runBlocking {
+            providerCall("en-US")
+            providerCall("en-US")
 
-        assertFixtureGraph(
-            listOf(
-                "Prepare the presentation",
-                "Call the dentist",
-                "Review the release plan",
-                "Buy train tickets",
-                "Morning workout",
-                "Submit the expense report"
+            assertFixtureGraph(
+                listOf(
+                    "Prepare the presentation",
+                    "Call the dentist",
+                    "Review the release plan",
+                    "Buy train tickets",
+                    "Morning workout",
+                    "Submit the expense report"
+                )
             )
-        )
+        }
     }
 
     @Test
-    fun fixture_resetsTaskSortToDefault() = runBlocking {
-        entryPoint.taskPreferencesRepository().setTaskSort(TaskSort.HIGH_FIRST)
+    fun fixture_resetsTaskSortToDefault() {
+        requireStoreMediaEmulatorDevice()
+        runBlocking {
+            entryPoint.taskPreferencesRepository().setTaskSort(TaskSort.HIGH_FIRST)
 
-        providerCall("en-US")
+            providerCall("en-US")
 
-        assertEquals(TaskSort.DEFAULT, entryPoint.taskPreferencesRepository().taskSort.first())
+            assertEquals(
+                TaskSort.DEFAULT,
+                entryPoint.taskPreferencesRepository().taskSort.first()
+            )
+        }
     }
 
     private suspend fun assertFixtureGraph(expectedTitles: List<String>) {
@@ -108,5 +121,16 @@ class StoreMediaFixtureTest {
 
         assertNotNull(result)
         assertEquals(6, requireNotNull(result).getInt("task_count"))
+    }
+
+    private fun requireStoreMediaEmulatorDevice() {
+        check(
+            isStoreMediaEmulator(
+                hardware = Build.HARDWARE,
+                fingerprint = Build.FINGERPRINT,
+                model = Build.MODEL,
+                product = Build.PRODUCT
+            )
+        ) { "Destructive store-media fixture tests require an Android emulator" }
     }
 }

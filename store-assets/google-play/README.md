@@ -44,8 +44,9 @@ app locale, and demo-status-bar state through its exit trap. The fixture
 transaction intentionally replaces the debug app's tasks and categories with
 fictional data and resets task sorting to Default; that content state is not
 restored. The exported debug-only fixture provider accepts only the app UID and
-Android shell UID, remains absent from release variants, and does not schedule
-real reminders.
+Android shell UID on a recognized Android emulator, independently refuses
+physical-device Build identities, remains absent from release variants, and
+does not schedule real reminders.
 
 ## Regenerate And Validate
 

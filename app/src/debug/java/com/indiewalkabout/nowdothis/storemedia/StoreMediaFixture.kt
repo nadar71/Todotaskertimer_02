@@ -12,6 +12,8 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.Task
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import java.time.DayOfWeek
 
+internal val STORE_MEDIA_SUPPORTED_LOCALES = setOf("it-IT", "en-US")
+
 internal class StoreMediaFixture(
     private val database: AppDatabase
 ) {

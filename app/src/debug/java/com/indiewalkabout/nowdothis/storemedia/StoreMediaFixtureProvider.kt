@@ -4,8 +4,9 @@ import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
-import android.os.Bundle
 import android.os.Binder
+import android.os.Build
+import android.os.Bundle
 import android.os.Process
 import com.indiewalkabout.nowdothis.core.database.DebugDatabaseEntryPoint
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSort
@@ -24,6 +25,16 @@ class StoreMediaFixtureProvider : ContentProvider() {
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         require(method == STORE_MEDIA_FIXTURE_METHOD) { "Unsupported method: $method" }
+        val localeTag = requireStoreMediaLocale(arg)
+        val emulator = isStoreMediaEmulator(
+            hardware = Build.HARDWARE,
+            fingerprint = Build.FINGERPRINT,
+            model = Build.MODEL,
+            product = Build.PRODUCT
+        )
+        if (!emulator) {
+            throw SecurityException("Store-media fixtures require an Android emulator")
+        }
         val appContext = requireNotNull(context).applicationContext
         val callerAuthorized = isStoreMediaFixtureCaller(
             callingUid = Binder.getCallingUid(),
@@ -38,9 +49,14 @@ class StoreMediaFixtureProvider : ContentProvider() {
             DebugDatabaseEntryPoint::class.java
         )
         runBlocking(Dispatchers.IO) {
-            entryPoint.taskPreferencesRepository().setTaskSort(TaskSort.DEFAULT)
-            StoreMediaFixture(entryPoint.database()).prepare(
-                requireNotNull(arg) { "$STORE_MEDIA_LOCALE_ARG is required" }
+            prepareStoreMediaFixture(
+                localeTag = localeTag,
+                resetTaskSort = {
+                    entryPoint.taskPreferencesRepository().setTaskSort(TaskSort.DEFAULT)
+                },
+                prepareFixture = { supportedLocale ->
+                    StoreMediaFixture(entryPoint.database()).prepare(supportedLocale)
+                }
             )
         }
         return Bundle().apply {
@@ -79,3 +95,39 @@ internal fun isStoreMediaFixtureCaller(
     appUid: Int,
     shellUid: Int
 ): Boolean = callingUid == appUid || callingUid == shellUid
+
+internal fun isStoreMediaEmulator(
+    hardware: String,
+    fingerprint: String,
+    model: String,
+    product: String
+): Boolean {
+    val emulatorHardware = hardware.lowercase() in setOf("ranchu", "goldfish")
+    val identity = listOf(fingerprint, model, product).joinToString(" ").lowercase()
+    val emulatorIdentity = listOf(
+        "sdk_gphone",
+        "android sdk built for",
+        "generic/sdk",
+        "generic_x86",
+        "emulator"
+    ).any(identity::contains)
+    return emulatorHardware && emulatorIdentity
+}
+
+internal fun requireStoreMediaLocale(localeTag: String?): String {
+    val requiredLocale = requireNotNull(localeTag) { "$STORE_MEDIA_LOCALE_ARG is required" }
+    require(requiredLocale in STORE_MEDIA_SUPPORTED_LOCALES) {
+        "Unsupported locale: $requiredLocale"
+    }
+    return requiredLocale
+}
+
+internal suspend fun prepareStoreMediaFixture(
+    localeTag: String?,
+    resetTaskSort: suspend () -> Unit,
+    prepareFixture: suspend (String) -> Unit
+) {
+    val supportedLocale = requireStoreMediaLocale(localeTag)
+    resetTaskSort()
+    prepareFixture(supportedLocale)
+}
