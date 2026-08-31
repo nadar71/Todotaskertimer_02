@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "canvas": 108,
+  "colors": {
+    "evergreen": "#123C35",
+    "mint": "#6FE0B2",
+    "white": "#FFFFFF",
+    "cool_gray": "#F2F5F4",
+    "coral": "#F06F61"
+  },
+  "geometry": {
+    "stroke_width": 9,
+    "check": [[27, 55], [44, 72], [67, 45]],
+    "forward": [
+      [[59, 45], [82, 45]],
+      [[72, 35], [82, 45], [72, 55]]
+    ]
+  }
+}

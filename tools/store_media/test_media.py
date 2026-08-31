@@ -4,9 +4,11 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from xml.etree import ElementTree
 
 from PIL import Image
 
+from tools.store_media import media
 from tools.store_media.media import (
     AssetSpec,
     MediaManifest,
@@ -16,6 +18,13 @@ from tools.store_media.media import (
     validate_asset,
     validate_manifest,
 )
+
+
+ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
+
+
+def android_attr(node: ElementTree.Element | None, name: str) -> str | None:
+    return None if node is None else node.get(f"{{{ANDROID_NAMESPACE}}}{name}")
 
 
 def screenshot(order: int, locale: str = "it-IT", **overrides: object) -> ScreenshotCopy:
@@ -164,6 +173,108 @@ class ManifestValidationTest(unittest.TestCase):
             manifest = load_manifest(path)
 
         self.assertEqual("focus", manifest.locales["it-IT"][0].slug)
+
+
+class BrandTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(__file__).resolve().parents[2]
+        self.brand_path = self.root / "store-assets/google-play/source/brand.json"
+
+    def test_brand_uses_the_approved_palette_tokens(self) -> None:
+        brand = media.load_brand(self.brand_path)
+
+        self.assertEqual(
+            {"evergreen", "mint", "white", "cool_gray", "coral"},
+            set(brand.colors),
+        )
+
+    def test_brand_geometry_stays_inside_safe_zone(self) -> None:
+        brand = media.load_brand(self.brand_path)
+        inset = brand.stroke_width / 2
+
+        self.assertGreaterEqual(min(point.x for point in brand.points) - inset, 21)
+        self.assertLessEqual(max(point.x for point in brand.points) + inset, 87)
+        self.assertGreaterEqual(min(point.y for point in brand.points) - inset, 21)
+        self.assertLessEqual(max(point.y for point in brand.points) + inset, 87)
+
+    def test_launcher_renderer_writes_every_legacy_density_deterministically(self) -> None:
+        brand = media.load_brand(self.brand_path)
+        densities = {
+            "mdpi": 48,
+            "hdpi": 72,
+            "xhdpi": 96,
+            "xxhdpi": 144,
+            "xxxhdpi": 192,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            media.render_launcher_assets(root, brand)
+            first_render = {
+                path.relative_to(root): path.read_bytes()
+                for path in sorted(root.rglob("*.webp"))
+            }
+
+            media.render_launcher_assets(root, brand)
+
+            for density, size in densities.items():
+                for filename in ("ic_launcher.webp", "ic_launcher_round.webp"):
+                    path = root / f"app/src/main/res/mipmap-{density}/{filename}"
+                    self.assertEqual(
+                        first_render[path.relative_to(root)], path.read_bytes()
+                    )
+                    with Image.open(path) as image:
+                        self.assertEqual((size, size), image.size)
+                        self.assertEqual("WEBP", image.format)
+
+    def test_legacy_launchers_use_evergreen_white_and_mint(self) -> None:
+        brand = media.load_brand(self.brand_path)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            media.render_launcher_assets(root, brand)
+            standard = root / "app/src/main/res/mipmap-mdpi/ic_launcher.webp"
+            round_icon = root / "app/src/main/res/mipmap-mdpi/ic_launcher_round.webp"
+
+            with Image.open(standard).convert("RGBA") as image:
+                colors = set(image.get_flattened_data())
+                self.assertEqual(
+                    (*brand.rgb("evergreen"), 255), image.getpixel((0, 0))
+                )
+                self.assertIn((*brand.rgb("white"), 255), colors)
+                self.assertIn((*brand.rgb("mint"), 255), colors)
+            with Image.open(round_icon).convert("RGBA") as image:
+                colors = set(image.get_flattened_data())
+                self.assertEqual(0, image.getpixel((0, 0))[3])
+                self.assertEqual(
+                    (*brand.rgb("evergreen"), 255), image.getpixel((24, 8))
+                )
+                self.assertIn((*brand.rgb("white"), 255), colors)
+                self.assertIn((*brand.rgb("mint"), 255), colors)
+
+    def test_android_13_icons_reference_monochrome_layer(self) -> None:
+        for filename in ("ic_launcher.xml", "ic_launcher_round.xml"):
+            tree = ElementTree.parse(
+                self.root / "app/src/main/res/mipmap-anydpi-v33" / filename
+            )
+            node = tree.getroot().find("monochrome")
+            self.assertIsNotNone(node)
+            self.assertEqual(
+                "@drawable/ic_launcher_monochrome",
+                android_attr(node, "drawable"),
+            )
+
+    def test_render_launcher_command_generates_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            brand_path = root / "store-assets/google-play/source/brand.json"
+            brand_path.parent.mkdir(parents=True)
+            brand_path.write_bytes(self.brand_path.read_bytes())
+
+            code = media.main(["render-launcher", "--root", str(root)])
+
+            self.assertEqual(0, code)
+            self.assertTrue(
+                (root / "app/src/main/res/drawable/ic_launcher_foreground.xml").is_file()
+            )
 
 
 class CommandTest(unittest.TestCase):
