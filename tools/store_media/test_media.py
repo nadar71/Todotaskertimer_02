@@ -1,12 +1,13 @@
 import contextlib
 import io
+import inspect
 import json
 import tempfile
 import unittest
 from pathlib import Path
 from xml.etree import ElementTree
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 from tools.store_media import media
 from tools.store_media.media import (
@@ -275,6 +276,103 @@ class BrandTest(unittest.TestCase):
             self.assertTrue(
                 (root / "app/src/main/res/drawable/ic_launcher_foreground.xml").is_file()
             )
+
+
+class CommonAssetTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        project_root = Path(__file__).resolve().parents[2]
+        self.brand_path = project_root / "store-assets/google-play/source/brand.json"
+        self.brand = media.load_brand(self.brand_path)
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def render(self) -> None:
+        renderer = getattr(media, "render_common_assets", None)
+        self.assertIsNotNone(renderer, "render_common_assets does not exist")
+        renderer(self.root, self.brand)
+
+    def run_main(self, arguments: list[str]) -> int:
+        with contextlib.redirect_stderr(io.StringIO()):
+            try:
+                return main(arguments)
+            except SystemExit as error:
+                return int(error.code)
+
+    def test_common_assets_match_play_contract(self) -> None:
+        self.render()
+        common = self.root / "store-assets/google-play/common"
+        icon_path = common / "app-icon-512.png"
+        feature_path = common / "feature-graphic-1024x500.png"
+        wordmark_path = common / "wordmark.png"
+
+        self.assertEqual(
+            [],
+            validate_asset(icon_path, AssetSpec(512, 512, "RGBA", 1_024 * 1_024)),
+        )
+        self.assertEqual(
+            [],
+            validate_asset(feature_path, AssetSpec(1024, 500, "RGB")),
+        )
+        with Image.open(wordmark_path) as wordmark:
+            self.assertEqual("PNG", wordmark.format)
+            self.assertEqual("RGBA", wordmark.mode)
+            self.assertIsNotNone(wordmark.getchannel("A").getbbox())
+
+        with Image.open(feature_path) as feature:
+            background = Image.new("RGB", feature.size, self.brand.rgb("cool_gray"))
+            foreground_bounds = ImageChops.difference(feature, background).getbbox()
+            self.assertIsNotNone(foreground_bounds)
+            assert foreground_bounds is not None
+            central_bounds = (1024 * 0.2, 500 * 0.2, 1024 * 0.8, 500 * 0.8)
+            self.assertLess(foreground_bounds[0], central_bounds[2])
+            self.assertGreater(foreground_bounds[2], central_bounds[0])
+            self.assertLess(foreground_bounds[1], central_bounds[3])
+            self.assertGreater(foreground_bounds[3], central_bounds[1])
+
+    def test_feature_graphic_contains_only_the_wordmark_text(self) -> None:
+        self.render()
+
+        renderer_source = "\n".join(
+            (
+                inspect.getsource(media._render_feature_graphic),
+                inspect.getsource(media._draw_task_row_motif),
+            )
+        )
+
+        self.assertNotIn(".text(", renderer_source)
+        self.assertIn("wordmark", renderer_source)
+
+    def test_common_assets_regenerate_deterministically_through_cli(self) -> None:
+        brand_path = self.root / "store-assets/google-play/source/brand.json"
+        brand_path.parent.mkdir(parents=True)
+        brand_path.write_bytes(self.brand_path.read_bytes())
+
+        self.assertEqual(
+            0,
+            self.run_main(["render-common", "--root", str(self.root)]),
+        )
+        common = self.root / "store-assets/google-play/common"
+        first_render = {
+            path.name: path.read_bytes() for path in sorted(common.glob("*.png"))
+        }
+
+        self.assertEqual(
+            0,
+            self.run_main(["render-common", "--root", str(self.root)]),
+        )
+        self.assertEqual(
+            first_render,
+            {path.name: path.read_bytes() for path in sorted(common.glob("*.png"))},
+        )
+        self.assertEqual(
+            0,
+            self.run_main(
+                ["validate", "--root", str(self.root), "--scope", "common"]
+            ),
+        )
 
 
 class CommandTest(unittest.TestCase):

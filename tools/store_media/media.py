@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from PIL import Image, ImageDraw, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
 
 MANIFEST_PATH = Path("store-assets/google-play/source/media_manifest.json")
@@ -24,6 +24,8 @@ LEGACY_DENSITIES = {
     "xxhdpi": 144,
     "xxxhdpi": 192,
 }
+RENDER_SCALE = 4
+WORDMARK_SIZE = (440, 96)
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,13 @@ class AssetSpec:
     @classmethod
     def phone_screenshot(cls) -> "AssetSpec":
         return cls(1080, 1920, "RGB")
+
+
+COMMON_ASSET_SPECS = {
+    "app-icon-512.png": AssetSpec(512, 512, "RGBA", 1_024 * 1_024),
+    "feature-graphic-1024x500.png": AssetSpec(1024, 500, "RGB"),
+    "wordmark.png": AssetSpec(*WORDMARK_SIZE, "RGBA"),
+}
 
 
 @dataclass(frozen=True)
@@ -230,6 +239,160 @@ def render_launcher_assets(project_root: Path, brand: Brand) -> None:
         output = resource_root / f"mipmap-{density}"
         _render_legacy_icon(output / "ic_launcher.webp", brand, size, round_icon=False)
         _render_legacy_icon(output / "ic_launcher_round.webp", brand, size, round_icon=True)
+
+
+def render_common_assets(project_root: Path, brand: Brand) -> None:
+    """Render the language-neutral Google Play graphics from approved geometry."""
+    output = project_root / "store-assets/google-play/common"
+    output.mkdir(parents=True, exist_ok=True)
+
+    icon = _render_store_icon(brand)
+    _save_png(output / "app-icon-512.png", icon)
+
+    wordmark_source = _wordmark_image(brand, RENDER_SCALE)
+    wordmark = wordmark_source.resize(WORDMARK_SIZE, Image.Resampling.LANCZOS)
+    _save_png(output / "wordmark.png", wordmark)
+
+    feature = _render_feature_graphic(brand, wordmark_source)
+    _save_png(output / "feature-graphic-1024x500.png", feature)
+
+
+def _render_store_icon(brand: Brand) -> Image.Image:
+    rendered_size = 512 * RENDER_SCALE
+    image = Image.new(
+        "RGBA",
+        (rendered_size, rendered_size),
+        (*brand.rgb("evergreen"), 255),
+    )
+    draw = ImageDraw.Draw(image)
+    scale = rendered_size / brand.canvas
+    width = round(brand.stroke_width * scale)
+    _draw_paths(draw, (brand.check,), brand.rgb("white"), scale, width)
+    _draw_paths(draw, brand.forward, brand.rgb("mint"), scale, width)
+    return image.resize((512, 512), Image.Resampling.LANCZOS)
+
+
+def _wordmark_image(brand: Brand, scale: int) -> Image.Image:
+    width, height = (dimension * scale for dimension in WORDMARK_SIZE)
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=70 * scale)
+    first, accent = "NowDo", "This"
+    first_width = draw.textlength(first, font=font)
+    total_width = first_width + draw.textlength(accent, font=font)
+    bounds = draw.textbbox((0, 0), first + accent, font=font)
+    x = (width - total_width) / 2
+    y = (height - (bounds[3] - bounds[1])) / 2 - bounds[1]
+    draw.text((x, y), first, font=font, fill=(*brand.rgb("evergreen"), 255))
+    draw.text(
+        (x + first_width, y),
+        accent,
+        font=font,
+        fill=(*brand.rgb("mint"), 255),
+    )
+    return image
+
+
+def _render_feature_graphic(brand: Brand, wordmark: Image.Image) -> Image.Image:
+    width, height = 1024 * RENDER_SCALE, 500 * RENDER_SCALE
+    image = Image.new("RGB", (width, height), brand.rgb("cool_gray"))
+    draw = ImageDraw.Draw(image)
+
+    gesture_scale = 3.4 * RENDER_SCALE
+    gesture_offset = Point(20 * RENDER_SCALE, 65 * RENDER_SCALE)
+    gesture_width = round(brand.stroke_width * gesture_scale)
+    _draw_offset_paths(
+        draw,
+        (brand.check,),
+        brand.rgb("evergreen"),
+        gesture_scale,
+        gesture_offset,
+        gesture_width,
+    )
+    _draw_offset_paths(
+        draw,
+        brand.forward,
+        brand.rgb("mint"),
+        gesture_scale,
+        gesture_offset,
+        gesture_width,
+    )
+
+    _draw_task_row_motif(draw, brand, RENDER_SCALE)
+    wordmark_position = (
+        (width - wordmark.width) // 2,
+        (height - wordmark.height) // 2,
+    )
+    image.paste(wordmark, wordmark_position, wordmark)
+    return image.resize((1024, 500), Image.Resampling.LANCZOS).convert("RGB")
+
+
+def _draw_task_row_motif(
+    draw: ImageDraw.ImageDraw, brand: Brand, scale: int
+) -> None:
+    def box(values: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+        left, top, right, bottom = values
+        return left * scale, top * scale, right * scale, bottom * scale
+
+    for top, checked, line_width in ((166, True, 126), (260, False, 92)):
+        draw.rounded_rectangle(
+            box((774, top, 974, top + 76)),
+            radius=8 * scale,
+            fill=brand.rgb("white"),
+        )
+        check_box = box((794, top + 27, 816, top + 49))
+        draw.rounded_rectangle(
+            check_box,
+            radius=4 * scale,
+            fill=brand.rgb("mint") if checked else brand.rgb("white"),
+            outline=brand.rgb("evergreen"),
+            width=2 * scale,
+        )
+        if checked:
+            draw.line(
+                [
+                    (800 * scale, (top + 38) * scale),
+                    (806 * scale, (top + 44) * scale),
+                    (813 * scale, (top + 33) * scale),
+                ],
+                fill=brand.rgb("evergreen"),
+                width=2 * scale,
+                joint="curve",
+            )
+        draw.rounded_rectangle(
+            box((834, top + 28, 834 + line_width, top + 35)),
+            radius=3 * scale,
+            fill=brand.rgb("evergreen"),
+        )
+        draw.rounded_rectangle(
+            box((834, top + 44, 900, top + 49)),
+            radius=2 * scale,
+            fill=brand.rgb("mint"),
+        )
+
+
+def _draw_offset_paths(
+    draw: ImageDraw.ImageDraw,
+    paths: Sequence[Sequence[Point]],
+    color: tuple[int, int, int],
+    scale: float,
+    offset: Point,
+    width: int,
+) -> None:
+    radius = width / 2
+    for path in paths:
+        coordinates = [
+            (offset.x + point.x * scale, offset.y + point.y * scale)
+            for point in path
+        ]
+        draw.line(coordinates, fill=color, width=width, joint="curve")
+        for x, y in coordinates:
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color)
+
+
+def _save_png(path: Path, image: Image.Image) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path, format="PNG", optimize=False, compress_level=9)
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -465,6 +628,18 @@ def final_asset_errors(root: Path, manifest: MediaManifest) -> list[str]:
     return errors
 
 
+def common_asset_errors(root: Path) -> list[str]:
+    """Validate every language-neutral Play asset against its upload contract."""
+    common = root / "store-assets/google-play/common"
+    errors: list[str] = []
+    for filename, spec in COMMON_ASSET_SPECS.items():
+        errors.extend(
+            f"common {filename}: {error}"
+            for error in validate_asset(common / filename, spec)
+        )
+    return errors
+
+
 def render_all(root: Path) -> None:
     """Validate source captures until later tasks provide the renderer."""
     manifest = load_manifest(root / MANIFEST_PATH)
@@ -485,10 +660,16 @@ def capture_errors(root: Path, manifest: MediaManifest) -> list[str]:
     return errors
 
 
-def command_errors(command: str, root: Path) -> list[str]:
+def command_errors(command: str, root: Path, scope: str = "all") -> list[str]:
     if command == "render-launcher":
         try:
             render_launcher_assets(root, load_brand(root / BRAND_PATH))
+        except ValueError as error:
+            return str(error).splitlines()
+        return []
+    if command == "render-common":
+        try:
+            render_common_assets(root, load_brand(root / BRAND_PATH))
         except ValueError as error:
             return str(error).splitlines()
         return []
@@ -498,6 +679,8 @@ def command_errors(command: str, root: Path) -> list[str]:
         except ValueError as error:
             return str(error).splitlines()
         return []
+    if command == "validate" and scope == "common":
+        return common_asset_errors(root)
     try:
         manifest = load_manifest(root / MANIFEST_PATH)
     except ValueError as error:
@@ -510,11 +693,21 @@ def command_errors(command: str, root: Path) -> list[str]:
 def main(arguments: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("render", "validate", "contact-sheet", "render-launcher"):
+    for command in (
+        "render",
+        "validate",
+        "contact-sheet",
+        "render-launcher",
+        "render-common",
+    ):
         command_parser = subparsers.add_parser(command)
         command_parser.add_argument("--root", type=Path, default=Path("."))
+        if command == "validate":
+            command_parser.add_argument(
+                "--scope", choices=("all", "common"), default="all"
+            )
     args = parser.parse_args(arguments)
-    errors = command_errors(args.command, args.root)
+    errors = command_errors(args.command, args.root, getattr(args, "scope", "all"))
     for error in errors:
         print(error)
     return 1 if errors else 0
