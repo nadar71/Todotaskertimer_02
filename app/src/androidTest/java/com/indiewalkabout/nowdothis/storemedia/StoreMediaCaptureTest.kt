@@ -17,10 +17,10 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.platform.app.InstrumentationRegistry
-import com.indiewalkabout.nowdothis.R
 import com.indiewalkabout.nowdothis.app.MainActivity
 import java.io.File
 import java.io.FileOutputStream
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -41,7 +41,16 @@ class StoreMediaCaptureTest {
     fun captureItalianPhoneStory() = capturePhoneStory(
         StoreMediaLocale(
             tag = "it-IT",
-            naturalLanguageInput = "Pianifica rilascio 31/12/2037 alle 18 ogni lunedi e venerdi"
+            naturalLanguageInput = "Pianifica rilascio 31/12/2037 alle 18 ogni lunedi e venerdi",
+            tasksTitle = "Attività",
+            createTitle = "Nuova attività",
+            quickEntryLabel = "Inserimento rapido",
+            recurrenceLabel = "Ripetizione",
+            categoriesTitle = "Categorie",
+            portabilityTitle = "Backup e ripristino",
+            moreActions = "Altre azioni",
+            manageCategories = "Gestisci categorie",
+            portabilityAction = "Backup e ripristino"
         )
     )
 
@@ -49,20 +58,30 @@ class StoreMediaCaptureTest {
     fun captureEnglishPhoneStory() = capturePhoneStory(
         StoreMediaLocale(
             tag = "en-US",
-            naturalLanguageInput = "Plan release 12/31/2037 at 6 pm every Monday and Friday"
+            naturalLanguageInput = "Plan release 12/31/2037 at 6 pm every Monday and Friday",
+            tasksTitle = "Tasks",
+            createTitle = "New task",
+            quickEntryLabel = "Quick entry",
+            recurrenceLabel = "Repeat",
+            categoriesTitle = "Categories",
+            portabilityTitle = "Backup and restore",
+            moreActions = "More actions",
+            manageCategories = "Manage categories",
+            portabilityAction = "Backup and restore"
         )
     )
 
     private fun capturePhoneStory(locale: StoreMediaLocale) {
+        assertActiveLocale(locale.tag)
         waitForTag("task-list")
-        capture(locale, "01-focus", R.string.tasks_title, "task-list")
+        capture(locale, "01-focus", locale.tasksTitle, "task-list")
 
         composeRule.onNodeWithTag("task-add").performClick()
         waitForTag("quick-entry-section")
         capture(
             locale,
             "02-quick-capture",
-            R.string.task_editor_create_title,
+            locale.createTitle,
             "quick-entry-section"
         )
 
@@ -74,7 +93,7 @@ class StoreMediaCaptureTest {
         capture(
             locale,
             "03-natural-language",
-            R.string.quick_entry_label,
+            locale.quickEntryLabel,
             "quick-entry-summary"
         )
 
@@ -89,35 +108,41 @@ class StoreMediaCaptureTest {
         capture(
             locale,
             "04-recurrence",
-            R.string.task_editor_recurrence_label,
+            locale.recurrenceLabel,
             "task-recurrence-editor"
         )
 
         composeRule.onNodeWithTag("task-editor-back").performClick()
         waitForTag("task-list")
-        openOverflowAction(R.string.task_manage_categories)
+        openOverflowAction(locale.moreActions, locale.manageCategories)
         waitForTag("category-list")
-        capture(locale, "05-organize", R.string.category_title, "category-list")
+        capture(locale, "05-organize", locale.categoriesTitle, "category-list")
 
         composeRule.onNodeWithTag("category-back").performClick()
         waitForTag("task-list")
-        openOverflowAction(R.string.portability_menu_action)
+        openOverflowAction(locale.moreActions, locale.portabilityAction)
         waitForTag("portability-create")
-        capture(locale, "06-portability", R.string.portability_title, "portability-create")
+        capture(locale, "06-portability", locale.portabilityTitle, "portability-create")
     }
 
-    private fun openOverflowAction(actionLabel: Int) {
-        composeRule.onNodeWithContentDescription(text(R.string.task_more_actions)).performClick()
-        composeRule.onNodeWithText(text(actionLabel)).performClick()
+    private fun assertActiveLocale(expectedTag: String) {
+        val localeManager = InstrumentationRegistry.getInstrumentation().targetContext
+            .applicationContext.getSystemService(LocaleManager::class.java)
+        assertEquals(expectedTag, localeManager.applicationLocales.toLanguageTags())
+    }
+
+    private fun openOverflowAction(moreActions: String, actionLabel: String) {
+        composeRule.onNodeWithContentDescription(moreActions).performClick()
+        composeRule.onNodeWithText(actionLabel).performClick()
     }
 
     private fun capture(
         locale: StoreMediaLocale,
         name: String,
-        title: Int,
+        title: String,
         requiredTag: String
     ) {
-        composeRule.onAllNodesWithText(text(title))[0].assertIsDisplayed()
+        composeRule.onAllNodesWithText(title)[0].assertIsDisplayed()
         composeRule.onNodeWithTag(requiredTag).assertIsDisplayed()
         composeRule.waitForIdle()
 
@@ -146,8 +171,6 @@ class StoreMediaCaptureTest {
         }
     }
 
-    private fun text(id: Int): String = composeRule.activity.getString(id)
-
     private companion object {
         const val RECURRING_TASK_ID = 40_003
         const val WAIT_TIMEOUT_MILLIS = 15_000L
@@ -156,7 +179,16 @@ class StoreMediaCaptureTest {
 
 private data class StoreMediaLocale(
     val tag: String,
-    val naturalLanguageInput: String
+    val naturalLanguageInput: String,
+    val tasksTitle: String,
+    val createTitle: String,
+    val quickEntryLabel: String,
+    val recurrenceLabel: String,
+    val categoriesTitle: String,
+    val portabilityTitle: String,
+    val moreActions: String,
+    val manageCategories: String,
+    val portabilityAction: String
 )
 
 private fun localeForTest(methodName: String): String = when (methodName) {

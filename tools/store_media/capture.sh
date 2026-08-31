@@ -56,12 +56,24 @@ if [[ "$($ADB -s "$serial" get-state 2>/dev/null)" != "device" ]]; then
   echo "Device $serial is not connected" >&2
   exit 2
 fi
+qemu="$($ADB -s "$serial" shell getprop ro.kernel.qemu | tr -d '\r')"
+if [[ "$qemu" != "1" ]]; then
+  echo "Store-media capture requires a running emulator; $serial reported ro.kernel.qemu=$qemu" >&2
+  exit 2
+fi
 
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
 $ADB -s "$serial" install -r app/build/outputs/apk/debug/app-debug.apk >/dev/null
 $ADB -s "$serial" install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk >/dev/null
 
 demo_allowed="$($ADB -s "$serial" shell settings get global sysui_demo_allowed | tr -d '\r')"
+app_locale_output="$($ADB -s "$serial" shell cmd locale get-app-locales "$APP_ID" | tr -d '\r')"
+if [[ "$app_locale_output" != *" are ["*"]" ]]; then
+  echo "Unable to snapshot app locales: $app_locale_output" >&2
+  exit 1
+fi
+previous_app_locales="${app_locale_output##* are [}"
+previous_app_locales="${previous_app_locales%]}"
 restore_emulator() {
   $ADB -s "$serial" shell am broadcast -a com.android.systemui.demo \
     -e command exit >/dev/null 2>&1 || true
@@ -70,6 +82,8 @@ restore_emulator() {
   else
     $ADB -s "$serial" shell settings put global sysui_demo_allowed "$demo_allowed"
   fi
+  $ADB -s "$serial" shell cmd locale set-app-locales "$APP_ID" \
+    --locales "$previous_app_locales" >/dev/null
 }
 trap restore_emulator EXIT INT TERM
 
