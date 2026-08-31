@@ -55,6 +55,22 @@ class AssetValidationTest(unittest.TestCase):
 
         self.assertIn("maximum 10 bytes, found 11", errors)
 
+    def test_asset_rejects_a_jpeg_renamed_as_png(self) -> None:
+        path = self.root / "renamed.png"
+        Image.new("RGB", (1, 1), (0, 0, 0)).save(path, format="JPEG")
+
+        errors = validate_asset(path, AssetSpec(1, 1, "RGB"))
+
+        self.assertIn("expected PNG image, found JPEG", errors)
+
+    def test_asset_rejects_a_non_eight_bit_png(self) -> None:
+        path = self.root / "sixteen-bit.png"
+        Image.new("I;16", (1, 1)).save(path, format="PNG")
+
+        errors = validate_asset(path, AssetSpec(1, 1, "RGB"))
+
+        self.assertIn("expected 8-bit RGB PNG, found 16-bit I;16", errors)
+
 
 class ManifestValidationTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -199,6 +215,24 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(1, code)
         self.assertIn("it-IT is missing capture it-IT/01-screen-1.png", output)
+        self.assertFalse((self.root / "store-assets/google-play/it-IT/phone-screenshots").exists())
+
+    def test_render_rejects_missing_outputs_when_all_captures_exist(self) -> None:
+        manifest = load_manifest(
+            self.root / "store-assets/google-play/source/media_manifest.json"
+        )
+        captures_root = self.root / "store-assets/google-play/source/captures"
+        for screenshots in manifest.locales.values():
+            for copy in screenshots:
+                capture = captures_root / copy.capture
+                capture.parent.mkdir(parents=True, exist_ok=True)
+                capture.touch()
+
+        code, output = self.run_command("render")
+
+        self.assertEqual(1, code)
+        self.assertIn("it-IT is missing final screenshot 01-screen-1.png", output)
+        self.assertIn("en-US is missing final screenshot 06-screen-6.png", output)
         self.assertFalse((self.root / "store-assets/google-play/it-IT/phone-screenshots").exists())
 
     def test_contact_sheet_reports_missing_derived_outputs(self) -> None:

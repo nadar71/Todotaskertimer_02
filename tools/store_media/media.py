@@ -14,6 +14,7 @@ from PIL import Image, UnidentifiedImageError
 MANIFEST_PATH = Path("store-assets/google-play/source/media_manifest.json")
 CAPTURES_PATH = Path("store-assets/google-play/source/captures")
 EXPECTED_ORDERS = tuple(range(1, 7))
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,12 @@ def validate_asset(path: Path, spec: AssetSpec) -> list[str]:
         errors.append(f"maximum {spec.max_bytes} bytes, found {path.stat().st_size}")
     try:
         with Image.open(path) as image:
+            if image.format != "PNG":
+                errors.append(f"expected PNG image, found {image.format or 'unknown'}")
+            elif (bit_depth := _png_bit_depth(path)) != 8:
+                errors.append(
+                    f"expected 8-bit {spec.mode} PNG, found {bit_depth}-bit {image.mode}"
+                )
             if image.size != (spec.width, spec.height):
                 errors.append(
                     f"expected {spec.width}x{spec.height}, found {image.width}x{image.height}"
@@ -94,6 +101,14 @@ def validate_asset(path: Path, spec: AssetSpec) -> list[str]:
     except (OSError, UnidentifiedImageError) as error:
         errors.append(f"unable to read image: {error}")
     return errors
+
+
+def _png_bit_depth(path: Path) -> int:
+    with path.open("rb") as source:
+        header = source.read(26)
+    if header[:8] != PNG_SIGNATURE or header[12:16] != b"IHDR":
+        raise OSError("invalid PNG header")
+    return header[24]
 
 
 def validate_manifest(manifest: MediaManifest) -> list[str]:
@@ -154,29 +169,35 @@ def render_all(root: Path) -> None:
     """Validate source captures until later tasks provide the renderer."""
     manifest = load_manifest(root / MANIFEST_PATH)
     errors = validate_manifest(manifest)
+    errors.extend(capture_errors(root, manifest))
+    errors.extend(final_asset_errors(root, manifest))
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
+def capture_errors(root: Path, manifest: MediaManifest) -> list[str]:
+    errors: list[str] = []
     for locale, screenshots in manifest.locales.items():
         for screenshot in screenshots:
             capture = root / CAPTURES_PATH / screenshot.capture
             if not capture.is_file():
                 errors.append(f"{locale} is missing capture {screenshot.capture}")
-    if errors:
-        raise ValueError("\n".join(errors))
+    return errors
 
 
 def command_errors(command: str, root: Path) -> list[str]:
+    if command == "render":
+        try:
+            render_all(root)
+        except ValueError as error:
+            return str(error).splitlines()
+        return []
     try:
         manifest = load_manifest(root / MANIFEST_PATH)
     except ValueError as error:
         return [str(error)]
 
     errors = validate_manifest(manifest)
-    if command == "render":
-        for locale, screenshots in manifest.locales.items():
-            for screenshot in screenshots:
-                capture = root / CAPTURES_PATH / screenshot.capture
-                if not capture.is_file():
-                    errors.append(f"{locale} is missing capture {screenshot.capture}")
-        return errors
     return errors + final_asset_errors(root, manifest)
 
 
