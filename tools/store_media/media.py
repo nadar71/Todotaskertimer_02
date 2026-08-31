@@ -43,8 +43,8 @@ PHONE_WORDMARK_SIZE = (220, 48)
 PHONE_WORDMARK_POSITION = (72, 54)
 HEADLINE_FONT_SIZE = 74
 HEADLINE_FONT_PATH = Path(__file__).with_name("fonts") / "RobotoCondensed-Bold.ttf"
-# Native source rows 771-2210 isolate complete recurrence controls at both edges.
-RECURRENCE_CROP_ANCHOR = 771 / 960
+# Native rows 897-2336 keep complete due and end-repeat selectors at both edges.
+RECURRENCE_CROP_ANCHOR = 897 / 960
 CONTACT_SHEET_SIZE = (906, 1032)
 CONTACT_SHEET_MARGIN = 24
 CONTACT_SHEET_GAP = 24

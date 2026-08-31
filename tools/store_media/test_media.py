@@ -504,19 +504,32 @@ class PhoneRendererTest(unittest.TestCase):
 
         self.assertAlmostEqual(right - left, bottom - top, delta=1)
 
-    def test_recurrence_crop_uses_the_control_region(self) -> None:
-        capture = Image.new("RGB", (1080, 2400), (10, 20, 30))
+    def test_recurrence_crop_keeps_complete_semantic_control_pairs(self) -> None:
+        background = (10, 20, 30)
+        category_edge = (180, 20, 20)
+        due_selector = (40, 120, 180)
+        end_repeat_heading = (180, 120, 40)
+        end_repeat_selector = (40, 180, 100)
+        navigation_edge = (120, 40, 180)
+        capture = Image.new("RGB", (1080, 2400), background)
         draw = ImageDraw.Draw(capture)
-        draw.rectangle((0, 771, 1079, 2210), fill=(40, 50, 60))
-        draw.rectangle((0, 2211, 1079, 2399), fill=(70, 80, 90))
+        draw.rectangle((0, 768, 1079, 770), fill=category_edge)
+        draw.rectangle((0, 898, 1079, 1002), fill=due_selector)
+        draw.rectangle((0, 2153, 1079, 2180), fill=end_repeat_heading)
+        draw.rectangle((0, 2211, 1079, 2336), fill=end_repeat_selector)
+        draw.rectangle((0, 2364, 1079, 2399), fill=navigation_edge)
         recurrence = screenshot(
             4, slug="recurrence", headline="Repeat exactly when needed"
         )
 
         output = self.renderer()(capture, recurrence, self.brand)
+        visible_rows = [output.getpixel((540, y)) for y in range(480, 1920)]
 
-        self.assertEqual((40, 50, 60), output.getpixel((540, 480)))
-        self.assertEqual((40, 50, 60), output.getpixel((540, 1919)))
+        self.assertNotIn(category_edge, visible_rows)
+        self.assertEqual(105, visible_rows.count(due_selector))
+        self.assertEqual(28, visible_rows.count(end_repeat_heading))
+        self.assertEqual(126, visible_rows.count(end_repeat_selector))
+        self.assertNotIn(navigation_edge, visible_rows)
 
     def test_coral_accent_is_reserved_for_recurrence(self) -> None:
         focus = self.renderer()(self.capture, screenshot(1, slug="focus"), self.brand)
