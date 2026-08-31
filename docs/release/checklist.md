@@ -8,6 +8,12 @@
 - [ ] Advanced recurrence Room v3 migration and `1→2→3` path preserve legacy rows.
 - [ ] Notification permission, reminder delivery, exact-alarm fallback, and reboot reconciliation are checked.
 - [ ] Localization smoke tests pass in Italian and English.
+- [ ] Google Play app icon, feature graphic, and both six-image locale sets pass
+  deterministic media validation; upload order and alt text match the
+  [media handoff](../../store-assets/google-play/README.md).
+- [ ] Installed adaptive icon, supported launcher masks, themed icon, splash, and
+  both locale contact sheets match the recorded
+  [Google Play media evidence](google-play-media-evidence-2026-08-28.md).
 - [ ] Quick Capture direct production Glance rendering covers 3/5/8 responsive
   capacities, empty/unavailable states, locale, theme, 200% text, and 48 dp actions.
 - [ ] Separate compact/default-font `AppWidgetHostView` coverage proves multiple
