@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.indiewalkabout.nowdothis.benchmark.STORE_MEDIA_FIXTURE_METHOD
 import com.indiewalkabout.nowdothis.core.database.AppDatabase
 import com.indiewalkabout.nowdothis.core.database.DebugDatabaseEntryPoint
 import dagger.hilt.android.EntryPointAccessors
@@ -30,8 +29,8 @@ class StoreMediaFixtureTest {
 
     @Test
     fun italianFixture_containsLocalizedStoreStory() = runBlocking {
-        providerCall(STORE_MEDIA_FIXTURE_METHOD, "it-IT")
-        providerCall(STORE_MEDIA_FIXTURE_METHOD, "it-IT")
+        providerCall("it-IT")
+        providerCall("it-IT")
 
         assertFixtureGraph(
             listOf(
@@ -47,8 +46,8 @@ class StoreMediaFixtureTest {
 
     @Test
     fun englishFixture_containsLocalizedStoreStory() = runBlocking {
-        providerCall(STORE_MEDIA_FIXTURE_METHOD, "en-US")
-        providerCall(STORE_MEDIA_FIXTURE_METHOD, "en-US")
+        providerCall("en-US")
+        providerCall("en-US")
 
         assertFixtureGraph(
             listOf(
@@ -86,14 +85,15 @@ class StoreMediaFixtureTest {
         )
     }
 
-    private fun providerCall(method: String, localeTag: String) {
+    private fun providerCall(localeTag: String) {
         val result = context.contentResolver.call(
-            Uri.parse("content://com.indiewalkabout.nowdothis.benchmark-fixture"),
-            method,
+            Uri.parse("content://com.indiewalkabout.nowdothis.store-media-fixture"),
+            "prepare_store_media",
             localeTag,
             null
         )
 
         assertNotNull(result)
+        assertEquals(6, requireNotNull(result).getInt("task_count"))
     }
 }

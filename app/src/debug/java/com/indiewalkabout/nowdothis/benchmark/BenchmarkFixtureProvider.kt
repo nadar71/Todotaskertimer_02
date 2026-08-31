@@ -13,7 +13,6 @@ import com.indiewalkabout.nowdothis.core.time.AppClock
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetReceiver
 import com.indiewalkabout.nowdothis.feature.task.data.local.TaskEntity
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
-import com.indiewalkabout.nowdothis.storemedia.StoreMediaFixture
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -28,8 +27,6 @@ internal const val RESET_BENCHMARK_FIXTURE_METHOD = "reset"
 internal const val PREPARE_QUICK_CAPTURE_FIXTURE_METHOD = "prepare_quick_capture"
 internal const val PREPARE_QUICK_CAPTURE_SCREENSHOT_FIXTURE_METHOD =
     "prepare_quick_capture_screenshot"
-internal const val STORE_MEDIA_FIXTURE_METHOD = "prepare_store_media"
-internal const val STORE_MEDIA_LOCALE_ARG = "localeTag"
 internal const val REQUEST_QUICK_CAPTURE_PIN_METHOD = "request_quick_capture_pin"
 internal const val QUERY_QUICK_CAPTURE_FIXTURE_METHOD = "query_quick_capture"
 internal const val BENCHMARK_FIXTURE_TASK_COUNT_KEY = "task_count"
@@ -43,7 +40,6 @@ class BenchmarkFixtureProvider : ContentProvider() {
                 method == RESET_BENCHMARK_FIXTURE_METHOD ||
                 method == PREPARE_QUICK_CAPTURE_FIXTURE_METHOD ||
                 method == PREPARE_QUICK_CAPTURE_SCREENSHOT_FIXTURE_METHOD ||
-                method == STORE_MEDIA_FIXTURE_METHOD ||
                 method == REQUEST_QUICK_CAPTURE_PIN_METHOD ||
                 method == QUERY_QUICK_CAPTURE_FIXTURE_METHOD
         ) { "Unsupported method: $method" }
@@ -103,9 +99,6 @@ class BenchmarkFixtureProvider : ContentProvider() {
                         }
                     )
                 }
-                STORE_MEDIA_FIXTURE_METHOD -> StoreMediaFixture(database).prepare(
-                    requireNotNull(arg) { "$STORE_MEDIA_LOCALE_ARG is required" }
-                )
             }
             if (method == QUERY_QUICK_CAPTURE_FIXTURE_METHOD) {
                 database.taskDao().getAllTaskEntities()
