@@ -8,7 +8,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from PIL import Image, ImageChops, ImageDraw, ImageFont, UnidentifiedImageError
+from PIL import (
+    Image,
+    ImageChops,
+    ImageDraw,
+    ImageFont,
+    ImageOps,
+    UnidentifiedImageError,
+)
 
 
 MANIFEST_PATH = Path("store-assets/google-play/source/media_manifest.json")
@@ -26,6 +33,22 @@ LEGACY_DENSITIES = {
 }
 RENDER_SCALE = 4
 WORDMARK_SIZE = (440, 96)
+PHONE_SIZE = (1080, 1920)
+PHONE_SAFE_MARGIN = 72
+PHONE_CAPTURE_TOP = 480
+PHONE_CAPTURE_SIZE = (1080, 1440)
+PHONE_HEADLINE_ORIGIN = (72, 174)
+PHONE_HEADLINE_SPACING = 14
+PHONE_WORDMARK_SIZE = (220, 48)
+PHONE_WORDMARK_POSITION = (72, 54)
+HEADLINE_FONT_SIZE = 74
+HEADLINE_FONT_PATH = Path(__file__).with_name("fonts") / "RobotoCondensed-Bold.ttf"
+# Native source rows 771-2210 isolate complete recurrence controls at both edges.
+RECURRENCE_CROP_ANCHOR = 771 / 960
+CONTACT_SHEET_SIZE = (906, 1032)
+CONTACT_SHEET_MARGIN = 24
+CONTACT_SHEET_GAP = 24
+CONTACT_THUMBNAIL_SIZE = (270, 480)
 
 
 @dataclass(frozen=True)
@@ -65,6 +88,43 @@ class MediaManifest:
 class Point:
     x: float
     y: float
+
+
+@dataclass(frozen=True)
+class Box:
+    left: int
+    top: int
+    right: int
+    bottom: int
+
+    @property
+    def width(self) -> int:
+        return self.right - self.left
+
+    @property
+    def height(self) -> int:
+        return self.bottom - self.top
+
+    def intersects(self, other: "Box") -> bool:
+        return not (
+            self.right <= other.left
+            or self.left >= other.right
+            or self.bottom <= other.top
+            or self.top >= other.bottom
+        )
+
+
+@dataclass(frozen=True)
+class PhoneLayout:
+    headline_box: Box
+    capture_box: Box
+    wordmark_box: Box
+    accent_box: Box
+    headline_lines: tuple[str, ...]
+
+    @property
+    def overlaps_capture(self) -> bool:
+        return self.headline_box.intersects(self.capture_box)
 
 
 @dataclass(frozen=True)
@@ -255,6 +315,174 @@ def render_common_assets(project_root: Path, brand: Brand) -> None:
 
     feature = _render_feature_graphic(brand, wordmark_source)
     _save_png(output / "feature-graphic-1024x500.png", feature)
+
+
+def load_headline_font() -> ImageFont.FreeTypeFont:
+    """Load the committed headline face used by every localized composition."""
+    try:
+        return ImageFont.truetype(HEADLINE_FONT_PATH, HEADLINE_FONT_SIZE)
+    except OSError as error:
+        raise ValueError(
+            f"unable to load headline font {HEADLINE_FONT_PATH}: {error}"
+        ) from error
+
+
+def missing_glyphs(
+    text: str, font: ImageFont.FreeTypeFont
+) -> tuple[str, ...]:
+    """Return distinct characters that FreeType maps to its missing-glyph box."""
+
+    def signature(character: str) -> tuple[tuple[int, int], bytes]:
+        mask = font.getmask(character, mode="L")
+        return mask.size, bytes(mask)
+
+    missing_signature = signature(chr(0x10FFFF))
+    missing: list[str] = []
+    for character in text:
+        if (
+            not character.isspace()
+            and signature(character) == missing_signature
+            and character not in missing
+        ):
+            missing.append(character)
+    return tuple(missing)
+
+
+def calculate_phone_layout(
+    headline: str, font: ImageFont.FreeTypeFont
+) -> PhoneLayout:
+    """Calculate the fixed editorial regions and word-boundary headline wrap."""
+    words = headline.split()
+    if not words:
+        raise ValueError("headline must not be empty")
+    if missing := missing_glyphs(headline, font):
+        rendered = ", ".join(f"U+{ord(character):04X}" for character in missing)
+        raise ValueError(f"headline contains missing glyphs: {rendered}")
+
+    available_width = PHONE_SIZE[0] - 2 * PHONE_SAFE_MARGIN
+    lines: list[str] = []
+    current: list[str] = []
+    for word in words:
+        if font.getlength(word) > available_width:
+            raise ValueError(f"headline word does not fit safe text box: {word}")
+        candidate = " ".join((*current, word))
+        if current and font.getlength(candidate) > available_width:
+            lines.append(" ".join(current))
+            current = [word]
+        else:
+            current.append(word)
+    lines.append(" ".join(current))
+
+    text = "\n".join(lines)
+    measure = ImageDraw.Draw(Image.new("L", (1, 1)))
+    bounds = measure.multiline_textbbox(
+        PHONE_HEADLINE_ORIGIN,
+        text,
+        font=font,
+        spacing=PHONE_HEADLINE_SPACING,
+    )
+    headline_box = Box(*bounds)
+    capture_box = Box(0, PHONE_CAPTURE_TOP, *PHONE_SIZE)
+    if (
+        headline_box.left < PHONE_SAFE_MARGIN
+        or headline_box.right > PHONE_SIZE[0] - PHONE_SAFE_MARGIN
+        or headline_box.bottom >= PHONE_CAPTURE_TOP - PHONE_SAFE_MARGIN
+    ):
+        raise ValueError("headline does not fit safe text box")
+
+    wordmark_left, wordmark_top = PHONE_WORDMARK_POSITION
+    return PhoneLayout(
+        headline_box=headline_box,
+        capture_box=capture_box,
+        wordmark_box=Box(
+            wordmark_left,
+            wordmark_top,
+            wordmark_left + PHONE_WORDMARK_SIZE[0],
+            wordmark_top + PHONE_WORDMARK_SIZE[1],
+        ),
+        accent_box=Box(945, 356, 988, 428),
+        headline_lines=tuple(lines),
+    )
+
+
+def render_phone_screenshot(
+    capture: Image.Image, copy: ScreenshotCopy, brand: Brand
+) -> Image.Image:
+    """Compose one upload-ready screenshot without a simulated device frame."""
+    font = load_headline_font()
+    layout = calculate_phone_layout(copy.headline, font)
+    image = Image.new("RGB", PHONE_SIZE, brand.rgb("cool_gray"))
+
+    wordmark = _wordmark_image(brand, RENDER_SCALE).resize(
+        PHONE_WORDMARK_SIZE, Image.Resampling.LANCZOS
+    )
+    image.paste(
+        wordmark,
+        (layout.wordmark_box.left, layout.wordmark_box.top),
+        wordmark,
+    )
+
+    draw = ImageDraw.Draw(image)
+    draw.multiline_text(
+        PHONE_HEADLINE_ORIGIN,
+        "\n".join(layout.headline_lines),
+        font=font,
+        fill=brand.rgb("evergreen"),
+        spacing=PHONE_HEADLINE_SPACING,
+    )
+    accent = brand.rgb("coral" if copy.slug == "recurrence" else "mint")
+    _draw_down_accent(draw, accent)
+
+    crop_anchor = RECURRENCE_CROP_ANCHOR if copy.slug == "recurrence" else 0.0
+    fitted_capture = ImageOps.fit(
+        capture.convert("RGB"),
+        PHONE_CAPTURE_SIZE,
+        method=Image.Resampling.LANCZOS,
+        centering=(0.5, crop_anchor),
+    )
+    image.paste(fitted_capture, (layout.capture_box.left, layout.capture_box.top))
+    return image
+
+
+def _draw_down_accent(
+    draw: ImageDraw.ImageDraw, color: tuple[int, int, int]
+) -> None:
+    width = 8
+    draw.line(((966, 360), (966, 423)), fill=color, width=width)
+    draw.line(
+        ((949, 406), (966, 423), (983, 406)),
+        fill=color,
+        width=width,
+        joint="curve",
+    )
+    radius = width // 2
+    for x, y in ((966, 360), (949, 406), (983, 406)):
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color)
+
+
+def render_contact_sheet(
+    screenshots: Sequence[Image.Image], brand: Brand
+) -> Image.Image:
+    """Arrange six screenshots in upload order for visual review."""
+    if len(screenshots) != 6:
+        raise ValueError(
+            f"contact sheet requires 6 screenshots, found {len(screenshots)}"
+        )
+    sheet = Image.new("RGB", CONTACT_SHEET_SIZE, brand.rgb("cool_gray"))
+    for index, screenshot in enumerate(screenshots):
+        column = index % 3
+        row = index // 3
+        left = CONTACT_SHEET_MARGIN + column * (
+            CONTACT_THUMBNAIL_SIZE[0] + CONTACT_SHEET_GAP
+        )
+        top = CONTACT_SHEET_MARGIN + row * (
+            CONTACT_THUMBNAIL_SIZE[1] + CONTACT_SHEET_GAP
+        )
+        thumbnail = screenshot.convert("RGB").resize(
+            CONTACT_THUMBNAIL_SIZE, Image.Resampling.LANCZOS
+        )
+        sheet.paste(thumbnail, (left, top))
+    return sheet
 
 
 def _render_store_icon(brand: Brand) -> Image.Image:
@@ -590,6 +818,10 @@ def validate_manifest(manifest: MediaManifest) -> list[str]:
         for order in sorted(orders - set(EXPECTED_ORDERS)):
             errors.append(f"{locale} has unexpected screenshot {order:02d}")
         for screenshot in screenshots:
+            if not screenshot.headline.strip():
+                errors.append(
+                    f"{locale} screenshot {screenshot.order:02d} is missing headline"
+                )
             if not screenshot.alt_text.strip():
                 errors.append(f"{locale} screenshot {screenshot.order:02d} is missing alt text")
             expected_capture = f"{locale}/{screenshot.order:02d}-{screenshot.slug}.png"
@@ -618,13 +850,51 @@ def final_asset_path(root: Path, locale: str, screenshot: ScreenshotCopy) -> Pat
 def final_asset_errors(root: Path, manifest: MediaManifest) -> list[str]:
     errors: list[str] = []
     for locale, screenshots in manifest.locales.items():
+        output = root / "store-assets/google-play" / locale / "phone-screenshots"
+        expected_filenames = {
+            f"{screenshot.order:02d}-{screenshot.slug}.png"
+            for screenshot in screenshots
+        }
         for screenshot in screenshots:
             path = final_asset_path(root, locale, screenshot)
             filename = path.name
             if not path.is_file():
                 errors.append(f"{locale} is missing final screenshot {filename}")
             else:
-                errors.extend(f"{locale} {filename}: {error}" for error in validate_asset(path, AssetSpec.phone_screenshot()))
+                errors.extend(
+                    f"{locale} {filename}: {error}"
+                    for error in validate_asset(path, AssetSpec.phone_screenshot())
+                )
+        if output.is_dir():
+            for path in sorted(output.glob("*.png")):
+                if path.name not in expected_filenames:
+                    errors.append(
+                        f"{locale} has unexpected final screenshot {path.name}"
+                    )
+    return errors
+
+
+def alt_text_content(screenshots: Sequence[ScreenshotCopy]) -> str:
+    return "".join(
+        f"{screenshot.order:02d}-{screenshot.slug}.png: {screenshot.alt_text}\n"
+        for screenshot in sorted(screenshots, key=lambda item: item.order)
+    )
+
+
+def alt_text_errors(root: Path, manifest: MediaManifest) -> list[str]:
+    errors: list[str] = []
+    for locale, screenshots in manifest.locales.items():
+        path = root / "store-assets/google-play" / locale / "alt-text.txt"
+        if not path.is_file():
+            errors.append(f"{locale} is missing alt-text.txt")
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError as error:
+            errors.append(f"{locale} unable to read alt-text.txt: {error}")
+            continue
+        if content != alt_text_content(screenshots):
+            errors.append(f"{locale} alt-text.txt does not match the manifest")
     return errors
 
 
@@ -641,13 +911,58 @@ def common_asset_errors(root: Path) -> list[str]:
 
 
 def render_all(root: Path) -> None:
-    """Validate source captures until later tasks provide the renderer."""
+    """Render every localized phone screenshot and matching alt-text inventory."""
     manifest = load_manifest(root / MANIFEST_PATH)
+    brand = load_brand(root / BRAND_PATH)
     errors = validate_manifest(manifest)
     errors.extend(capture_errors(root, manifest))
+    if errors:
+        raise ValueError("\n".join(errors))
+
+    font = load_headline_font()
+    for screenshots in manifest.locales.values():
+        for screenshot in screenshots:
+            calculate_phone_layout(screenshot.headline, font)
+
+    for locale, screenshots in manifest.locales.items():
+        ordered = sorted(screenshots, key=lambda item: item.order)
+        for screenshot in ordered:
+            source = root / CAPTURES_PATH / screenshot.capture
+            with Image.open(source) as capture:
+                capture.load()
+                output = render_phone_screenshot(capture, screenshot, brand)
+            _save_png(final_asset_path(root, locale, screenshot), output)
+        _write_text(
+            root / "store-assets/google-play" / locale / "alt-text.txt",
+            alt_text_content(ordered),
+        )
+
+    errors = final_asset_errors(root, manifest)
+    errors.extend(alt_text_errors(root, manifest))
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
+def render_contact_sheets(root: Path) -> None:
+    """Generate one ordered visual-review sheet for each locale."""
+    manifest = load_manifest(root / MANIFEST_PATH)
+    brand = load_brand(root / BRAND_PATH)
+    errors = validate_manifest(manifest)
     errors.extend(final_asset_errors(root, manifest))
     if errors:
         raise ValueError("\n".join(errors))
+
+    for locale, screenshots in manifest.locales.items():
+        images: list[Image.Image] = []
+        for screenshot in sorted(screenshots, key=lambda item: item.order):
+            with Image.open(final_asset_path(root, locale, screenshot)) as image:
+                image.load()
+                images.append(image.convert("RGB"))
+        sheet = render_contact_sheet(images, brand)
+        _save_png(
+            root / "store-assets/google-play" / locale / "contact-sheet.png",
+            sheet,
+        )
 
 
 def capture_errors(root: Path, manifest: MediaManifest) -> list[str]:
@@ -694,6 +1009,12 @@ def command_errors(command: str, root: Path, scope: str = "all") -> list[str]:
         except ValueError as error:
             return str(error).splitlines()
         return []
+    if command == "contact-sheet":
+        try:
+            render_contact_sheets(root)
+        except ValueError as error:
+            return str(error).splitlines()
+        return []
     if command == "validate" and scope == "common":
         return common_asset_errors(root)
     try:
@@ -704,7 +1025,11 @@ def command_errors(command: str, root: Path, scope: str = "all") -> list[str]:
     errors = validate_manifest(manifest)
     if command == "validate-captures":
         return errors + capture_errors(root, manifest)
-    return errors + final_asset_errors(root, manifest)
+    phone_errors = errors + final_asset_errors(root, manifest)
+    phone_errors.extend(alt_text_errors(root, manifest))
+    if command == "validate" and scope == "all":
+        return common_asset_errors(root) + phone_errors
+    return phone_errors
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
@@ -722,7 +1047,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
         command_parser.add_argument("--root", type=Path, default=Path("."))
         if command == "validate":
             command_parser.add_argument(
-                "--scope", choices=("all", "common"), default="all"
+                "--scope", choices=("all", "common", "phone"), default="all"
             )
     args = parser.parse_args(arguments)
     errors = command_errors(args.command, args.root, getattr(args, "scope", "all"))

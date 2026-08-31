@@ -1,0 +1,6 @@
+01-focus.png: Elenco attività di NowDoThis con priorità, categorie e scadenze per concentrarsi sugli impegni più importanti.
+02-quick-capture.png: Editor di NowDoThis aperto sull'inserimento rapido di una nuova attività.
+03-natural-language.png: Inserimento rapido di NowDoThis che riconosce titolo, scadenza e ripetizione da una frase in italiano.
+04-recurrence.png: Editor di NowDoThis con promemoria e ricorrenza avanzata configurati per un'attività.
+05-organize.png: Schermata Categorie di NowDoThis con aree di lavoro, personali e desideri organizzate e riordinabili.
+06-portability.png: Schermata Backup e ripristino di NowDoThis con azioni per creare o ripristinare una copia locale dei dati.

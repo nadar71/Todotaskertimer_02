@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import io
 import json
 import tempfile
@@ -7,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 from xml.etree import ElementTree
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw
 
 from tools.store_media import media
 from tools.store_media.media import (
@@ -96,7 +97,12 @@ class ManifestValidationTest(unittest.TestCase):
             locales={
                 "it-IT": self.complete.locales["it-IT"],
                 "en-US": tuple(
-                    screenshot(order, "en-US", alt_text="" if order == 5 else f"Alt text {order}")
+                    screenshot(
+                        order,
+                        "en-US",
+                        headline="" if order == 4 else f"Headline {order}",
+                        alt_text="" if order == 5 else f"Alt text {order}",
+                    )
                     for order in range(1, 6)
                 ),
             }
@@ -105,6 +111,7 @@ class ManifestValidationTest(unittest.TestCase):
         errors = validate_manifest(manifest_missing_en_screen_6)
 
         self.assertIn("en-US is missing screenshot 06", errors)
+        self.assertIn("en-US screenshot 04 is missing headline", errors)
         self.assertIn("en-US screenshot 05 is missing alt text", errors)
 
     def test_orders_must_be_numeric_and_contiguous(self) -> None:
@@ -401,11 +408,186 @@ class CommonAssetTest(unittest.TestCase):
         )
 
 
+class PhoneRendererTest(unittest.TestCase):
+    def setUp(self) -> None:
+        project_root = Path(__file__).resolve().parents[2]
+        self.brand = media.load_brand(
+            project_root / "store-assets/google-play/source/brand.json"
+        )
+        self.copy = screenshot(
+            2,
+            slug="quick-capture",
+            headline="Cattura un'attività in un istante",
+            capture="it-IT/02-quick-capture.png",
+        )
+        self.capture = Image.new("RGB", (1080, 2400), (250, 247, 251))
+        draw = ImageDraw.Draw(self.capture)
+        draw.rectangle((0, 0, 1079, 179), fill=(105, 80, 175))
+        draw.rectangle((72, 260, 1007, 420), fill=(255, 255, 255))
+
+    def renderer(self):
+        renderer = getattr(media, "render_phone_screenshot", None)
+        self.assertIsNotNone(renderer, "render_phone_screenshot does not exist")
+        return renderer
+
+    def headline_font(self):
+        loader = getattr(media, "load_headline_font", None)
+        self.assertIsNotNone(loader, "load_headline_font does not exist")
+        return loader()
+
+    def layout(self, headline: str):
+        calculator = getattr(media, "calculate_phone_layout", None)
+        self.assertIsNotNone(calculator, "calculate_phone_layout does not exist")
+        return calculator(headline, self.headline_font())
+
+    def test_phone_composition_is_opaque_play_size_with_prominent_ui(self) -> None:
+        output = self.renderer()(self.capture, self.copy, self.brand)
+
+        self.assertEqual((1080, 1920), output.size)
+        self.assertEqual("RGB", output.mode)
+        layout = self.layout(self.copy.headline)
+        ui_fraction = (
+            layout.capture_box.width
+            * layout.capture_box.height
+            / (output.width * output.height)
+        )
+        self.assertGreaterEqual(ui_fraction, 0.70)
+
+    def test_longest_headlines_stay_inside_safe_text_box(self) -> None:
+        for headline in (
+            "Cattura un'attività in un istante",
+            "A place for every commitment",
+        ):
+            with self.subTest(headline=headline):
+                layout = self.layout(headline)
+                self.assertLessEqual(layout.headline_box.right, 1008)
+                self.assertGreaterEqual(layout.headline_box.left, 72)
+                self.assertFalse(layout.overlaps_capture)
+
+    def test_headline_wraps_only_at_word_boundaries(self) -> None:
+        phrase = "Capture a task in an instant"
+        layout = self.layout(f"{phrase} {phrase}")
+
+        self.assertEqual((phrase, phrase), layout.headline_lines)
+
+    def test_headline_font_covers_localized_copy_and_rejects_missing_glyphs(
+        self,
+    ) -> None:
+        detector = getattr(media, "missing_glyphs", None)
+        self.assertIsNotNone(detector, "missing_glyphs does not exist")
+        font = self.headline_font()
+        unsupported = chr(0x1F9D9)
+
+        self.assertEqual((), detector("attività è ciò l’impegno", font))
+        self.assertEqual((unsupported,), detector(f"Plan {unsupported}", font))
+        with self.assertRaisesRegex(ValueError, "missing glyph"):
+            self.layout(f"Plan {unsupported}")
+
+    def test_capture_cover_crop_preserves_square_geometry(self) -> None:
+        capture = Image.new("RGB", (600, 1200), "white")
+        ImageDraw.Draw(capture).rectangle((100, 200, 199, 299), fill=(0, 200, 200))
+
+        output = self.renderer()(capture, screenshot(1, slug="focus"), self.brand)
+        pixels = output.load()
+        cyan = [
+            (x, y)
+            for y in range(480, 1920)
+            for x in range(1080)
+            if pixels[x, y][0] < 8
+            and pixels[x, y][1] > 192
+            and pixels[x, y][2] > 192
+        ]
+        left = min(x for x, _ in cyan)
+        top = min(y for _, y in cyan)
+        right = max(x for x, _ in cyan) + 1
+        bottom = max(y for _, y in cyan) + 1
+
+        self.assertAlmostEqual(right - left, bottom - top, delta=1)
+
+    def test_recurrence_crop_uses_the_control_region(self) -> None:
+        capture = Image.new("RGB", (1080, 2400), (10, 20, 30))
+        draw = ImageDraw.Draw(capture)
+        draw.rectangle((0, 771, 1079, 2210), fill=(40, 50, 60))
+        draw.rectangle((0, 2211, 1079, 2399), fill=(70, 80, 90))
+        recurrence = screenshot(
+            4, slug="recurrence", headline="Repeat exactly when needed"
+        )
+
+        output = self.renderer()(capture, recurrence, self.brand)
+
+        self.assertEqual((40, 50, 60), output.getpixel((540, 480)))
+        self.assertEqual((40, 50, 60), output.getpixel((540, 1919)))
+
+    def test_coral_accent_is_reserved_for_recurrence(self) -> None:
+        focus = self.renderer()(self.capture, screenshot(1, slug="focus"), self.brand)
+        recurrence = self.renderer()(
+            self.capture,
+            screenshot(4, slug="recurrence", headline="Repeat exactly when needed"),
+            self.brand,
+        )
+
+        self.assertNotIn(
+            self.brand.rgb("coral"),
+            focus.crop((0, 0, 1080, 480)).get_flattened_data(),
+        )
+        self.assertIn(
+            self.brand.rgb("coral"),
+            recurrence.crop((0, 0, 1080, 480)).get_flattened_data(),
+        )
+
+    def test_identical_input_has_identical_png_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = Path(temp_dir) / "first.png"
+            second = Path(temp_dir) / "second.png"
+            media._save_png(first, self.renderer()(self.capture, self.copy, self.brand))
+            media._save_png(
+                second, self.renderer()(self.capture, self.copy, self.brand)
+            )
+
+            self.assertEqual(
+                hashlib.sha256(first.read_bytes()).hexdigest(),
+                hashlib.sha256(second.read_bytes()).hexdigest(),
+            )
+
+    def test_contact_sheet_uses_manifest_order(self) -> None:
+        renderer = getattr(media, "render_contact_sheet", None)
+        self.assertIsNotNone(renderer, "render_contact_sheet does not exist")
+        colors = (
+            (200, 20, 20),
+            (20, 200, 20),
+            (20, 20, 200),
+            (200, 200, 20),
+            (200, 20, 200),
+            (20, 200, 200),
+        )
+        screenshots = [Image.new("RGB", (1080, 1920), color) for color in colors]
+
+        sheet = renderer(screenshots, self.brand)
+
+        self.assertEqual((906, 1032), sheet.size)
+        self.assertEqual("RGB", sheet.mode)
+        centers = (
+            (159, 264),
+            (453, 264),
+            (747, 264),
+            (159, 768),
+            (453, 768),
+            (747, 768),
+        )
+        self.assertEqual(colors, tuple(sheet.getpixel(point) for point in centers))
+
+
 class CommandTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
-        manifest_path = self.root / "store-assets/google-play/source/media_manifest.json"
+        self.capture_colors = {
+            order: (25 * order, 210 - 20 * order, 30 * order)
+            for order in range(1, 7)
+        }
+        manifest_path = (
+            self.root / "store-assets/google-play/source/media_manifest.json"
+        )
         manifest_path.parent.mkdir(parents=True)
         manifest_path.write_text(
             json.dumps(
@@ -428,6 +610,10 @@ class CommandTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        project_root = Path(__file__).resolve().parents[2]
+        (manifest_path.parent / "brand.json").write_bytes(
+            (project_root / "store-assets/google-play/source/brand.json").read_bytes()
+        )
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
@@ -437,6 +623,21 @@ class CommandTest(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             code = main([*arguments, "--root", str(self.root)])
         return code, output.getvalue()
+
+    def write_captures(self) -> None:
+        manifest = load_manifest(
+            self.root / "store-assets/google-play/source/media_manifest.json"
+        )
+        captures_root = self.root / "store-assets/google-play/source/captures"
+        for screenshots in manifest.locales.values():
+            for copy in screenshots:
+                capture = captures_root / copy.capture
+                capture.parent.mkdir(parents=True, exist_ok=True)
+                image = Image.new(
+                    "RGB", (1080, 2400), self.capture_colors[copy.order]
+                )
+                image.putpixel((0, 0), (0, 0, 0))
+                image.save(capture)
 
     def test_validate_reports_missing_derived_outputs(self) -> None:
         code, output = self.run_command("validate")
@@ -450,25 +651,101 @@ class CommandTest(unittest.TestCase):
 
         self.assertEqual(1, code)
         self.assertIn("it-IT is missing capture it-IT/01-screen-1.png", output)
-        self.assertFalse((self.root / "store-assets/google-play/it-IT/phone-screenshots").exists())
-
-    def test_render_rejects_missing_outputs_when_all_captures_exist(self) -> None:
-        manifest = load_manifest(
-            self.root / "store-assets/google-play/source/media_manifest.json"
+        self.assertFalse(
+            (
+                self.root
+                / "store-assets/google-play/it-IT/phone-screenshots"
+            ).exists()
         )
-        captures_root = self.root / "store-assets/google-play/source/captures"
-        for screenshots in manifest.locales.values():
-            for copy in screenshots:
-                capture = captures_root / copy.capture
-                capture.parent.mkdir(parents=True, exist_ok=True)
-                capture.touch()
+
+    def test_render_writes_localized_outputs_and_alt_text(self) -> None:
+        self.write_captures()
 
         code, output = self.run_command("render")
 
+        self.assertEqual(0, code, output)
+        self.assertEqual("", output)
+        for locale in ("it-IT", "en-US"):
+            locale_root = self.root / "store-assets/google-play" / locale
+            screenshots = locale_root / "phone-screenshots"
+            self.assertEqual(
+                [f"{order:02d}-screen-{order}.png" for order in range(1, 7)],
+                [path.name for path in sorted(screenshots.glob("*.png"))],
+            )
+            for path in screenshots.glob("*.png"):
+                self.assertEqual([], validate_asset(path, AssetSpec.phone_screenshot()))
+            self.assertEqual(
+                "".join(
+                    f"{order:02d}-screen-{order}.png: Alt text {order}\n"
+                    for order in range(1, 7)
+                ),
+                (locale_root / "alt-text.txt").read_text(encoding="utf-8"),
+            )
+
+        validate_code, validate_output = self.run_command(
+            "validate", "--scope", "phone"
+        )
+        self.assertEqual(0, validate_code, validate_output)
+        self.assertEqual("", validate_output)
+
+    def test_render_regenerates_identical_localized_files(self) -> None:
+        self.write_captures()
+        first_code, first_output = self.run_command("render")
+        self.assertEqual(0, first_code, first_output)
+        first_hashes = {
+            path.relative_to(self.root): hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+            for path in sorted(
+                (self.root / "store-assets/google-play").glob(
+                    "*/phone-screenshots/*.png"
+                )
+            )
+        }
+
+        second_code, second_output = self.run_command("render")
+
+        self.assertEqual(0, second_code, second_output)
+        self.assertEqual(
+            first_hashes,
+            {
+                path.relative_to(self.root): hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest()
+                for path in sorted(
+                    (self.root / "store-assets/google-play").glob(
+                        "*/phone-screenshots/*.png"
+                    )
+                )
+            },
+        )
+
+    def test_phone_validation_rejects_stale_alt_text(self) -> None:
+        self.write_captures()
+        render_code, render_output = self.run_command("render")
+        self.assertEqual(0, render_code, render_output)
+        alt_text = self.root / "store-assets/google-play/it-IT/alt-text.txt"
+        alt_text.write_text("stale\n", encoding="utf-8")
+
+        code, output = self.run_command("validate", "--scope", "phone")
+
         self.assertEqual(1, code)
-        self.assertIn("it-IT is missing final screenshot 01-screen-1.png", output)
-        self.assertIn("en-US is missing final screenshot 06-screen-6.png", output)
-        self.assertFalse((self.root / "store-assets/google-play/it-IT/phone-screenshots").exists())
+        self.assertIn("it-IT alt-text.txt does not match the manifest", output)
+
+    def test_phone_validation_rejects_unexpected_final_screenshot(self) -> None:
+        self.write_captures()
+        render_code, render_output = self.run_command("render")
+        self.assertEqual(0, render_code, render_output)
+        extra = (
+            self.root
+            / "store-assets/google-play/it-IT/phone-screenshots/07-stale.png"
+        )
+        Image.new("RGB", (1080, 1920), "white").save(extra)
+
+        code, output = self.run_command("validate", "--scope", "phone")
+
+        self.assertEqual(1, code)
+        self.assertIn("it-IT has unexpected final screenshot 07-stale.png", output)
 
     def test_validate_captures_reports_missing_and_blank_pngs(self) -> None:
         manifest = load_manifest(
@@ -513,6 +790,33 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("it-IT is missing final screenshot 01-screen-1.png", output)
         self.assertIn("en-US is missing final screenshot 06-screen-6.png", output)
+
+    def test_contact_sheet_command_writes_both_locales_in_manifest_order(self) -> None:
+        self.write_captures()
+        render_code, render_output = self.run_command("render")
+        self.assertEqual(0, render_code, render_output)
+
+        code, output = self.run_command("contact-sheet")
+
+        self.assertEqual(0, code, output)
+        centers = (
+            (159, 264),
+            (453, 264),
+            (747, 264),
+            (159, 768),
+            (453, 768),
+            (747, 768),
+        )
+        expected = tuple(self.capture_colors[order] for order in range(1, 7))
+        for locale in ("it-IT", "en-US"):
+            path = self.root / "store-assets/google-play" / locale / "contact-sheet.png"
+            with Image.open(path) as sheet:
+                self.assertEqual((906, 1032), sheet.size)
+                self.assertEqual("RGB", sheet.mode)
+                self.assertEqual(
+                    expected,
+                    tuple(sheet.getpixel(point) for point in centers),
+                )
 
 
 if __name__ == "__main__":
