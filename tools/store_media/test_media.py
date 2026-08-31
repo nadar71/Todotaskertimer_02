@@ -1,10 +1,10 @@
 import contextlib
 import io
-import inspect
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 from xml.etree import ElementTree
 
 from PIL import Image, ImageChops
@@ -332,18 +332,44 @@ class CommonAssetTest(unittest.TestCase):
             self.assertLess(foreground_bounds[1], central_bounds[3])
             self.assertGreater(foreground_bounds[3], central_bounds[1])
 
-    def test_feature_graphic_contains_only_the_wordmark_text(self) -> None:
-        self.render()
-
-        renderer_source = "\n".join(
-            (
-                inspect.getsource(media._render_feature_graphic),
-                inspect.getsource(media._draw_task_row_motif),
-            )
+    def test_feature_graphic_centers_only_the_rendered_wordmark_text(self) -> None:
+        marker_color = (255, 0, 255, 255)
+        marker = Image.new(
+            "RGBA",
+            tuple(dimension * media.RENDER_SCALE for dimension in media.WORDMARK_SIZE),
+            marker_color,
         )
+        with (
+            mock.patch.object(media, "_wordmark_image", return_value=marker) as wordmark,
+            mock.patch.object(
+                media.ImageDraw.ImageDraw,
+                "text",
+                side_effect=AssertionError("feature text must come from the wordmark"),
+            ) as unexpected_text,
+        ):
+            media.render_common_assets(self.root, self.brand)
 
-        self.assertNotIn(".text(", renderer_source)
-        self.assertIn("wordmark", renderer_source)
+        wordmark.assert_called_once_with(self.brand, media.RENDER_SCALE)
+        unexpected_text.assert_not_called()
+        feature_path = (
+            self.root
+            / "store-assets/google-play/common/feature-graphic-1024x500.png"
+        )
+        with Image.open(feature_path) as feature:
+            marker_mask = Image.new("L", feature.size)
+            marker_mask.putdata(
+                [
+                    255 if pixel == marker_color[:3] else 0
+                    for pixel in feature.get_flattened_data()
+                ]
+            )
+            marker_bounds = marker_mask.getbbox()
+            self.assertIsNotNone(marker_bounds, "rendered wordmark is missing")
+            assert marker_bounds is not None
+            center_x = (marker_bounds[0] + marker_bounds[2]) / 2
+            center_y = (marker_bounds[1] + marker_bounds[3]) / 2
+            self.assertAlmostEqual(feature.width / 2, center_x, delta=0.5)
+            self.assertAlmostEqual(feature.height / 2, center_y, delta=0.5)
 
     def test_common_assets_regenerate_deterministically_through_cli(self) -> None:
         brand_path = self.root / "store-assets/google-play/source/brand.json"
