@@ -1,0 +1,6 @@
+01-focus.png: NowDoThis task list with priorities, categories, and due dates for focusing on the most important commitments.
+02-quick-capture.png: NowDoThis task editor open to quick entry for a new task.
+03-natural-language.png: NowDoThis quick entry recognizing a title, due date, and repeat schedule from an English sentence.
+04-recurrence.png: NowDoThis editor with advanced recurrence configured and the reminder not set.
+05-organize.png: NowDoThis history with category filters and a completed task in the Work category.
+06-portability.png: NowDoThis Backup and restore screen with actions to create or restore a local copy of app data.

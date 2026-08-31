@@ -1,0 +1,6 @@
+Roboto Condensed Bold
+
+The bundled font is copied from the Android 28 SDK platform data and is used
+only by the deterministic Google Play screenshot renderer. Roboto and Roboto
+Condensed are provided by Google under the Apache License, Version 2.0. See
+LICENSE.txt in this directory.
