@@ -18,6 +18,7 @@ keystore.properties
 .cxx
 local.properties
 /.worktrees/
+/.venv-store-media/
 /.superpowers/
 !app/src/main/AndroidManifest.xml
 !app/src/main/res/**/*.xml
