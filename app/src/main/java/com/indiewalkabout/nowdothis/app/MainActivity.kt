@@ -11,6 +11,7 @@ import com.indiewalkabout.nowdothis.app.navigation.notificationTaskId
 import com.indiewalkabout.nowdothis.core.designsystem.theme.ToDoComposeTheme
 import com.indiewalkabout.nowdothis.core.notifications.NotificationPublisher
 import com.indiewalkabout.nowdothis.core.notifications.ReminderReceiver
+import com.indiewalkabout.nowdothis.feature.ads.data.AdsConsentManager
 import com.indiewalkabout.nowdothis.feature.quickcapture.presentation.widget.QuickCaptureWidgetIntents
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.channels.Channel
@@ -26,9 +27,14 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         setContent {
             ToDoComposeTheme {
-                AppNavigation(taskEditorRequestFlow)
+                AppNavigation(
+                    taskEditorRequests = taskEditorRequestFlow,
+                    adsState = AdsConsentManager.state,
+                    onPrivacyOptions = { AdsConsentManager.showPrivacyOptions(this) }
+                )
             }
         }
+        AdsConsentManager.requestConsent(this)
         if (savedInstanceState == null) {
             routeNavigationIntent(intent, deferConsumption = true)
         } else {

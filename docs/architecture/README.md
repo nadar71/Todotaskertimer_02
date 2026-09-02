@@ -11,7 +11,9 @@ invariants that should not live in a ViewModel.
 Now Do This is local-first. It has no account, backend, analytics SDK, or network
 synchronization. Room is the source of truth for task data, DataStore holds local
 preferences, Android platform services deliver local reminders, and the Storage
-Access Framework provides user-directed planning-data backup documents.
+Access Framework provides user-directed planning-data backup documents. The isolated
+`feature/ads` boundary uses Google UMP and Mobile Ads only after UMP permits ad
+requests; no planning data crosses that boundary and core workflows remain offline.
 
 The `feature/portability` boundary follows the same Clean MVVM dependency direction.
 Compose owns document-picker launchers, the ViewModel drives typed UDF state/effects,

@@ -59,6 +59,8 @@ fun TaskListScreen(
     state: TaskListUiState,
     snackbarHostState: SnackbarHostState,
     onEvent: (TaskListEvent) -> Unit,
+    showPrivacyOptions: Boolean = false,
+    onPrivacyOptions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Scaffold(
@@ -66,7 +68,7 @@ fun TaskListScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Column {
-                TaskListTopBar(state.sort, onEvent)
+                TaskListTopBar(state.sort, onEvent, showPrivacyOptions, onPrivacyOptions)
                 TaskSearchField(state.query) { onEvent(TaskListEvent.UpdateQuery(it)) }
                 CategoryFilters(state, onEvent)
             }
@@ -104,7 +106,12 @@ fun TaskListScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TaskListTopBar(sort: TaskSort, onEvent: (TaskListEvent) -> Unit) {
+private fun TaskListTopBar(
+    sort: TaskSort,
+    onEvent: (TaskListEvent) -> Unit,
+    showPrivacyOptions: Boolean,
+    onPrivacyOptions: () -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
     TopAppBar(
         title = { Text(stringResource(R.string.tasks_title)) },
@@ -137,6 +144,15 @@ private fun TaskListTopBar(sort: TaskSort, onEvent: (TaskListEvent) -> Unit) {
                         onEvent(TaskListEvent.OpenDataPortability)
                     }
                 )
+                if (showPrivacyOptions) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.ads_privacy_options)) },
+                        onClick = {
+                            expanded = false
+                            onPrivacyOptions()
+                        }
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.task_open_calendar)) },
                     onClick = {

@@ -1,6 +1,9 @@
 package com.indiewalkabout.nowdothis.app.navigation
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
@@ -26,6 +29,8 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.indiewalkabout.nowdothis.R
+import com.indiewalkabout.nowdothis.feature.ads.domain.AdsConsentState
+import com.indiewalkabout.nowdothis.feature.ads.presentation.AdMobBanner
 import com.indiewalkabout.nowdothis.feature.calendar.navigation.CalendarKey
 import com.indiewalkabout.nowdothis.feature.calendar.presentation.CalendarRoute
 import com.indiewalkabout.nowdothis.feature.category.navigation.CategoryManagementKey
@@ -41,7 +46,11 @@ import com.indiewalkabout.nowdothis.feature.task.presentation.list.TaskListRoute
 import kotlinx.coroutines.flow.Flow
 
 @Composable
-fun AppNavigation(taskEditorRequests: Flow<TaskEditorRequest>) {
+fun AppNavigation(
+    taskEditorRequests: Flow<TaskEditorRequest>,
+    adsState: AdsConsentState,
+    onPrivacyOptions: () -> Unit
+) {
     val backStack = rememberNavBackStack(TaskListKey)
     val navigator = remember(backStack) { AppNavigator(backStack) }
 
@@ -54,10 +63,29 @@ fun AppNavigation(taskEditorRequests: Flow<TaskEditorRequest>) {
         }
     }
 
-    AppNavDisplay(
-        navigator = navigator,
-        modifier = Modifier.semantics { testTagsAsResourceId = true }
-    )
+    AppShell(
+        showBanner = adsState.showBanner,
+        banner = { AdMobBanner(adUnitId = stringResource(R.string.admob_key_bottom_banner)) }
+    ) {
+        AppNavDisplay(
+            navigator = navigator,
+            showPrivacyOptions = adsState.isPrivacyOptionsRequired,
+            onPrivacyOptions = onPrivacyOptions,
+            modifier = Modifier.semantics { testTagsAsResourceId = true }
+        )
+    }
+}
+
+@Composable
+internal fun AppShell(
+    showBanner: Boolean,
+    banner: @Composable () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f)) { content() }
+        if (showBanner) banner()
+    }
 }
 
 @Composable
@@ -113,7 +141,12 @@ private fun RootNavigationBar(
 }
 
 @Composable
-private fun AppNavDisplay(navigator: AppNavigator, modifier: Modifier = Modifier) {
+private fun AppNavDisplay(
+    navigator: AppNavigator,
+    showPrivacyOptions: Boolean,
+    onPrivacyOptions: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     NavDisplay(
         backStack = navigator.backStack,
         modifier = modifier,
@@ -130,7 +163,9 @@ private fun AppNavDisplay(navigator: AppNavigator, modifier: Modifier = Modifier
                         onOpenCategoryManagement = navigator::openCategoryManagement,
                         onOpenCalendar = { navigator.selectRoot(CalendarKey) },
                         onOpenHistory = navigator::openCompletionHistory,
-                        onOpenDataPortability = navigator::openDataPortability
+                        onOpenDataPortability = navigator::openDataPortability,
+                        showPrivacyOptions = showPrivacyOptions,
+                        onPrivacyOptions = onPrivacyOptions
                     )
                 }
             }

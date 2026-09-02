@@ -9,7 +9,8 @@ Now Do This is a private task manager whose primary create, inspect, schedule,
 complete, calendar, and history journeys must work without connectivity. The current
 implementation stores task data in Room, stores preferences in DataStore, and uses
 Android alarms and notifications for reminders. It contains no account, backend,
-analytics SDK, or network synchronization.
+analytics SDK, or network synchronization. Consent-gated advertising is an isolated
+network boundary and does not change where planning data is stored or processed.
 
 ## Decision
 
@@ -21,6 +22,10 @@ through application-owned repository and platform contracts.
 Network availability is not a precondition for a supported product journey. Account,
 backend, analytics, and synchronization capabilities are outside the current system
 boundary.
+
+Google UMP determines whether ads may be requested. Mobile Ads initializes at most
+once after that permission, and the banner remains absent otherwise. No task,
+category, reminder, history, or backup data is supplied to either SDK.
 
 ## Consequences
 

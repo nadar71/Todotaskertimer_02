@@ -19,6 +19,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.platform.app.InstrumentationRegistry
 import com.indiewalkabout.nowdothis.app.MainActivity
+import com.indiewalkabout.nowdothis.feature.ads.data.AdsConsentManager
 import java.io.File
 import java.io.FileOutputStream
 import java.time.ZoneId
@@ -33,11 +34,12 @@ import org.junit.runners.model.Statement
 
 @RunWith(AndroidJUnit4::class)
 class StoreMediaCaptureTest {
+    private val adsRule = StoreMediaAdsRule()
     private val localeRule = StoreMediaLocaleRule(::localeForTest)
     private val composeRule = createAndroidComposeRule<MainActivity>()
 
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(localeRule).around(composeRule)
+    val rules: RuleChain = RuleChain.outerRule(adsRule).around(localeRule).around(composeRule)
 
     @Test
     fun captureItalianPhoneStory() = capturePhoneStory(
@@ -197,6 +199,20 @@ class StoreMediaCaptureTest {
         const val COMPLETED_TASK_ID = 40_006
         const val WAIT_TIMEOUT_MILLIS = 15_000L
     }
+}
+
+private class StoreMediaAdsRule : TestRule {
+    override fun apply(base: Statement, description: Description): Statement =
+        object : Statement() {
+            override fun evaluate() {
+                AdsConsentManager.setAdsSuppressedForTesting(true)
+                try {
+                    base.evaluate()
+                } finally {
+                    AdsConsentManager.setAdsSuppressedForTesting(false)
+                }
+            }
+        }
 }
 
 private data class StoreMediaLocale(

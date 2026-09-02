@@ -1,5 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools" tools:locale="it">
     <string name="app_name">NowDoThis</string>
+    <string name="ads_privacy_options">Scelte sulla privacy</string>
     <string name="quick_capture_widget_title">Da fare</string>
     <string name="quick_capture_widget_loading">Caricamento attività</string>
     <string name="quick_capture_widget_empty">Nessuna attività in sospeso.</string>

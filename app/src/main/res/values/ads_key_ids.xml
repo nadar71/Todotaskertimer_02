@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Google sample IDs. Replace both resources before a production release. -->
+    <string name="admob_key_app_id" translatable="false">ca-app-pub-3940256099942544~3347511713</string>
+    <string name="admob_key_bottom_banner" translatable="false">ca-app-pub-3940256099942544/9214589741</string>
+</resources>

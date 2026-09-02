@@ -18,6 +18,8 @@ fun TaskListRoute(
     onOpenCalendar: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenDataPortability: () -> Unit,
+    showPrivacyOptions: Boolean,
+    onPrivacyOptions: () -> Unit,
     viewModel: TaskListViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -52,6 +54,8 @@ fun TaskListRoute(
     TaskListScreen(
         state = state,
         snackbarHostState = snackbarHostState,
-        onEvent = viewModel::onEvent
+        onEvent = viewModel::onEvent,
+        showPrivacyOptions = showPrivacyOptions,
+        onPrivacyOptions = onPrivacyOptions
     )
 }
