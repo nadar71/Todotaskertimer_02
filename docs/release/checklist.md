@@ -28,6 +28,10 @@
 - [ ] Backup v2 losslessly round trips every typed recurrence rule; backup v1 remains importable.
 - [ ] Critical recurrence journey records capture/parse/save/remind/complete/recur/export/restore evidence and registered-alarm continuity.
 - [ ] Backup privacy wording remains clear: JSON is local, user-directed, and unencrypted.
+- [ ] AdMob sample IDs are replaced, the GDPR message is published, privacy options
+  are reachable when required, and consent denial prevents Mobile Ads initialization.
+- [ ] Privacy policy, Google Play Data Safety and Ads declarations, and `app-ads.txt`
+  match the final advertising behavior documented in [ads privacy](ads-privacy.md).
 - [ ] Large-font, light/dark contrast, and TalkBack matrix is complete.
 - [ ] AAB contains code, resources, and the generated Baseline Profile.
 - [ ] R8 mapping files are retained with the release artifact.

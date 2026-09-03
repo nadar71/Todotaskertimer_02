@@ -22,10 +22,10 @@ The [backup format v1 reference](docs/data-portability/backup-format-v1.md) docu
 
 ## Architectural Highlights
 
-- Single `:app` production module with feature-first packages for `task`, `category`, `calendar`, `history`, `naturallanguage`, `quickcapture`, and `portability`.
+- Single `:app` production module with feature-first packages for `task`, `category`, `calendar`, `history`, `naturallanguage`, `quickcapture`, `portability`, and `ads`.
 - Clean MVVM boundaries: Compose UI, ViewModel, reusable use cases, domain repository contracts, and offline implementations.
 - Unidirectional data flow with immutable UI state, UI events, `StateFlow`, and one-off effect flows.
-- Local-first persistence with Room and DataStore plus user-directed JSON documents; no account, backend, analytics SDK, or network synchronization.
+- Local-first persistence with Room and DataStore plus user-directed JSON documents; no account, backend, analytics SDK, or network synchronization. Google UMP and Mobile Ads are an isolated, consent-gated network boundary and never receive task data.
 - Hilt dependency injection and coroutines/Flow across asynchronous boundaries.
 - Navigation 3 with serializable navigation keys and lifecycle-aware ViewModel stores.
 - Pure deterministic natural-language parsing with injected language/time/category input; the existing editor and SaveTask flow remain authoritative.
@@ -77,7 +77,7 @@ The release build remains unsigned unless all four `NOWDOTHIS_*` signing variabl
 
 ## Trade-offs And Revisit Triggers
 
-The single production module is deliberate for the current team size and domain. A new Gradle module requires separate ownership, enforceable dependency isolation, reusable infrastructure, isolated build/testing, or measured build-time benefit. Local-first storage and deterministic offline parsing avoid account, network, and model-service complexity, while Natural-Language Entry deliberately supports a bounded grammar rather than open-ended interpretation. Advanced Recurrence uses typed interval, selected-weekday, monthly-date, and monthly-ordinal rules with scheduled-date or completion-date bases; overdue schedules produce one future occurrence, monthly anchors recover after short months, and backup v2 preserves every rule field. The parser does not support recurrence after an independent temporal clause: `every month, tomorrow, Mondays` is rejected for correction as one ambiguous recurrence attempt. User-owned backup provides manual portability, but there is still no account-based synchronization, automatic cloud backup, merge import, or cross-device conflict resolution.
+The single production module is deliberate for the current team size and domain. A new Gradle module requires separate ownership, enforceable dependency isolation, reusable infrastructure, isolated build/testing, or measured build-time benefit. Local-first storage and deterministic offline parsing avoid account and model-service complexity, while Natural-Language Entry deliberately supports a bounded grammar rather than open-ended interpretation. The only remote runtime dependency is consent-gated advertising; core planning remains fully usable offline. Advanced Recurrence uses typed interval, selected-weekday, monthly-date, and monthly-ordinal rules with scheduled-date or completion-date bases; overdue schedules produce one future occurrence, monthly anchors recover after short months, and backup v2 preserves every rule field. The parser does not support recurrence after an independent temporal clause: `every month, tomorrow, Mondays` is rejected for correction as one ambiguous recurrence attempt. User-owned backup provides manual portability, but there is still no account-based synchronization, automatic cloud backup, merge import, or cross-device conflict resolution.
 
 The ADRs record rejected alternatives and concrete revisit triggers rather than treating current choices as permanent.
 

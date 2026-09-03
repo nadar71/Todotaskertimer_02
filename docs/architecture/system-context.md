@@ -1,8 +1,9 @@
 # System Context
 
-Now Do This is a private, offline Android task manager. The user interacts with one
-installed application; the application persists data and preferences locally and
-uses Android system services for reminder delivery.
+Now Do This is a local-first Android task manager. The user interacts with one
+installed application; the application persists planning data and preferences locally,
+uses Android system services for reminder delivery, and accesses Google consent and ad
+services only for the consent-gated advertising surface.
 
 ```mermaid
 flowchart LR
@@ -10,6 +11,7 @@ flowchart LR
     App --> Room["Local Room database"]
     App --> DataStore["Local DataStore preferences"]
     App --> Android["Android alarms and notifications"]
+    App -. "consent and ads only" .-> GoogleAds["Google UMP and Mobile Ads"]
 ```
 
 ## Responsibilities
@@ -23,10 +25,13 @@ flowchart LR
 - **Android alarms and notifications:** schedule local reminder delivery, apply the
   exact-alarm fallback, publish notifications, and route reminder taps back into the
   app.
+- **Google UMP and Mobile Ads:** obtain applicable privacy choices and request a test
+  banner only when UMP reports that ads may be requested. This boundary receives no
+  task, category, reminder, history, or backup content.
 
 ## System Boundary
 
-There is no account, backend, analytics SDK, or network synchronization outside this
-context. The application remains usable without connectivity. Device transfer,
-cross-device collaboration, and remote recovery are not responsibilities of the
-current system.
+There is no account, application backend, analytics SDK, or network synchronization.
+The application remains usable without connectivity; only consent messages and ads
+depend on Google services. Device transfer, cross-device collaboration, and remote
+recovery are not responsibilities of the current system.

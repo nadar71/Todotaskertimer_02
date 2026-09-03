@@ -32,6 +32,7 @@ import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskPriority
 import com.indiewalkabout.nowdothis.feature.task.domain.model.TaskSections
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -172,6 +173,21 @@ class TaskListScreenTest {
     }
 
     @Test
+    fun overflow_privacyChoicesAppearsOnlyWhenRequiredAndInvokesCallback() {
+        var privacyOptionsOpened = false
+        setScreen(
+            state = TaskListUiState(isLoading = false),
+            showPrivacyOptions = true,
+            onPrivacyOptions = { privacyOptionsOpened = true }
+        )
+
+        composeRule.onNodeWithContentDescription(context.getString(R.string.task_more_actions)).performClick()
+        composeRule.onNodeWithText(context.getString(R.string.ads_privacy_options)).performClick()
+
+        assertTrue(privacyOptionsOpened)
+    }
+
+    @Test
     fun longTitleAndCategory_keepSingleNodesAndCompletionSemantics() {
         val longTitle = "Prepare the detailed quarterly planning report for every stakeholder"
         val longCategory = "International client delivery and account coordination"
@@ -202,7 +218,9 @@ class TaskListScreenTest {
 
     private fun setScreen(
         state: TaskListUiState,
-        onEvent: (TaskListEvent) -> Unit = {}
+        onEvent: (TaskListEvent) -> Unit = {},
+        showPrivacyOptions: Boolean = false,
+        onPrivacyOptions: () -> Unit = {}
     ) {
         composeRule.runOnUiThread {
             TaskListTestContent.content = {
@@ -210,7 +228,9 @@ class TaskListScreenTest {
                     TaskListScreen(
                         state = state,
                         snackbarHostState = SnackbarHostState(),
-                        onEvent = onEvent
+                        onEvent = onEvent,
+                        showPrivacyOptions = showPrivacyOptions,
+                        onPrivacyOptions = onPrivacyOptions
                     )
                 }
             }
